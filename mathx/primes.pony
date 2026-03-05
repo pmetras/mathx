@@ -1,0 +1,320 @@
+"""
+# Prime numbers
+
+Prime numbers functionalities library, inspired by https://github.com/adri326/pony-primes
+
+For information about prime numbers, visit the [PrimePages](https://primes.utm.edu/index.html)
+"""
+
+use "../assertx"
+use "random"
+
+
+primitive Prime[A: UnsignedInteger[A] val = USize]
+  """
+  Primitive for regular prime operations: primality test, coprimality test, GCD
+  and LCM, next prime and prime factorization
+  """
+
+  fun is_prime(num: A): Bool =>
+    """
+    Basic primality test, returns `true` if the given number is indeed prime. This
+    test uses a simple method by [trial division](https://en.wikipedia.org/wiki/Primality_test#Simple_methods).
+
+    **Usage:**
+    ```pony
+      if Prime.is_prime[U128](232862364312348451) then
+        env.out.print("We got ourselves quite a big prime!")
+      else
+        env.out.print("Not a prime number :C")
+      end
+    ```
+    """
+    if (num == A.from[USize](2)) or (num == A.from[USize](3)) then
+      return true
+    end
+    if (num <= A.from[USize](1)) or
+       ((num % A.from[USize](2)) == A.from[USize](0)) or
+       ((num % A.from[USize](3)) == A.from[USize](0)) then
+      return false
+    end
+    
+    var current: A = A.from[USize](5)
+    while (current * current) <= num do
+      if ((num % current) == A.from[USize](0)) or
+         ((num % (current + A.from[USize](2))) == A.from[USize](0)) then
+        return false
+      end
+      current = current + A.from[USize](6)
+    end
+    true
+
+
+  fun _get_first_base(i: USize): A =>
+    """
+    Get the predefined base values. These predefined bases are sufficient to
+    guarantee primality for numbers inferior to `U128.max_value()`.
+    The match pattern should force LLVM to create a fix jump table (no memory
+    allocation) instead of creating a Pony `Array` (allocating memory at each
+    call).
+    """
+    match i
+    | 0 => A.from[USize](2)
+    | 1 => A.from[USize](3)
+    | 2 => A.from[USize](5)
+    | 3 => A.from[USize](7)
+    | 4 => A.from[USize](11)
+    | 5 => A.from[USize](13)
+    | 6 => A.from[USize](17)
+    | 7 => A.from[USize](19)
+    | 8 => A.from[USize](23)
+    | 9 => A.from[USize](29)
+    | 10 => A.from[USize](31)
+    | 11 => A.from[USize](37)
+    | 12 => A.from[USize](41)
+    else
+      A.from[USize](0)
+    end
+
+
+  fun _get_base(i: USize, num: A): A =>
+    """
+    Get a base for the Rabin-Miller algorithm. According to the algorithm, it
+    should be a random number, but some selected numbers are used first as they
+    can guarantee primality. It returns the `i`-th base inferior to `num`.
+    """
+    if i <= 12 then // Maximum bases returned by _get_first_base
+      let b = _get_first_base(i)
+      if b >= num then
+        // We have tried all interesting base values lower than `num`. It
+        // must be a prime
+        A.from[USize](0)
+      else
+        b
+      end
+    else
+      let two = A.from[USize](2)
+      let four = A.from[USize](4)
+      let rand = Rand
+      let b: A = two + (A.from[U64](rand.next()) % (num - four))
+      b
+    end
+
+
+  fun is_probably_prime(num: A, k: USize = 13): Bool =>
+    """
+    Test if `num` seems to be a prime number, using probablistic primality tests.
+    Return `false` when `num` is composed. Return `true` if `num` is probably
+    prime.
+    Parameter `k` determines the accuracy of the test. The greater the number of
+    rounds, the more accurate the result. Default is probably more than sufficient
+    for common `A` types.
+    
+    This version implements the
+    [Miller-Rabin probabilistic primality test](https://en.wikipedia.org/wiki/Miller%E2%80%93Rabin_primality_test).
+
+    For type `A` having less than 128 bits width, this probabilistic test can
+    find primes deterministically, but the algorithm implemented should work
+    with larger types.
+    """
+    let zero = A.from[USize](0)
+    let one = A.from[USize](1)
+    let two = A.from[USize](2)
+    let four = A.from[USize](4)
+
+    if (num % two) == zero then
+      return false
+    end
+    
+    // Find the powers of 2 out of num - 1
+    let s = (num - one).ctz()
+    let d = (num - one) >> s
+    
+    var i: USize = 0
+    while i < k do
+      // Find the base a
+      let a = _get_base(i, num)
+
+      // We have tried all bases less than num; we have a prive
+      if a == zero then
+        return true
+      end
+
+      // Calculate x = a^d mod num
+      var x = Modular[A].pow_mod(a, d, num)
+
+      if (x == one) or (x == (num - one)) then
+        // `a` in not a Miller-Rabin witness
+        i = i + 1
+        continue
+      end
+
+      var j = one
+      while j < s do
+        x = Modular[A].mul_mod(x, x, num)
+
+        if x == (num - one) then
+          // `a` is not a Miller-Rabin witness
+          break
+        end
+
+        j = j + one
+      end
+      if j == s then
+        // `num` is composite
+        return false
+      end
+      
+      // Try another base `a`
+      i = i + 1
+    end
+    true
+
+
+  fun is_coprime(a: A, b: A): Bool =>
+    """
+    Coprimality test: returns `true` if the only common divisor between `a` and `b` is `1`
+
+    **Usage:**
+    ```pony
+      env.out.print(Prime.is_coprime(32, 33).string()) // should be 'true'
+    ```
+    """
+    Modular[A].gcd2(a, b) == A.from[USize](1)
+
+
+  fun next_prime(num: A): A =>
+    """
+    Returns the prime which follows `num`.
+    """
+    PrimeIterator[A].start_at(num).next()
+
+
+  fun prime_factors(num: A): Array[A] ref =>
+    """
+    Returns an array of prime numbers representing all the prime factors of `num`.
+    Prime factorization consists of splitting up a number into a series of prime
+    numbers which all multiplied together give you that number.
+    There only exists one prime factorization for every number (this is a
+    property of the prime numbers).
+
+    **Note:** `24 = 2^3 * 3` - in the case of a prime number occuring several
+    times, they will simply be listed this amount of times in the result
+    array: `[2; 2; 2; 3]`.
+    
+    `prime_factors(0)` returns `[]` instead of an error.
+    `prime_factors(1)` returns `[]`
+    """
+    match num
+    | A.from[USize](0) => return [] // By definition
+    | A.from[USize](1) => return []
+    | A.from[USize](2) => return [A.from[USize](2)]
+    | A.from[USize](3) => return [A.from[USize](3)]
+    end
+    
+    if Prime[A].is_prime(num) then
+      return [num]
+    end
+    
+    var num' = num
+    let iterator = PrimeIterator[A]
+    var res = Array[A]
+    for divisor in iterator do
+      while (num' % divisor) == A.from[USize](0) do
+        num' = num' / divisor
+        res.push(divisor)
+      end
+      if (num' == A.from[USize](0)) or (divisor > num') then
+        break
+      end
+    end
+    res
+
+
+class PrimeIterator[A: UnsignedInteger[A] val = USize] is Iterator[A]
+  """
+  The prime iterator returns every primes up to a number (by default the maximum
+  value of the type). Note that it will return the prime following the limit
+  value.
+
+  **Usage:**
+  ```pony
+    let iterator = PrimeIterator[U32](100)
+    for prime in iterator do
+      env.out.print(prime.string())
+    end
+    // will print: 2, 3, 5, 7, ..., 101
+  ```
+  """
+
+  var _last: A
+    """
+    Last prime found.
+    """
+    
+  let _limit: A
+    """
+    The upper limit of the iterator.
+    """
+
+
+  new create(limit: A = A.max_value()) =>
+    """
+    Create a new prime iterator that generates prime numbers up to the next prime
+    after `limit`. The default limit is the maximum value of the type.
+    """
+    _last = A.from[USize](1)
+    _limit = limit
+
+
+  new start_at(starting_value: A = A.from[USize](1), limit: A = A.max_value()) =>
+    """
+    Create a new prime iterator starting from a particular value `starting_value`,
+    allowing for calculation of primes up the next prime after `limit`.
+
+    ```pony
+      let iterator = PrimeIterator.start_at(10000)
+      env.out.print(iterator.next().string()) // 10007
+    ```
+    """
+    _last = if (starting_value % A.from[USize](2)) == A.from[USize](0) then
+        starting_value - A.from[USize](1) // it isn't an issue if it already is 0
+      else
+        starting_value
+      end
+    _limit = limit
+
+
+  fun has_next(): Bool =>
+    """
+    Do we need to find more prime number? Return `true` if the iterator hasn't
+    reached the upper limit.
+    
+    As prime numbers are inifinite, there's always a next prime... Bu we don't
+    know if this prime is before or after the upper limit of the iterator.
+    `has_next` returns `true` when the last prime number found is over the
+    upper limit.
+    """
+    _last < _limit
+
+
+  fun ref next(): A =>
+    """
+    Find a new prime, up from the last one found.
+    
+    Finding the next prime requires testing for primality all the odd numbers
+    upper from the last one found and this operation is calculation intensive
+    for big numbers.
+    """
+    if _last <= A.from[USize](1) then
+      _last = A.from[USize](2)
+      return _last
+    elseif _last == A.from[USize](2) then
+      _last = A.from[USize](3)
+      return _last
+    end
+    _last = _last + A.from[USize](2)
+    while not Prime[A].is_prime(_last) do
+      _last = _last + A.from[USize](2)
+    end
+    _last
