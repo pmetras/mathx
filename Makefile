@@ -5,7 +5,9 @@ config ?= debug
 PACKAGE := mathx
 
 # The compiler to use. In that case, a self-compiled compiler in release mode.
-COMPILE_WITH := ponyc --verbose=4
+#To see verbose compilation, try:
+#COMPILE_WITH := ponyc --verbose=4
+COMPILE_WITH := ponyc
 
 # Where the executable are placed: build/debug or build/release
 BUILD_DIR ?= build/$(config)

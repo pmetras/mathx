@@ -517,8 +517,9 @@ class iso _TestComplexIdentities[F: (Float & FloatingPoint[F])] is UnitTest
     h.assert_true((a *~ b).conj_unsafe() ==~ (a.conj_unsafe() *~ b.conj_unsafe()))
 
     // Equality fails with F64
-    h.assert_true((a * a.conj()).abs().almost_eq((a.abs() * a.abs()).abs(), epsilon))
-    h.assert_true((a *~ a.conj()).abs().almost_eq((a.abs() *~ a.abs()).abs(), epsilon))
+    //TODO No need for a Complex constructor?
+    h.assert_true((a * a.conj()).almost_eq(Complex[F](a.abs() * a.abs()), epsilon))
+    h.assert_true((a *~ a.conj()).almost_eq(Complex[F](a.abs() *~ a.abs()), epsilon))
 
     // Conjugate of quotient
     h.assert_true(b.is_null() or ((a / b).conj() == (a.conj() / b.conj())))
@@ -560,7 +561,8 @@ class iso _TestComplexIdentities[F: (Float & FloatingPoint[F])] is UnitTest
     h.log("(a * a.conj()).real() = " + (a * a.conj()).real().string() +
           ", a.abs() * a.abs() = " + a.abs().powi(2).string())
     // Equality fails with F64
-    h.assert_true((a * a.conj()).real().almost_eq(a.abs().powi(2), epsilon))
+    h.assert_true(Complex[F]((a * a.conj()).real()).almost_eq(Complex[F](a.abs().powi(2)), epsilon))
+    h.assert_true((a * a.conj()).almost_eq(Complex[F](a.abs().powi(2)), epsilon))
     h.log("(a * a.conj()).imag() = " + (a + a.conj()).imag().string() + " = 0")
     h.assert_true((a * a.conj()).imag() == F.from[USize](0))
     h.log("(a * b) - (b * a) = " + ((a * b) - (b * a)).string())
@@ -572,7 +574,7 @@ class iso _TestComplexIdentities[F: (Float & FloatingPoint[F])] is UnitTest
     
     // Scalar product
     // Equality fails with F64
-    h.assert_true(a.dotp(a).almost_eq(a.abs().powi(2), epsilon))
+    h.assert_true(Complex[F](a.dotp(a)).almost_eq(Complex[F](a.abs().powi(2)), epsilon))
 
     // Power
     h.assert_true((a.powi(4) + one) == ((a.powi(2) + Complex[F].j()) * (a.powi(2) - Complex[F].j())))

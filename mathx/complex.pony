@@ -579,7 +579,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
 
     `z.cos() = ((i * z).exp() + (-i * z).exp())) / 2`
     """
-    let jz = j() * this
+    let jz = j() * Complex[F](_re, _im)
     let two = Complex[F](F.from[ISize](2), F.from[ISize](0))
     (jz.exp() + ((-jz).exp())) / two
 
@@ -590,7 +590,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
 
     `z.sin() = ((i * z).exp() - (-i * z).exp()) / (2 * i)`
     """
-    let jz = j() * this
+    let jz = j() * Complex[F](_re, _im)
     let twoi = Complex[F](F.from[ISize](0), F.from[ISize](2))
     (jz.exp() - ((-jz).exp())) / twoi
 
@@ -644,7 +644,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     if n == 0 then
       return Complex[F](one, zero)
     elseif n == 1 then
-      return this
+      return Complex[F](_re, _im)
     elseif n == -1 then
       return this.invert()
     end
@@ -670,7 +670,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     // General case
     var i = if n > 0 then n else -n end
     var result = Complex[F](one, zero)
-    var x = this
+    var x: Complex[F] = Complex[F](_re, _im)
     while i > 0 do
       if (i % 2) == 1 then
         result = result * x
@@ -697,7 +697,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     if n == 0 then
       return Complex[F](one, zero)
     elseif n == 1 then
-      return this
+      return Complex[F](_re, _im)
     elseif n == -1 then
       return this.invert()
     end
@@ -723,7 +723,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     // General case
     var i = if n > 0 then n else -n end
     var result: Complex[F] = Complex[F](one, zero)
-    var x = this
+    var x: Complex[F] = Complex[F](_re, _im)
     while i > 0 do
       if (i %~ 2) == 1 then
         result = result *~ x
