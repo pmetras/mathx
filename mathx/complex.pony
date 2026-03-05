@@ -193,13 +193,13 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
 
   fun almost_eq(that: box->Complex[F],
                 rel_tol: F = F.epsilon().sqrt(),
-                abs_tol: F = F.from[F64](0.0))
+                abs_tol: F = F.epsilon().sqrt())
                : Bool =>
     """
     Return `true` when `this` and `that` are almost equal with a relative
-    precision tolerance of `rel_tol` (default to 1.49012e-08 with `F64`,
-    i.e. `sqrt(F64.epsilon)`) and absolute tolerance `abs_tol` (default to
-    0.0). All tolerances are measured using the complex modulus `abs()`.
+    precision tolerance of `rel_tol` and absolute tolerance `abs_tol`. Both
+    default to `sqrt(F.epsilon())` (~1.49e-08 for `F64`, ~3.45e-04 for
+    `F32`). All tolerances are measured using the complex modulus `abs()`.
 
     Two complex numbers `this` and `that` are considered almost equal when
     `(this - that).abs() <= max(rel_tol * max(this.abs(), that.abs()), abs_tol)`.
@@ -236,11 +236,11 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     elseif infinite() then
       if that.infinite() then
         if (one.copysign(_re) == one.copysign(that._re)) and
-	  (one.copysign(_im) == one.copysign(that._im)) then
-	  true
-	else
-	  false
-	end
+          (one.copysign(_im) == one.copysign(that._im)) then
+          true
+        else
+          false
+        end
       else
         false
       end
