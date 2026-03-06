@@ -100,9 +100,11 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     `true` when the complex has no imaginary part, with a tolerance `tol`
     (default to `F.epsilon`).
     """
-    try
-      Assert(tol >= F.from[ISize](0), "Precision tolerance (" + tol.string() +
-             ") must be positive")?
+    ifdef debug then
+      try
+        Assert(tol >= F.from[ISize](0), "Precision tolerance (" + tol.string() +
+              ") must be positive", true)?
+      end
     end
     _im.abs() <= tol
 
@@ -112,9 +114,11 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     `true` when the complex has no real part, with an absolute tolerance `abs_tol`
     (default to `F.epsilon)`.
     """
-    try
-      Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
-             abs_tol.string() + ") must be positive")?
+    ifdef debug then
+      try
+        Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
+              abs_tol.string() + ") must be positive", true)?
+      end
     end
     _re.abs() <= abs_tol
 
@@ -125,9 +129,11 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     (default to `F.epsilon)`. The tolerance is applied individually on real and
     imaginary parts and not on the modulus.
     """
-    try
-      Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
-             abs_tol.string() + ") must be positive")?
+    ifdef debug then
+      try
+        Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
+              abs_tol.string() + ") must be positive", true)?
+      end
     end
     (_re.abs() <= abs_tol) and (_im.abs() <= abs_tol)
 
@@ -223,14 +229,17 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     """
     let zero: F = F.from[F64](0.0)
     let one: F = F.from[F64](1.0)
-    try
-      Assert(rel_tol >= zero, "Relative tolerance (" + rel_tol.string() +
-             ") must be positive")?
-      Assert(rel_tol <= one, "Relative tolerance (" + rel_tol.string() +
-             ") should be lower than 1.0")?
-      Assert(abs_tol >= zero, "Absolute tolerance (" + abs_tol.string() +
-             ") must be positive")?
+    ifdef debug then
+      try
+        Assert(rel_tol >= zero, "Relative tolerance (" + rel_tol.string() +
+              ") must be positive", true)?
+        Assert(rel_tol <= one, "Relative tolerance (" + rel_tol.string() +
+              ") should be lower than 1.0", true)?
+        Assert(abs_tol >= zero, "Absolute tolerance (" + abs_tol.string() +
+              ") must be positive", true)?
+      end
     end
+
     if nan() or that.nan() then
       false
     elseif infinite() then

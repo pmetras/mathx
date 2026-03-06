@@ -476,9 +476,11 @@ class val MPFloat
     If the current float is a special value, like `+inf`, `-inf` or `nan`, the
     value of the exponent is not defined.
     """
-    try
-      Assert((2 <= base) and (base <= 36), "MPFloat.string: The base (" +
-             base.string() + ") must be in the range [2..36]")?
+    ifdef debug then
+      try
+        Assert((2 <= base) and (base <= 36), "MPFloat.string: The base (" +
+              base.string() + ") must be in the range [2..36]", true)?
+      end
     end
     (let mantissa, let exponent) = MPF.get_str(base.i32(), get_precision().ilong(), _mpfr, rnd)
 

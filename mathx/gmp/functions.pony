@@ -1003,9 +1003,11 @@ primitive MPF
     let ptab2 = tab2.cpointer()
     let n1 = tab1.size()
     let n2 = tab2.size()
-    try
-      Assert(n1 == n2, "MPF.dot: the two arrays don't have the same size: " +
-             n1.string() + " != " + n2.string() + ". Can't calculate dot product.")?
+    ifdef debug then
+      try
+        Assert(n1 == n2, "MPF.dot: the two arrays don't have the same size: " +
+              n1.string() + " != " + n2.string() + ". Can't calculate dot product.", true)?
+      end
     end
     @mpfr_dot(mpfr, ptab1, ptab2, n1, rnd())
 

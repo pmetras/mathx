@@ -58,11 +58,13 @@ primitive NTT[N: UnsignedInteger[N] val = USize]
     
     """
     let size = a.size()
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+      end
     end
 
     // Prepare root power tables using recurrence

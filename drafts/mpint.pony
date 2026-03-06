@@ -76,8 +76,10 @@ class MPInt
     The whole string `s` must represent an integer number. Leading spaces
     are accepted but not trailing spaces.
     """
-    Assert((2 <= base) and (base <= 36), "MPInt.create: The base (" +
-           base.string() + ") must be in the range [2..36]")?
+    ifdef debug then
+      Assert((2 <= base) and (base <= 36), "MPInt.create: The base (" +
+            base.string() + ") must be in the range [2..36]", true)?
+    end
 
     // Fast exit: empty string is 0
     if s == "" then
@@ -260,7 +262,7 @@ Debug("Pushed exponent")
 
     // The case of the non-initialized MPInt
     try
-      Assert(size > 0, "MPInt.string: [BUG] Non-initialized _digits array")?
+      Assert(size > 0, "MPInt.string: [BUG] Non-initialized _digits array", true)?
     end
     if size == 0 then
       return "0".clone()

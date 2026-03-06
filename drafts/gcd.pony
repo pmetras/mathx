@@ -7,6 +7,7 @@ primitive GCD[U: ((U8 | U16 | U32 | U64 | U128 | ULong) & UnsignedInteger[U])]
   Greatest Common Divisor (GCD) of two or more integers, which are not all 0, is
   the largest positive integer that divides each of the integers.
   """
+
   fun apply(a: U, b: U): U =>
     """
     Calculate `a` and `b` GCD (Greatest Common Divisor) using the [binary GCD
@@ -33,8 +34,10 @@ primitive GCD[U: ((U8 | U16 | U32 | U64 | U128 | ULong) & UnsignedInteger[U])]
         v = u
         u = t
       end
+      v = v - u
     until v == U.from[USize](0) end
     u << shift
+
 
   fun lcm(a: U, b: U): U =>
     """
@@ -42,7 +45,7 @@ primitive GCD[U: ((U8 | U16 | U32 | U64 | U128 | ULong) & UnsignedInteger[U])]
     [(Least Common Multiple)](https://en.wikipedia.org/wiki/Least_common_multiple).
     This is done by calculating the GCD first.
     """
-    if (a == U.from[USize](0)) and (b == U.from[USize](0)) then
+    if (a == U.from[USize](0)) or (b == U.from[USize](0)) then
       return U.from[USize](0)
     end
-    (a * b) / GCD[U](a, b)
+    (a / GCD[U](a, b)) * b

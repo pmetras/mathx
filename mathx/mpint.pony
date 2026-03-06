@@ -112,8 +112,10 @@ class val MPInt is Comparable[MPInt val]
     accepting `+e86` as a valid integer or when using consecutive separators.
     Don't abuse it!
     """
-    Assert((2 <= base) and (base <= 36), "The base (" + base.string() +
-           ") must be in the range [2..36]")?
+    ifdef debug then
+      Assert((2 <= base) and (base <= 36), "The base (" + base.string() +
+            ") must be in the range [2..36]", true)?
+    end
 
     let guess = s.size() / 3
     _digits = Array[U16](guess)
@@ -345,7 +347,7 @@ class val MPInt is Comparable[MPInt val]
 
     // The case of the non-initialized MPInt
     try
-      Assert(size > 0, "Non-initialized `_digits` array")?
+      Assert(size > 0, "Non-initialized `_digits` array", true)?
     end
     if size == 0 then
       return "0".clone()
@@ -472,7 +474,7 @@ class val MPInt is Comparable[MPInt val]
     This operation can reduce the size of the `_digits` array.
     """
     try
-      Assert(b != 0, "Division by 0")?
+      Assert(b != 0, "Division by 0", true)?
     end
 
     let size = _digits.size()
@@ -1010,7 +1012,7 @@ class val MPInt is Comparable[MPInt val]
     See Knuth 4.3.1.A
     """
     Assert(_negative == that._negative,
-           "`this` and `that` must have the same sign for the _add_in_place operation")?
+           "`this` and `that` must have the same sign for the _add_in_place operation", true)?
 
     let this_size = _digits.size()
     let that_size = that._digits.size()
@@ -1070,10 +1072,10 @@ class val MPInt is Comparable[MPInt val]
     See Knuth TAOCP 4.3.1.S
     """
     Assert(_negative == that._negative,
-           "`this` and `that` must have the same sign for the _sub_in_place operation")?
+           "`this` and `that` must have the same sign for the _sub_in_place operation", true)?
     Assert(this.abs_ge(that),
            "`this` must be larger or equal than `that` in absolute value for " +
-           "_sub_in_place operation")?
+           "_sub_in_place operation", true)?
 //Debug("this.abs_ge(that)=" + (this.abs_ge(that)).string())
 //Debug("this=" + this.string() + " | " + this.dump() + ", that=" + that.string() + " | " + that.dump())
 
@@ -1082,7 +1084,7 @@ class val MPInt is Comparable[MPInt val]
 
     // If the numbers are normalized (i.e. without leading 0s, then the size of
     // this is larger than the size of that.
-    Assert(this_size >= that_size, "Integers are not normalized")?
+    Assert(this_size >= that_size, "Integers are not normalized", true)?
     // So this should be useless
     _digits.reserve(this_size.max(that_size))
 
@@ -1111,22 +1113,24 @@ class val MPInt is Comparable[MPInt val]
 //Debug("Sub2 i=" + i.string() + ", d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
         if carry > _digits(i)?.u32() then
           s = (_digits(i)?.u32() + _base) - carry
-	  carry = 1
-	else
-	  s = _digits(i)?.u32() - carry
+          carry = 1
+        else
+          s = _digits(i)?.u32() - carry
           carry = 0
-	end
+        end
         _digits.update(i, _low(s))?
 //Debug("Sub2 now d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
         i = i + 1
       end
-      try
-        Assert(carry == 0, "BUG in algorithm: `this` (" + this.string() +
-	       ") is not greater or equal to `that` (" + that.string() + ")")?
+      ifdef debug then
+        try
+          Assert(carry == 0, "BUG in algorithm: `this` (" + this.string() +
+          ") is not greater or equal to `that` (" + that.string() + ")", true)?
+        end
       end
     else
       Fail("Index (" + i.string() + ") out of range [0.." + this_size.string() +
-            ") or [0.." + that_size.string() + ")")
+            ") or [0.." + that_size.string() + ")", true)
     end
     // We remove the leading 0s that could have appeared
     _normalize()
@@ -1326,14 +1330,18 @@ b = cdump("invfourmult=", consume b)
         // Add 0.5 to round conversion
         let temp = b(i)?.real() + carry + 0.5
 
-        Assert(temp > 0.0, "Bug in algorithm: FFT result b(" + i.string() +
-               ")=" + b(i)?.real().string() + " must be positive")?
+        ifdef debug then
+          Assert(temp > 0.0, "Bug in algorithm: FFT result b(" + i.string() +
+                ")=" + b(i)?.real().string() + " must be positive", true)?
+        end
 
         if temp >= base then
           carry = (temp / base).trunc()
 
-          Assert(temp >= (carry * base), "Value " + temp.string() +
-                 " - " + (carry * base).string() + " must be positive")?
+          ifdef debug then
+            Assert(temp >= (carry * base), "Value " + temp.string() +
+                  " - " + (carry * base).string() + " must be positive", true)?
+          end
           let m = temp - (carry * base)
           digits.update(i, m.u16())?
         else
@@ -1353,8 +1361,10 @@ end
 Debug("fastmult=" + idump(d))
 //b = cdump("bresult=", consume b)
 
-      Assert(carry < base, "We can't have a carry (" + 
-             carry.string() + ") higher than " + base.string())?
+      ifdef debug then
+        Assert(carry < base, "We can't have a carry (" + 
+              carry.string() + ") higher than " + base.string(), true)?
+      end
 Debug("carry=" + carry.string() + " / " + carry.u16().string())
 
       let temp = carry.u16()
@@ -1454,12 +1464,16 @@ Debug("invfourmult=" + fdump(b))
       while i < (size - 1) do
         // Add 0.5 to round conversion
         let temp = b(i)? + carry + 0.5
-        Assert(temp > 0.0, "Bug in algorithm: FFT result b(" + i.string() +
-               ")=" + b(i)?.string() + " must be positive")?
+        ifdef debug then
+          Assert(temp > 0.0, "Bug in algorithm: FFT result b(" + i.string() +
+                ")=" + b(i)?.string() + " must be positive", true)?
+        end
         carry = (temp / base).trunc()
 
-        Assert(temp >= (carry * base), "Value " + temp.string() +
-               " - " + (carry * base).string() + " must be positive")?
+        ifdef debug then
+          Assert(temp >= (carry * base), "Value " + temp.string() +
+                " - " + (carry * base).string() + " must be positive", true)?
+        end
 
 Debug("b(" + i.string() + ")=" + b(i)?.string() + ", temp=" + temp.string() + ", carry=" + carry.string() + ", d(" + i.string() + ")=" + (temp - (carry * base)).string() + " / " + (temp - (carry * base)).u16().string())
         let m = temp - (carry * base)
@@ -1469,8 +1483,10 @@ Debug("b(" + i.string() + ")=" + b(i)?.string() + ", temp=" + temp.string() + ",
 
 Debug("bresult=" + fdump(b))
 
-      Assert(carry < base, "We can't have a carry (" + 
-             carry.string() + ") higher than " + base.string())?
+      ifdef debug then
+        Assert(carry < base, "We can't have a carry (" + 
+              carry.string() + ") higher than " + base.string(), true)?
+      end
 //Debug("d(" + (size - 1).string() + ")=" + carry.string() + " / " + carry.u16().string())
 
       // Prepare result

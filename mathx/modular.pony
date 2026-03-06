@@ -195,7 +195,7 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     (var big, var small) = if a > b then (a, b) else (b, a) end
     let zero = A.from[USize](0)
-    var res: A = small
+    var res: A = big
     while small != zero do
       res = small
       small = big % small
@@ -228,9 +228,11 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let two = A.from[USize](2)
 
     while true do
-      try
-        Assert(((u % two) == one) and ((v % two) == one), "u (" + u.string() +
-               ") and v (" + v.string() + ") should be even...")?
+      ifdef debug then
+        try
+          Assert(((u % two) == one) and ((v % two) == one), "u (" + u.string() +
+                ") and v (" + v.string() + ") should be odd...", true)?
+        end
       end
     
       if u > v then
@@ -261,7 +263,11 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
       env.out.print(Modular.lcm(24, 78).string()) // 312
     ```
     """
-    (a * b) / gcd2(a, b)
+    let zero = A.from[USize](0)
+    if (a == zero) or (b == zero) then
+      return zero
+    end
+    (a / gcd2(a, b)) * b
 
 
 

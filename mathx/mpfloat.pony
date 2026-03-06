@@ -447,8 +447,10 @@ class MPFloat
         carry = (temp / base).u64().f64()
         b.update(i, temp - (carry * base))?
 
-        Assert(carry < base, "We can't have a carry higher than 256! carry=" +
-               carry.string())?
+        ifdef debug then
+          Assert(carry < base, "We can't have a carry higher than 256! carry=" +
+                carry.string(), true)?
+        end
       until i == 0 end
 
       // Create result
@@ -557,8 +559,10 @@ class MPFloat
     var remain = MPFloat(0) // MPFloat(that_size)
     var i: USize = 0
     try
-      Assert(that._size() > _size(), "Divisor longer (" + that._size().string() +
-             ") than dividend (" + _size().string() + ")")?
+      ifdef debug then
+        Assert(that._size() > _size(), "Divisor longer (" + that._size().string() +
+              ") than dividend (" + _size().string() + ")", true)?
+      end
 
       // temp = 1/that
       var temp = that.inv()
@@ -572,7 +576,9 @@ class MPFloat
       // TODO: Remove clone
       (remain, let negat) = remain - this.clone()
 
-      Assert(negat == 0, "Accuracy too small! negat=" + negat.string())?
+      ifdef debug then
+        Assert(negat == 0, "Accuracy too small! negat=" + negat.string(), true)?
+      end
 
       if off > 0 then
         i = 0

@@ -137,13 +137,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     calculation. Use `fourier_complex` for a memory optimized version.
     """
     let size = a.size()
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+              "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Rearrange array indexes in reverse bits order.
@@ -215,13 +217,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     See [FFT.fourier](#fourier) for documentation and explanations.
     """
     let size = a.size()
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+              "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Rearrange array indexes in reverse bits order.
@@ -297,14 +301,16 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
     let size2 = size / 2 // Number of complex data points
-    try
-      Assert((size2 and (size2 - 1)) == 0,
-             "The input array 'a' size (" + size.string() +
-             ") must be a power of 4. Enlarge it to " +
-             (size2.next_pow2() * 2).string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size2 and (size2 - 1)) == 0,
+              "The input array 'a' size (" + size.string() +
+              ") must be a power of 4. Enlarge it to " +
+              (size2.next_pow2() * 2).string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+              "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Reorganize the array content in bits order
@@ -469,13 +475,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
 
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+              "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Constants
@@ -584,13 +592,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
 
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+              "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Constants
@@ -691,13 +701,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     recurrence of `fourier`. It also allocates `Complex[F]` objects.
     """
     let size = a.size()
-    try
-      Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-             size.string() + ") must be a power of 2. Enlarge it to " +
-             size.next_pow2().string())?
-      Assert(size > 0, "Array 'a' can't be empty")?
-      Assert(normalize or inverse, "`normalize` must be " +
-             "set to `false` only with inverse FFT")?
+    ifdef debug then
+      try
+        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+              size.string() + ") must be a power of 2. Enlarge it to " +
+              size.next_pow2().string(), true)?
+        Assert(size > 0, "Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "`normalize` must be " +
+            "set to `false` only with inverse FFT", true)?
+      end
     end
 
     // Prepare trigonometric tables: calculate the complex roots or 1
@@ -836,9 +848,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     More information on https://en.wikipedia.org/wiki/Circular_convolution
     """
     let size = u.size()
-    try
-      Assert(v.size() == size, "Array sizes must be identical: u.size = " +
-             size.string() + ", v.size = " + v.size().string())?
+    ifdef debug then
+      try
+        Assert(v.size() == size, "Array sizes must be identical: u.size = " +
+              size.string() + ", v.size = " + v.size().string(), true)?
+      end
     end
 
     let u' = u.clone()
