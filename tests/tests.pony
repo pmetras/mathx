@@ -45,6 +45,10 @@ actor Main is TestList
     test(_TestComplexLog[F32])
     test(_TestComplexIdentities[F32])
     test(_TestComplexRandom[F32, U32])
+    test(_TestComplexArg[F32])
+    test(_TestComplexExp[F32])
+    test(_TestComplexCPow[F32])
+    test(_TestComplexEdge[F32])
     test(_TestComplexAdd[F64])
     test(_TestComplexSub[F64])
     test(_TestComplexMul[F64])
@@ -57,6 +61,10 @@ actor Main is TestList
     test(_TestComplexLog[F64])
     test(_TestComplexIdentities[F64])
     test(_TestComplexRandom[F64, U64])
+    test(_TestComplexArg[F64])
+    test(_TestComplexExp[F64])
+    test(_TestComplexCPow[F64])
+    test(_TestComplexEdge[F64])
 
     // Miscellaneous fonctions for unsigned
     test(_TestUnsignedComplementPow[U8])

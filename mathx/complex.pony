@@ -543,34 +543,31 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
   
   fun arg(): F =>
     """
-    The argument of complex, `arg() = (imag() / real()).atan()` with a pi
-    constant depending on sign of `real()`.
+    The argument (angle) of the complex number, in (-π, π].
+
+    `arg(re + i*im) = atan2(im, re)`
     """
-    if _re == F.from[ISize](0) then
-      (F.from[F64](F64.pi()) / F.from[ISize](2)).copysign(_im)
-    else
-      (_im / _re).atan()
-    end
+    _im.atan2(_re)
     
     
   fun exp(): Complex[F]^ =>
     """
     Exponential of complex.
-    
-    `z.exp() = sum(n=0, inf, z^n / n!)`
+
+    `exp(re + i*im) = e^re * (cos(im) + i*sin(im))`
     """
-    let rho = abs()
-    let theta = arg()
-    Complex[F](rho * theta.cos(), rho * theta.sin())
+    let e_re = _re.exp()
+    Complex[F](e_re * _im.cos(), e_re * _im.sin())
     
     
   fun exp_unsafe(): Complex[F]^ =>
     """
     Exponential of complex using unsafe arithmetic.
+
+    `exp(re + i*im) = e^re *~ (cos(im) + i*sin(im))`
     """
-    let rho = abs_unsafe()
-    let theta = arg()
-    Complex[F](rho *~ _re *~ theta.cos(), rho *~ _im *~ theta.sin())
+    let e_re = _re.exp()
+    Complex[F](e_re *~ _im.cos(), e_re *~ _im.sin())
  
 
   fun cos(): Complex[F]^ =>
