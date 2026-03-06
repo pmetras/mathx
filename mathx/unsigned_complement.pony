@@ -48,8 +48,10 @@ primitive UnsignedComp[U: UnsignedInteger[U] val = USize]
       if (m % two) == one then
         res = res *? t
       end
-      t = t *? t
       m = m / two
+      if m > zero then
+        t = t *? t
+      end
     end
     res
 

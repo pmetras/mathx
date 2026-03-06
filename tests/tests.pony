@@ -72,8 +72,21 @@ actor Main is TestList
 
     // Miscellaneous fonctions for unsigned
     test(_TestUnsignedComplementPow[U8])
+    test(_TestUnsignedComplementPow[U16])
+    test(_TestUnsignedComplementPow[U32])
+    test(_TestUnsignedComplementPow[U64])
+    test(_TestUnsignedComplementPowPartial[U8])
+    test(_TestUnsignedComplementPowPartial[U16])
+    test(_TestUnsignedComplementPowPartial[U32])
+    test(_TestUnsignedComplementPowPartial[U64])
     test(_TestUnsignedComplementLog2[U8])
+    test(_TestUnsignedComplementLog2[U16])
+    test(_TestUnsignedComplementLog2[U32])
+    test(_TestUnsignedComplementLog2[U64])
     test(_TestUnsignedComplementHamming[U8])
+    test(_TestUnsignedComplementHamming[U16])
+    test(_TestUnsignedComplementHamming[U32])
+    test(_TestUnsignedComplementHamming[U64])
 
     // FFT: Fast Fourier Transform
     test(_TestFFT[F64])
