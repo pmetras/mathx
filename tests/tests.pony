@@ -16,7 +16,11 @@ actor Main is TestList
     """
     The list of tests on `maths`.
     """
-    // No tests on platform limits!
+    // Platform limits
+    test(_TestFLimits[F32])
+    test(_TestFLimits[F64])
+    test(_TestFLimitsF32Specific)
+    test(_TestFLimitsF64Specific)
 
     // Primes
     test(_TestPrimeTest)
