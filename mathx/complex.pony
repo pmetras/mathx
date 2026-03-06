@@ -54,12 +54,23 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     _im = F.from[ISize](1)
 
 
+  new val from_polar(r: F, theta: F) =>
+    """
+    Create a complex number from polar form `r * exp(i * theta)`.
+    `re = r * cos(theta)`, `im = r * sin(theta)`.
+
+    The inverse is `z.abs()` for `r` and `z.arg()` for `theta`.
+    """
+    _re = r * theta.cos()
+    _im = r * theta.sin()
+
+
   fun string(): String iso^ =>
     """
     Convert the complex to a string for display with the cartesian form
     `re + im * i`. Real and imaginary parts are printed only when non-null.
 
-    There's no special representation for a complex numeber with `inf` real
+    There's no special representation for a complex number with `inf` real
     or imaginary parts. When `NaN` real or imaginary, the string is `NaN`.
     """
     let zero = F.from[ISize](0)
@@ -323,13 +334,28 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     Unsafe multiplication of two complex numbers using arithmetic. Result is
     `((this.real() *~ that.real()) -~ (this.imag() *~ that.imag())) + (j() * ((this.imag() *~ that.real()) +~ (this.real() *~ that.imag()))`
     but actual calculation is done in less operations.
-    
+
     This does not report an error if the calculation overflows.
     """
     let ac = _re *~ that._re
     let bd = _im *~ that._im
     let abcd = (_re +~ _im) *~ (that._re +~ that._im)
     Complex[F](ac -~ bd, abcd -~ ac -~ bd)
+
+
+  fun scale(s: F): Complex[F]^ =>
+    """
+    Multiply by the real scalar `s`. Equivalent to `mul(Complex(s, 0))` but
+    avoids the overhead of a full complex multiplication.
+    """
+    Complex[F](_re * s, _im * s)
+
+
+  fun scale_unsafe(s: F): Complex[F]^ =>
+    """
+    Multiply by the real scalar `s` using unsafe arithmetic.
+    """
+    Complex[F](_re *~ s, _im *~ s)
 
 
   fun abs(): F =>
@@ -362,7 +388,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     trying not to overflow.
     """
     let a = _re.abs()
-    let b = _im.abs() 
+    let b = _im.abs()
     let zero = F.from[ISize](0)
     let one = F.from[ISize](1)
 
@@ -377,6 +403,24 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
       let tmp = a /~ b
       b *~ (one +~ (tmp *~ tmp)).sqrt_unsafe()
     end
+
+
+  fun abs2(): F =>
+    """
+    Returns the squared modulus `re² + im²`, avoiding the `sqrt` in `abs()`.
+    Satisfies `abs2() == abs() * abs()`.
+
+    Useful when comparing magnitudes (avoids sqrt) or in performance-critical
+    inner loops where only relative magnitudes matter.
+    """
+    (_re * _re) + (_im * _im)
+
+
+  fun abs2_unsafe(): F =>
+    """
+    Returns the squared modulus using unsafe arithmetic.
+    """
+    (_re *~ _re) +~ (_im *~ _im)
     
     
   fun invert(): Complex[F]^ =>
@@ -610,6 +654,56 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     sin() / cos()
 
 
+  fun asin(): Complex[F]^ =>
+    """
+    Inverse sine of complex.
+
+    `asin(z) = -i * log(iz + sqrt(1 - z²))`
+    """
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let c_one = Complex[F](one, zero)
+    let neg_i = Complex[F](zero, -one)
+    // Explicit val copy of this to allow arithmetic (fun receiver is box)
+    let z = Complex[F](_re, _im)
+    // iz = i * (re + i*im) = -im + i*re
+    let iz = Complex[F](-_im, _re)
+    let z2 = z * z
+    let w = (c_one - z2).sqrt()
+    neg_i * (iz + w).log()
+
+
+  fun acos(): Complex[F]^ =>
+    """
+    Inverse cosine of complex.
+
+    `acos(z) = -i * log(z + i * sqrt(1 - z²))`
+    """
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let c_one = Complex[F](one, zero)
+    let neg_i = Complex[F](zero, -one)
+    let z = Complex[F](_re, _im)
+    let z2 = z * z
+    let w = (c_one - z2).sqrt()
+    // i * w = (-w._im + i*w._re)
+    neg_i * (z + Complex[F](-w._im, w._re)).log()
+
+
+  fun atan(): Complex[F]^ =>
+    """
+    Inverse tangent of complex.
+
+    `atan(z) = (i/2) * log((i + z) / (i - z))`
+    """
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let half_i = Complex[F](zero, one / F.from[ISize](2))
+    let i = Complex[F](zero, one)
+    let z = Complex[F](_re, _im)
+    half_i * ((i + z) / (i - z)).log()
+
+
   fun cosh(): Complex[F]^ =>
     """
     Hyperbolic cosine of complex.
@@ -637,6 +731,46 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     `z.tanh() = z.sinh() / z.cosh()`
     """
     sinh() / cosh()
+
+
+  fun asinh(): Complex[F]^ =>
+    """
+    Inverse hyperbolic sine of complex.
+
+    `asinh(z) = log(z + sqrt(z² + 1))`
+    """
+    let one = F.from[ISize](1)
+    let c_one = Complex[F](one, F.from[ISize](0))
+    let z = Complex[F](_re, _im)
+    let z2 = z * z
+    (z + (z2 + c_one).sqrt()).log()
+
+
+  fun acosh(): Complex[F]^ =>
+    """
+    Inverse hyperbolic cosine of complex.
+
+    `acosh(z) = log(z + sqrt(z² - 1))`
+    """
+    let one = F.from[ISize](1)
+    let c_one = Complex[F](one, F.from[ISize](0))
+    let z = Complex[F](_re, _im)
+    let z2 = z * z
+    (z + (z2 - c_one).sqrt()).log()
+
+
+  fun atanh(): Complex[F]^ =>
+    """
+    Inverse hyperbolic tangent of complex.
+
+    `atanh(z) = (1/2) * log((1 + z) / (1 - z))`
+    """
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let c_one = Complex[F](one, zero)
+    let half = Complex[F](one / F.from[ISize](2), zero)
+    let z = Complex[F](_re, _im)
+    half * ((c_one + z) / (c_one - z)).log()
 
 
   fun powi(n: I32): Complex[F]^ =>
@@ -747,29 +881,56 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
 
   fun log(): Complex[F]^ =>
     """
-    Logarithm of complex.
+    Natural logarithm of complex (principal value).
 
-    `log() = abs().log() + i * arg()`
+    `log(z) = ln|z| + i * arg(z)`
     """
     Complex[F](abs().log(), arg())
 
 
+  fun log2(): Complex[F]^ =>
+    """
+    Logarithm base 2 of complex: `log(this) / log(2)`.
+
+    `log2(z).real() = log2(|z|)`, `log2(z).imag() = arg(z) / ln(2)`
+    """
+    let ln2 = F.from[ISize](2).log()
+    Complex[F](abs().log() / ln2, arg() / ln2)
+
+
+  fun log10(): Complex[F]^ =>
+    """
+    Logarithm base 10 of complex: `log(this) / log(10)`.
+
+    `log10(z).real() = log10(|z|)`, `log10(z).imag() = arg(z) / ln(10)`
+    """
+    let ln10 = F.from[ISize](10).log()
+    Complex[F](abs().log() / ln10, arg() / ln10)
+
+
   fun pow(that: box->Complex[F]): Complex[F]^ =>
     """
-    Power of complex.
-
-    `pow(that) = cosh(k) + sinh(k)` with `k = that * this.log()`
-
-    This function is not optimized.
+    Complex power: `this^that = exp(that * log(this))`.
     """
-    let k = that * log()
-    k.cosh() + k.sinh()
+    (that * log()).exp()
+
+
+  fun powf(r: F): Complex[F]^ =>
+    """
+    Power with a real exponent: `this^r = |this|^r * exp(i * r * arg(this))`.
+
+    More efficient than `pow(Complex(r, 0))`. Consistent with polar form:
+    the result has modulus `|this|^r` and argument `r * arg(this)`.
+    """
+    let rho = abs().pow(r)
+    let theta = arg() * r
+    Complex[F](rho * theta.cos(), rho * theta.sin())
 
 
   fun dotp(that: box->Complex[F]): F =>
     """
     Scalar product of `this` and `that`,
-    `(this.real() * that.real()) + (this.real() + that.real())`
+    `(this.real() * that.real()) + (this.imag() * that.imag())`
     """
     (_re * that._re) + (_im * that._im)
   

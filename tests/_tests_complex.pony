@@ -914,3 +914,209 @@ class iso _TestComplexEdge[F: (Float & FloatingPoint[F])] is UnitTest
     h.log("(1+i).dotp_unsafe(1-i) = " + dot_orth.string() + " (expect 0)")
     h.assert_true(dot_orth == zero)
 
+
+class iso _TestComplexPolar[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Test from_polar, abs2, and scale.
+  """
+  fun name(): String =>
+    "Complex[F]/Polar"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let two = F.from[ISize](2)
+    let pi = F.from[F64](F64.pi())
+
+    // from_polar: r=1, theta=0 => (1, 0)
+    h.assert_true(Complex[F].from_polar(one, zero).almost_eq(Complex[F](one, zero)))
+
+    // from_polar: r=1, theta=pi/2 => (0, 1) = i
+    let half_pi = pi / two
+    h.assert_true(Complex[F].from_polar(one, half_pi).almost_eq(Complex[F](zero, one)))
+
+    // from_polar: r=1, theta=pi => (-1, 0)
+    h.assert_true(Complex[F].from_polar(one, pi).almost_eq(Complex[F](-one, zero)))
+
+    // from_polar: r=2, theta=0 => (2, 0)
+    h.assert_true(Complex[F].from_polar(two, zero).almost_eq(Complex[F](two, zero)))
+
+    // abs2: |3+4i|^2 = 25
+    let a = Complex[F](F.from[ISize](3), F.from[ISize](4))
+    h.assert_true(a.abs2() == F.from[ISize](25))
+
+    // abs2 == abs^2
+    let r = a.abs()
+    h.assert_true((a.abs2() - (r * r)).abs() < F.epsilon())
+
+    // abs2 for pure real
+    h.assert_true(Complex[F](two, zero).abs2() == F.from[ISize](4))
+
+    // scale: (3+4i).scale(2) = 6+8i
+    h.assert_true(a.scale(two).almost_eq(Complex[F](F.from[ISize](6), F.from[ISize](8))))
+
+    // scale by 0
+    h.assert_true(a.scale(zero).almost_eq(Complex[F](zero, zero)))
+
+    // scale by 1 is identity
+    h.assert_true(a.scale(one).almost_eq(a))
+
+
+class iso _TestComplexPowf[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Test powf (power with real exponent).
+  """
+  fun name(): String =>
+    "Complex[F]/Powf"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let two = F.from[ISize](2)
+    let three = F.from[ISize](3)
+    let half = one / two
+
+    // 2^3 = 8
+    h.assert_true(Complex[F](two, zero).powf(three).almost_eq(Complex[F](F.from[ISize](8), zero)))
+
+    // 4^0.5 = 2  (real sqrt via powf)
+    h.assert_true(Complex[F](F.from[ISize](4), zero).powf(half).almost_eq(Complex[F](two, zero)))
+
+    // 1^anything = 1
+    h.assert_true(Complex[F](one, zero).powf(three).almost_eq(Complex[F](one, zero)))
+
+    // z^0 = 1 for nonzero z
+    h.assert_true(Complex[F](two, one).powf(zero).almost_eq(Complex[F](one, zero)))
+
+    // z^1 = z
+    let z = Complex[F](F.from[F64](1.5), F.from[F64](2.5))
+    h.assert_true(z.powf(one).almost_eq(z))
+
+    // (-1)^0.5 = i  (principal square root of -1)
+    h.assert_true(Complex[F](-one, zero).powf(half).almost_eq(Complex[F](zero, one)))
+
+
+class iso _TestComplexLogBases[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Test log2 and log10.
+  """
+  fun name(): String =>
+    "Complex[F]/LogBases"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let two = F.from[ISize](2)
+    let pi = F.from[F64](F64.pi())
+
+    // log2(1) = 0
+    h.assert_true(Complex[F](one, zero).log2().almost_eq(Complex[F](zero, zero)))
+
+    // log2(2) = 1
+    h.assert_true(Complex[F](two, zero).log2().almost_eq(Complex[F](one, zero)))
+
+    // log10(1) = 0
+    h.assert_true(Complex[F](one, zero).log10().almost_eq(Complex[F](zero, zero)))
+
+    // log10(10) = 1
+    h.assert_true(Complex[F](F.from[ISize](10), zero).log10().almost_eq(Complex[F](one, zero)))
+
+    // Consistency: log2(z) = log(z) / log(2)
+    let z = Complex[F](F.from[F64](3.0), F.from[F64](4.0))
+    let ln2 = F.from[ISize](2).log()
+    let logz = z.log()
+    h.assert_true(z.log2().almost_eq(Complex[F](logz.real() / ln2, logz.imag() / ln2)))
+
+    // Consistency: log10(z) = log(z) / log(10)
+    let ln10 = F.from[ISize](10).log()
+    h.assert_true(z.log10().almost_eq(Complex[F](logz.real() / ln10, logz.imag() / ln10)))
+
+    // log2(i) = i*pi/(2*ln2)
+    let log2_i = Complex[F].j().log2()
+    h.assert_true(log2_i.almost_eq(Complex[F](zero, pi / (two * F.from[ISize](2).log()))))
+
+
+class iso _TestComplexInverseTrig[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Test asin, acos, atan and their round-trip identities.
+  """
+  fun name(): String =>
+    "Complex[F]/InverseTrig"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let two = F.from[ISize](2)
+    let pi = F.from[F64](F64.pi())
+
+    // asin(0) = 0
+    h.assert_true(Complex[F](zero, zero).asin().almost_eq(Complex[F](zero, zero)))
+
+    // asin(1) = pi/2
+    h.assert_true(Complex[F](one, zero).asin().almost_eq(Complex[F](pi / two, zero)))
+
+    // acos(1) = 0
+    h.assert_true(Complex[F](one, zero).acos().almost_eq(Complex[F](zero, zero)))
+
+    // acos(0) = pi/2
+    h.assert_true(Complex[F](zero, zero).acos().almost_eq(Complex[F](pi / two, zero)))
+
+    // atan(0) = 0
+    h.assert_true(Complex[F](zero, zero).atan().almost_eq(Complex[F](zero, zero)))
+
+    // atan(1) = pi/4
+    h.assert_true(Complex[F](one, zero).atan().almost_eq(Complex[F](pi / F.from[ISize](4), zero)))
+
+    // Round-trip: sin(asin(z)) = z
+    let z = Complex[F](F.from[F64](0.5), F.from[F64](0.3))
+    h.assert_true(z.asin().sin().almost_eq(z))
+
+    // Round-trip: cos(acos(z)) = z
+    h.assert_true(z.acos().cos().almost_eq(z))
+
+    // Round-trip: tan(atan(z)) = z
+    h.assert_true(z.atan().tan().almost_eq(z))
+
+    // Identity: asin(z) + acos(z) = pi/2
+    h.assert_true((z.asin() + z.acos()).almost_eq(Complex[F](pi / two, zero)))
+
+
+class iso _TestComplexInverseHyp[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Test asinh, acosh, atanh and their round-trip identities.
+  """
+  fun name(): String =>
+    "Complex[F]/InverseHyp"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+    let two = F.from[ISize](2)
+
+    // asinh(0) = 0
+    h.assert_true(Complex[F](zero, zero).asinh().almost_eq(Complex[F](zero, zero)))
+
+    // asinh(1) = log(1 + sqrt(2))
+    let asinh_1 = Complex[F](one, zero).asinh()
+    let expected_asinh_1 = (one + F.from[ISize](2).sqrt()).log()
+    h.assert_true(asinh_1.almost_eq(Complex[F](expected_asinh_1, zero)))
+
+    // acosh(1) = 0
+    h.assert_true(Complex[F](one, zero).acosh().almost_eq(Complex[F](zero, zero)))
+
+    // atanh(0) = 0
+    h.assert_true(Complex[F](zero, zero).atanh().almost_eq(Complex[F](zero, zero)))
+
+    // Round-trip: sinh(asinh(z)) = z
+    let z = Complex[F](F.from[F64](1.5), F.from[F64](0.5))
+    h.assert_true(z.asinh().sinh().almost_eq(z))
+
+    // Round-trip: cosh(acosh(z)) = z
+    h.assert_true(z.acosh().cosh().almost_eq(z))
+
+    // Round-trip: tanh(atanh(z)) = z
+    let z2 = Complex[F](F.from[F64](0.3), F.from[F64](0.4))
+    h.assert_true(z2.atanh().tanh().almost_eq(z2))
+
+    // Identity: asinh(-z) = -asinh(z)
+    h.assert_true(z.neg().asinh().almost_eq(z.asinh().neg()))
