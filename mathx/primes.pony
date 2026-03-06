@@ -7,6 +7,7 @@ For information about prime numbers, visit the [PrimePages](https://primes.utm.e
 """
 
 use "../assertx"
+use "../bitsx"
 use "random"
 
 
@@ -120,8 +121,16 @@ primitive Prime[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     let one = A.from[USize](1)
     let two = A.from[USize](2)
+    let three = A.from[USize](3)
     let four = A.from[USize](4)
 
+    // Handle small edge cases: 0 and 1 are not prime; 2 and 3 are prime
+    if num < two then
+      return false
+    end
+    if (num == two) or (num == three) then
+      return true
+    end
     if (num % two) == zero then
       return false
     end
@@ -216,19 +225,155 @@ primitive Prime[A: UnsignedInteger[A] val = USize]
       return [num]
     end
     
-    var num' = num
+    var new_num = num
     let iterator = PrimeIterator[A]
     var res = Array[A]
     for divisor in iterator do
-      while (num' % divisor) == A.from[USize](0) do
-        num' = num' / divisor
+      while (new_num % divisor) == A.from[USize](0) do
+        new_num = new_num / divisor
         res.push(divisor)
       end
-      if (num' == A.from[USize](0)) or (divisor > num') then
+      if new_num == A.from[USize](1) then
+        break
+      end
+      // If divisor > sqrt(new_num), the remaining new_num must be prime
+      if (new_num / divisor) < divisor then
+        res.push(new_num)
         break
       end
     end
     res
+
+
+  fun prime_factors_unique(num: A): Array[A] ref =>
+    """
+    Returns an array of the distinct prime factors of `num`, each listed once.
+
+    Unlike `prime_factors`, repeated factors are deduplicated:
+    `prime_factors_unique(12)` returns `[2; 3]` (not `[2; 2; 3]`).
+
+    `prime_factors_unique(0)` and `prime_factors_unique(1)` return `[]`.
+    """
+    match num
+    | A.from[USize](0) => return []
+    | A.from[USize](1) => return []
+    | A.from[USize](2) => return [A.from[USize](2)]
+    | A.from[USize](3) => return [A.from[USize](3)]
+    end
+
+    if Prime[A].is_prime(num) then
+      return [num]
+    end
+
+    var new_num = num
+    let iterator = PrimeIterator[A]
+    var res = Array[A]
+    for divisor in iterator do
+      if (new_num % divisor) == A.from[USize](0) then
+        res.push(divisor)
+        while (new_num % divisor) == A.from[USize](0) do
+          new_num = new_num / divisor
+        end
+      end
+      if new_num == A.from[USize](1) then
+        break
+      end
+      if (new_num / divisor) < divisor then
+        res.push(new_num)
+        break
+      end
+    end
+    res
+
+
+  fun euler_totient(n: A): A =>
+    """
+    Euler's totient function `φ(n)`: the count of integers in `[1, n]` that
+    are coprime with `n`.
+
+    Uses the formula `φ(n) = n * ∏ (p − 1) / p` over all distinct prime
+    factors `p` of `n`. Each factor is applied as `result = result / p * (p − 1)`
+    to stay in integer arithmetic.
+
+    Returns 0 for `n == 0`. Returns 1 for `n == 1`.
+
+    Fundamental in number theory: appears in RSA, discrete logarithms, and
+    the multiplicative group of integers modulo n.
+    """
+    let zero = A.from[USize](0)
+    let one = A.from[USize](1)
+    if n == zero then
+      return zero
+    end
+    var result = n
+    for p in Prime[A].prime_factors_unique(n).values() do
+      result = (result / p) * (p - one)
+    end
+    result
+
+
+  fun radical(n: A): A =>
+    """
+    Returns the radical of `n`: the product of the distinct prime factors of `n`.
+
+    Examples: `radical(12) = 2 * 3 = 6`, `radical(8) = 2`, `radical(30) = 30`.
+
+    `radical(p^k) = p` for any prime `p` and `k >= 1`.
+
+    Returns 1 for `n <= 1`.
+    """
+    let one = A.from[USize](1)
+    if n <= one then
+      return one
+    end
+    var result = one
+    for p in Prime[A].prime_factors_unique(n).values() do
+      result = result * p
+    end
+    result
+
+
+  fun is_squarefree(n: A): Bool =>
+    """
+    Returns `true` if `n` is squarefree: no prime factor appears more than once.
+    Equivalently, `n == radical(n)`.
+
+    Returns `true` for `n <= 1` (vacuously squarefree).
+
+    Examples: `is_squarefree(30) = true` (30 = 2*3*5), `is_squarefree(12) = false`
+    (12 = 2²*3).
+    """
+    let one = A.from[USize](1)
+    if n <= one then
+      return true
+    end
+    Prime[A].radical(n) == n
+
+
+  fun prev_prime(num: A): A =>
+    """
+    Returns the largest prime strictly less than `num`.
+
+    Returns 0 if no such prime exists (i.e. `num <= 2`).
+    """
+    let zero = A.from[USize](0)
+    let one = A.from[USize](1)
+    let two = A.from[USize](2)
+    if num <= two then
+      return zero
+    end
+    if num == A.from[USize](3) then
+      return two
+    end
+    // Start from the nearest odd number strictly below num
+    var candidate = if (num % two) == zero then num - one else num - two end
+    while not is_prime(candidate) do
+      if candidate <= two then
+        return zero
+      end
+      candidate = candidate - two
+    end
+    candidate
 
 
 class PrimeIterator[A: UnsignedInteger[A] val = USize] is Iterator[A]
@@ -318,3 +463,113 @@ class PrimeIterator[A: UnsignedInteger[A] val = USize] is Iterator[A]
       _last = _last + A.from[USize](2)
     end
     _last
+
+
+class PrimeSieve
+  """
+  Sieve of Eratosthenes: precomputes all primes up to a given `limit` in
+  O(n log log n) time and O(n) bits of space, then answers primality queries
+  in O(1).
+
+  More efficient than `PrimeIterator` when many primes in a known range are
+  needed, at the cost of upfront memory allocation. The sieve uses a `BitMap`
+  data structure.
+
+  **Usage:**
+  ```pony
+    let sieve = PrimeSieve(1_000_000)
+    try
+      if sieve.is_prime(999983)? then
+        env.out.print("prime!")
+      end
+    end
+    let ps = sieve.all_primes()  // all primes up to 1_000_000
+    env.out.print(sieve.count().string() + " primes")
+  ```
+  """
+
+  let _sieve: BitMap
+    """
+    The bitmap sieve that contains the pre-calculated primes.
+    """
+
+  let _limit: USize
+    """
+    The upper limit of the sieve.
+    """
+
+
+  new create(n: USize) =>
+    """
+    Construct a sieve covering all integers in `[0, n]`.
+    """
+    _limit = n
+    _sieve = BitMap(0, n + 1)
+
+    if n >= 2 then
+      // All numbers >= 2 start as prime candidates; 0 and 1 stay false
+      _sieve.set_range_in_place(2, n + 1)
+      // Sieve: for each prime p, mark all multiples starting from p*p
+      let sqr = n.f64().sqrt().usize() + 1
+      var i: USize = 2
+      while i <= sqr do
+        if _sieve(i) then
+          var j: USize = i * i
+          while j <= n do
+            _sieve.unset(j)
+            j = j + i
+          end
+        end
+        i = i + 1
+      end
+    end
+
+
+  fun is_prime(n: USize): Bool ? =>
+    """
+    Returns `true` iff `n` is prime. O(1) lookup.
+    Returns `false` for `n < 2` (0 and 1 are definitively not prime).
+    Raises an error if `n > limit`: the sieve has no information about numbers
+    beyond its range, so silently returning `false` would be misleading.
+    """
+    if n > _limit then error end
+    if n < 2 then return false end
+    _sieve(n)
+
+
+  fun primes(): Iterator[USize]^ =>
+    """
+    Returns an iterator over all primes up to (and including) the limit,
+    in ascending order. O(1) space, lazy, single-pass.
+    """
+    _sieve.keys()
+
+
+  fun all_primes(): Array[USize] ref =>
+    """
+    Returns all primes up to (and including) the limit, in ascending order,
+    collected into an array.
+
+    According to the [prime-counting function](https://en.wikipedia.org/wiki/Prime-counting_function),
+    the size of the resulting array is approximately `π(n) ~ n / n.log()`. Add this object size
+    to the size of the sieve.
+    """
+    let result = Array[USize](_sieve.cardinality())
+    for p in _sieve.keys() do
+      result.push(p)
+    end
+    result
+
+
+  fun count(): USize =>
+    """
+    Returns π(limit): the number of primes ≤ limit.
+    """
+    _sieve.cardinality()
+
+
+  fun limit(): USize =>
+    """
+    Returns the upper limit of the sieve.
+    """
+    _limit

@@ -31,6 +31,14 @@ actor Main is TestList
     test(_TestPrimeIterator)
     test(_TestCoprime)
     test(_TestProbablyPrime)
+    test(_TestProbablyPrimeEdgeCases)
+    test(_TestPrimeFactorsPerf)
+    test(_TestPrimeFactorsUnique)
+    test(_TestEulerTotient)
+    test(_TestRadical)
+    test(_TestIsSquarefree)
+    test(_TestPrevPrime)
+    test(_TestPrimeSieve)
 
     // Modular arithmetic
     test(_TestGCDLCM)
