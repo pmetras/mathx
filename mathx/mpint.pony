@@ -1257,10 +1257,9 @@ class val MPInt is Comparable[MPInt val]
 
     let this_size = _digits.size()
     let that_size = that._digits.size()
-    let max_size = this_size.max(that_size)
     let size = this_size + that_size
     // The minimal power of 2 for the Fourier transforms
-    let pow2 = (max_size + 1).next_pow2()
+    let pow2 = size.next_pow2()
 
     var i: USize = 0
     let digits: Array[U16] iso = Array[U16].init(0, size)
@@ -1278,8 +1277,6 @@ class val MPInt is Comparable[MPInt val]
         i = i + 1
       end
 
-//a = cdump("astart=", consume a)
-
       var b: Array[Complex[F64]] = Array[Complex[F64]](pow2)
       i = 0
       while i < that_size do
@@ -1291,27 +1288,19 @@ class val MPInt is Comparable[MPInt val]
         i = i + 1
       end
 
-//b = cdump("bstart=", consume b)
-
       // Convolution
       a = FFT.fourier(a)
       b = FFT.fourier(b)
 
-//a = cdump("fouriera=", consume a)
-//b = cdump("fourierb=", consume b)
       // Multiply in dual space with complex multiplication
       i = 0
-      while i < max_size do
+      while i < pow2 do
         b.update(i, a(i)? * b(i)?)?
         i = i + 1
       end
 
-//b = cdump("fouriermult=", consume b)
-
       // Inverse FFT
       b = FFT.fourier(b, true)
-
-//b = cdump("invfourmult=", consume b)
 
       // Convert back to integers
       let base: F64 = _base.f64()
@@ -1340,34 +1329,28 @@ class val MPInt is Comparable[MPInt val]
           digits.update(i, temp.u16())?
         end
 
-Debug("b(" + i.string() + ")=" + b(i)?.string() + ", temp=" + temp.string() + ", carry=" + carry.string() + ", d(" + i.string() + ")=" + (temp - (carry * base)).string() + " / " + (temp - (carry * base)).u16().string())
-
         i = i + 1
       end
 
-let d: Array[U16] = []
-for i' in Range(0, digits.size()) do
-  d.push(digits(i')?)
-end
-Debug("fastmult=" + idump(d))
-//b = cdump("bresult=", consume b)
-
-      ifdef debug then
-        Assert(carry < base, "We can't have a carry (" + 
-              carry.string() + ") higher than " + base.string(), true)?
-      end
-Debug("carry=" + carry.string() + " / " + carry.u16().string())
-
-      let temp = carry.u16()
-      if temp != 0 then
-        try digits.update(size - 1, digits(size - 1)? + temp)? else Debug("Index error in update") end
-      else
-        // Non-significative 0
-        try digits.pop()? else Debug("Error in pop") end
-      end
-
-
-    else
+            ifdef debug then
+              Assert(carry < base, "We can't have a carry (" + 
+                    carry.string() + ") higher than " + base.string(), true)?
+            end
+      
+            // Normalize result
+            var j = digits.size() - 1
+            try
+              while j > 0 do
+                if digits(j)? == 0 then
+                  digits.pop()?
+                else
+                  break
+                end
+                j = j - 1
+              end
+            end
+          else
+      
       Fail("Index (" + i.string() + ") out of bounds [0.." + size.string() + ")")
     end
 
@@ -1377,141 +1360,9 @@ Debug("carry=" + carry.string() + " / " + carry.u16().string())
     _from_array(negative, consume digits)
 
 
+//- Debug -------------------------------------------------------------------
 
-
-
-/*
-  fun fast_mul_backup(that: MPInt): MPInt =>
-    """
-    Fast multiplication of `this` and `that` using FFT. The result has a size
-    of `this.size() + that.size()`.
-
-    See Knuth TAOCP 4.3.3.C
-    """
-    // Multiplication by 0
-    if zero() or that.zero() then
-      return MPInt.from_ilong(0)
-    end
-
-    let this_size = _digits.size()
-    let that_size = that._digits.size()
-    let max_size = this_size.max(that_size)
-    let size = this_size + that_size
-    // The minimal power of 2 for the Fourier transforms
-    let pow2 = (max_size + 1).next_pow2()
-
-    var i: USize = 0
-    let digits: Array[U16] iso = Array[U16].init(0, size)
-
-    try
-      // Convert to arrays of F64
-      let a = Array[F64].init(0.0, pow2)
-      i = 0
-      while i < this_size do
-        a.update(i, _digits(i)?.f64())?
-        i = i + 1
-      end
-
-Debug("astart=" + fdump(a))
-
-      let b = Array[F64].init(0.0, pow2)
-      i = 0
-      while i < that_size do
-        b.update(i, that._digits(i)?.f64())?
-        i = i + 1
-      end
-
-Debug("bstart=" + fdump(b))
-
-      // Convolution
-      FFT.fourier_real(a)
-      FFT.fourier_real(b)
-
-Debug("fouriera=" + fdump(a))
-Debug("fourierb=" + fdump(b))
-      // Multiply in dual space with complex multiplication
-      // Special case of indexes 0 and 1
-      b.update(0, b(0)? * a(0)?)?
-      b.update(1, b(1)? * a(1)?)?
-      i = 2
-      while i < max_size do
-        let temp = b(i)?
-        b.update(i, (temp * a(i)?) - (b(i + 1)? * a(i + 1)?))?
-        b.update(i + 1, (temp * a(i + 1)?) + (b(i + 1)? * a(i)?))?
-        i = i + 2
-      end
-
-Debug("fouriermult=" + fdump(b))
-
-      // Inverse FFT
-      FFT.fourier_real(b, true)
-
-Debug("invfourmult=" + fdump(b))
-
-      // Convert back to integers
-      let base: F64 = _base.f64()
-      var carry: F64 = 0.0
-      i = 0
-      while i < (size - 1) do
-        // Add 0.5 to round conversion
-        let temp = b(i)? + carry + 0.5
-        ifdef debug then
-          Assert(temp > 0.0, "Bug in algorithm: FFT result b(" + i.string() +
-                ")=" + b(i)?.string() + " must be positive", true)?
-        end
-        carry = (temp / base).trunc()
-
-        ifdef debug then
-          Assert(temp >= (carry * base), "Value " + temp.string() +
-                " - " + (carry * base).string() + " must be positive", true)?
-        end
-
-Debug("b(" + i.string() + ")=" + b(i)?.string() + ", temp=" + temp.string() + ", carry=" + carry.string() + ", d(" + i.string() + ")=" + (temp - (carry * base)).string() + " / " + (temp - (carry * base)).u16().string())
-        let m = temp - (carry * base)
-        b.update(i, m)?
-        i = i + 1
-      end
-
-Debug("bresult=" + fdump(b))
-
-      ifdef debug then
-        Assert(carry < base, "We can't have a carry (" + 
-              carry.string() + ") higher than " + base.string(), true)?
-      end
-//Debug("d(" + (size - 1).string() + ")=" + carry.string() + " / " + carry.u16().string())
-
-      // Prepare result
-      i = 0
-      while i < (size - 1) do
-        digits.update(i, b(i)?.u16())?
-        i = i + 1
-      end
-      let temp = carry.u16()
-      if temp != 0 then
-        digits.update(size - 1, temp)?
-      else
-        // Non-significative 0
-        digits.pop()?
-      end
-
-let d: Array[U16] = []
-for i' in Range(0, digits.size()) do
-  d.push(digits(i')?)
-end
-Debug("fastmult=" + idump(d))
-
-    else
-      Fail("Index (" + i.string() + ") out of bounds [0.." + size.string() + ")")
-    end
-
-    // Create result
-    let negative = ((_negative and not that._negative) or
-                    (not _negative and that._negative))
-    _from_array(negative, consume digits)
-*/
-
-
-
+// TODO: Utility debug functions than can be delete after debug.
 
 fun cdump(t: String, a: Array[Complex[F64]]): Array[Complex[F64]] =>
   var s = ""

@@ -431,16 +431,45 @@ class iso _TestMPIntFastMultiplication is UnitTest
 
   fun apply(h: TestHelper) =>
     let rand = Rand()
-for i in Range(0, 1) do
-    //for i in Range(0, 1000) do
+    for i in Range(0, 1000) do
       let a = rand.ilong()
       let a' = MPInt.from_ilong(a)
       let b = rand.ilong()
       let b' = MPInt.from_ilong(b)
 
       h.assert_true((a' * b') == a'.fast_mul(b'), "Fast multiplication")
-h.log((a' * b').string() + " / " + a'.fast_mul(b').string())
-h.log((a' * b').dump() + " / " + a'.fast_mul(b').dump())
     end
 
 
+class iso _TestMPIntFastMultiplicationLarge is UnitTest
+  """
+  Tests on MPInt fast multiplication using FFT with large numbers
+  """
+
+  fun name(): String =>
+    "MPInt/fast_mul_large"
+
+  fun apply(h: TestHelper) =>
+    let rand = Rand()
+    // 128 base-digits is 2^11 * 128 = 2^18 bits
+    // Actually base is 2^16. 128 digits * 16 bits = 2048 bits.
+    // Let's use 200 digits to be sure we are above max_size = 128
+    let size: USize = 200
+
+    for _ in Range(0, 100) do
+      var big1 = MPInt.from_ilong(rand.ilong())
+      for i in Range(1, size) do
+        let n = MPInt.from_ilong(rand.ilong()).abs() << i
+        big1 = big1 + n
+      end
+
+      var big2 = MPInt.from_ilong(rand.ilong())
+      for i in Range(1, size) do
+        let n = MPInt.from_ilong(rand.ilong()).abs() << i
+        big2 = big2 + n
+      end
+
+      let mult1 = big1 * big2
+      let mult2 = big1.fast_mul(big2)
+      h.assert_true(mult1 == mult2, "Fast multiplication of large numbers")
+    end
