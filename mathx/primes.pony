@@ -467,9 +467,9 @@ class PrimeIterator[A: UnsignedInteger[A] val = USize] is Iterator[A]
 
 class PrimeSieve
   """
-  Sieve of Eratosthenes: precomputes all primes up to a given `limit` in
-  O(n log log n) time and O(n) bits of space, then answers primality queries
-  in O(1).
+  [Sieve of Eratosthenes](https://en.wikipedia.org/wiki/Sieve_of_Eratosthenes):
+  precomputes all primes up to a given `limit` in O(n log log n) time and O(n)
+  bits of space, then answers primality queries in O(1).
 
   More efficient than `PrimeIterator` when many primes in a known range are
   needed, at the cost of upfront memory allocation. The sieve uses a `BitMap`
@@ -486,6 +486,9 @@ class PrimeSieve
     let ps = sieve.all_primes()  // all primes up to 1_000_000
     env.out.print(sieve.count().string() + " primes")
   ```
+
+  If you need finding the primes on an interval [low, high], look at
+  [`SegmentedSieve`](#SegmentedSieve).
   """
 
   let _sieve: BitMap
@@ -573,3 +576,136 @@ class PrimeSieve
     Returns the upper limit of the sieve.
     """
     _limit
+
+
+class SegmentedSieve
+  """
+  [Segmented Sieve of Eratosthenes](https://en.wikipedia.org/wiki/Sieve_of_Eratosthenes#Segmented_sieve):
+  finds all primes in the closed interval `[low, high]` using memory
+  proportional to `O(sqrt(high) + (high − low))` bits — much less than a
+  full sieve up to `high`.
+
+  A helper `PrimeSieve` covers `[0, sqrt(high)]` to provide the small
+  sieving primes. The segment `BitMap` is created for the range `[low, high]`
+  only, indexed by absolute position, so `is_prime`, `primes`, and
+  `all_primes` all work with the original numbers without any offset
+  arithmetic on the caller's side.
+
+  **Usage:**
+  ```pony
+    let sieve = SegmentedSieve(1_000_000_000, 1_000_001_000)
+    for p in sieve.primes() do
+      env.out.print(p.string())
+    end
+    env.out.print(sieve.count().string() + " primes in range")
+  ```
+
+  When the `low` bound of the range is small (near to 0 compared with
+  `high` value), consider using [`PrimeSieve`](#PrimeSieve) instead.
+  """
+
+  let _sieve: BitMap
+    """
+    Segment bitmap covering `[_low, _high]` (indexed by absolute position).
+    """
+
+  let _low: USize
+    """
+    Lower bound of the interval (inclusive).
+    """
+
+  let _high: USize
+    """
+    Upper bound of the interval (inclusive).
+    """
+
+
+  new create(low: USize, high: USize) =>
+    """
+    Construct a segmented sieve covering the closed interval `[low, high]`.
+
+    Memory used: `O(sqrt(high))` bits for the helper sieve plus
+    `O(high − low)` bits for the segment bitmap.
+    """
+    _low = low
+    _high = high
+    _sieve = BitMap(low, high + 1)
+
+    if high >= 2 then
+      // Mark all numbers in [max(2, low), high] as prime candidates.
+      let start = if low < 2 then 2 else low end
+      _sieve.set_range_in_place(start, high + 1)
+
+      // Build a small sieve to find all primes up to sqrt(high).
+      let sqr = high.f64().sqrt().usize()
+      let small = PrimeSieve(sqr)
+
+      // For each small prime p, strike its composites in [low, high].
+      for p in small.primes() do
+        // Smallest multiple of p that is >= low.
+        let rem = low % p
+        let first_mult = if rem == 0 then low else low + (p - rem) end
+        // Advance past p itself: the first *composite* multiple is >= 2*p.
+        var j = if first_mult <= p then p + p else first_mult end
+        while j <= high do
+          _sieve.unset(j)
+          j = j + p
+        end
+      end
+    end
+
+
+  fun is_prime(n: USize): Bool ? =>
+    """
+    Returns `true` iff `n` is prime. O(1) lookup.
+    Returns `false` for `n < 2`.
+    Raises an error if `n` is outside `[low, high]`: the sieve has no
+    information about numbers beyond its range, so silently returning `false`
+    would be misleading.
+    """
+    if (n < _low) or (n > _high) then error end
+    if n < 2 then return false end
+    _sieve(n)
+
+
+  fun primes(): Iterator[USize]^ =>
+    """
+    Returns an iterator over all primes in `[low, high]`, in ascending order.
+    O(1) space, lazy, single-pass.
+    """
+    _sieve.keys()
+
+
+  fun all_primes(): Array[USize] ref =>
+    """
+    Returns all primes in `[low, high]`, in ascending order, collected into
+    an array. According to the
+    [prime-counting function](https://en.wikipedia.org/wiki/Prime-counting_function),
+    the approximate count is `π(high) − π(low) ~ (high − low) / ln(high)`.
+    """
+    let result = Array[USize](_sieve.cardinality())
+    for p in _sieve.keys() do
+      result.push(p)
+    end
+    result
+
+
+  fun count(): USize =>
+    """
+    Returns the number of primes in `[low, high]`.
+    """
+    _sieve.cardinality()
+
+
+  fun lower(): USize =>
+    """
+    Returns the lower bound of the sieve interval (inclusive).
+    """
+    _low
+
+
+  fun limit(): USize =>
+    """
+    Returns the upper bound of the sieve interval (inclusive).
+    """
+    _high

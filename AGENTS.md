@@ -25,6 +25,8 @@ The only exception: if you believe a change is truly trivial (a typo fix, a one-
 
 **Research findings belong in the plan**: If research or exploration surfaces issues beyond the original task (inaccurate comments, dead code, related bugs), include them as explicit plan steps — don't just mention them in the analysis and move on. Anything worth noting is worth acting on or explicitly deferring. For findings outside the current branch's scope, add them to a TODO list to track them.
 
+**Report bugs in dependencies; do not work around them**: When a bug is discovered in a dependency or external package, stop and report it to the user with a clear diagnosis and a suggested fix. Do not silently work around the bug in consuming code — workarounds hide the root cause, accumulate as technical debt, and prevent the dependency from being fixed. The consuming code should reflect correct usage, not defensive coding against broken dependencies.
+
 **Self-review is part of "done"**: The recursive principle check described in "Complete the plan, then check in" IS the self-review. It's not a separate step — it's what "done" means. Never report completion without having done it.
 
 **During reviewer loops**: At any point during the review loop — when fixing findings, when unsure about a reviewer's suggestion, when making tradeoff decisions — stop and ask. The automated review removes me as a gatekeeper, not as a collaborator. After a clean review at the pre-PR checkpoint, stop to report "ready for PR" and wait for permission.

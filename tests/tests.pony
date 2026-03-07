@@ -39,6 +39,7 @@ actor Main is TestList
     test(_TestIsSquarefree)
     test(_TestPrevPrime)
     test(_TestPrimeSieve)
+    test(_TestSegmentedSieve)
 
     // Modular arithmetic
     test(_TestGCDLCM)

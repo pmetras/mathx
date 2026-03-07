@@ -382,3 +382,93 @@ class _TestPrimeSieve is UnitTest
       h.assert_true(Prime.is_prime(p),
         "sieve returned non-prime " + p.string())
     end
+
+
+class _TestSegmentedSieve is UnitTest
+  let primes_to_50: Array[USize] val = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
+    31; 37; 41; 43; 47]
+
+  fun name(): String =>
+    "prime/segmented_sieve"
+
+  fun apply(h: TestHelper) ? =>
+    // Segment starting at 0 agrees with PrimeSieve
+    let seg0 = SegmentedSieve(0, 50)
+    h.assert_eq[USize](0, seg0.lower())
+    h.assert_eq[USize](50, seg0.limit())
+    h.assert_array_eq[USize](primes_to_50, seg0.all_primes())
+    h.assert_eq[USize](15, seg0.count())
+
+    // Agree with is_prime (trial division) for each candidate in [0, 50]
+    for n in Range[USize](0, 51) do
+      h.assert_eq[Bool](
+        Prime.is_prime(n),
+        seg0.is_prime(n)?,
+        "segmented sieve disagrees with is_prime at " + n.string())
+    end
+
+    // Out-of-range queries raise an error
+    h.assert_true(
+      try seg0.is_prime(51)?; false else true end,
+      "is_prime(51) should error for SegmentedSieve(0, 50)")
+    h.assert_true(
+      try seg0.is_prime(0 - 1)?; false else true end,
+      "is_prime wrapping negative should error for SegmentedSieve(0, 50)")
+
+    // Interior segment: primes in [100, 150]
+    let seg100 = SegmentedSieve(100, 150)
+    h.assert_eq[USize](100, seg100.lower())
+    h.assert_eq[USize](150, seg100.limit())
+    let expected100: Array[USize] val = [101; 103; 107; 109; 113; 127; 131
+      137; 139; 149]
+    h.assert_array_eq[USize](expected100, seg100.all_primes())
+    h.assert_eq[USize](10, seg100.count())
+
+    // Queries inside the segment are correct; outside raise errors
+    h.assert_true(seg100.is_prime(101)?)
+    h.assert_false(seg100.is_prime(100)?)
+    h.assert_true(
+      try seg100.is_prime(99)?; false else true end,
+      "is_prime(99) should error for SegmentedSieve(100, 150)")
+    h.assert_true(
+      try seg100.is_prime(151)?; false else true end,
+      "is_prime(151) should error for SegmentedSieve(100, 150)")
+
+    // All primes found agree with trial division
+    for p in seg100.primes() do
+      h.assert_true(Prime.is_prime(p),
+        "segmented sieve returned non-prime " + p.string())
+    end
+
+    // Segment that contains no primes: [24, 28]
+    let seg_empty = SegmentedSieve(24, 28)
+    h.assert_eq[USize](0, seg_empty.count())
+
+    // Segment spanning boundary at 2: [1, 3]
+    let seg1_3 = SegmentedSieve(1, 3)
+    h.assert_array_eq[USize]([2; 3], seg1_3.all_primes())
+
+    // Single-element segment at a prime
+    let seg_single = SegmentedSieve(97, 97)
+    h.assert_eq[USize](1, seg_single.count())
+    h.assert_true(seg_single.is_prime(97)?)
+
+    // Single-element segment at a composite
+    let seg_comp = SegmentedSieve(99, 99)
+    h.assert_eq[USize](0, seg_comp.count())
+    h.assert_false(seg_comp.is_prime(99)?)
+
+    // Large-offset segment: primes near 1_000_000 — cross-check with PrimeSieve
+    let full_sieve = PrimeSieve(1_001_000)
+    let seg_large = SegmentedSieve(1_000_000, 1_001_000)
+    h.assert_eq[USize](seg_large.lower(), 1_000_000)
+    var full_count: USize = 0
+    for n in Range[USize](1_000_000, 1_001_001) do
+      if full_sieve.is_prime(n)? then
+        full_count = full_count + 1
+        h.assert_true(seg_large.is_prime(n)?,
+          "segmented sieve missed prime " + n.string())
+      end
+    end
+    h.assert_eq[USize](full_count, seg_large.count(),
+      "segmented sieve prime count doesn't match full sieve")
