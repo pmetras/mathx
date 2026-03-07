@@ -134,6 +134,8 @@ actor Main is TestList
     // FFT: Fast Fourier Transform
     test(_TestFFT[F64])
     test(_TestFFT[F32])
+    test(_TestFFTUnsafe[F64])
+    test(_TestFFTUnsafe[F32])
     test(_TestFFT2[F64])
     test(_TestFFT2[F32])
     test(_TestFFTComplex[F64])

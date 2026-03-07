@@ -8,7 +8,6 @@ use "collections"
 use "../assertx"
 
 
-
 primitive FFT[F: (Float & FloatingPoint[F]) = F64]
   """
   Discrete Fast Fourier Transform on complex numbers. A detailed explanation
@@ -55,13 +54,18 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     reversed, it becomes `001`, and the element is switched to index 1.
     """
     let size = a.size()
-    let width = size.bitwidth()
-    let clz1 = 1 + size.clz()
     var j: USize = 0
     try
-      for i in Range[USize](0, size) do
-        j = i.bit_reverse() >> clz1
-        if j > i then
+      // Incremental bit-reversal: reuses previous j via cheap AND/XOR/OR/shift,
+      // avoiding a full bit_reverse() call for each element.
+      for i in Range[USize](1, size) do
+        var bit = size >> 1
+        while (j and bit) != 0 do
+          j = j xor bit
+          bit = bit >> 1
+        end
+        j = j or bit
+        if i < j then
           a.update(i, a.update(j, a(i)?)?)? // Swap a(i) and a(j) values
         end
       end
@@ -70,38 +74,6 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     end
     a
 
-
-/* TODO DELETE
-  fun rearrange[T: Any val](a: Array[T]): Array[T] =>
-    """
-    Rearrange the indexes of array `a` in bits order.
-
-    The indexes of `a`, when printed in binary, are reversed and exchanged.
-    For instance, the element of `a` at index 4 is `100` in binary. When
-    reversed, it becomes `001`, and the element is switched to index 1.
-    """
-    let size = a.size()
-    var i: USize = 1
-    var j: USize = 1
-    try
-      while i < size do
-        if j > i then
-          a.update(i - 1, a.update(j - 1, a(i - 1)?)?)? // Swap values
-        end
-        var m = size / 2
-        while (m >= 2) and (j > m) do
-          j = j - m
-          m = m / 2
-        end
-        j = j + m
-        i = i + 1
-      end
-    else
-      Fail("Index out of bounds [0.." + size.string() + ") i=" + i.string() +
-           ", j=" + j.string())
-    end
-    a
-*/
 
   fun _normalize(a: Array[Complex[F]]): Array[Complex[F]]^ =>
     """
@@ -175,9 +147,10 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
           i = group
           while i < size do
             j = i + step
+            let ai = a(i)?
             let product = factor * a(j)?
-            a.update(j, a(i)? - product)?
-            a.update(i, a(i)? + product)?
+            a.update(j, ai - product)?
+            a.update(i, ai + product)?
             i = i + jump
           end
 
@@ -359,10 +332,12 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
             j = i + step
             let product_r = (factor_r * a(j - 1)?) - (factor_i * a(j)?)
             let product_i = (factor_r * a(j)?) + (factor_i * a(j - 1)?)
-            a.update(j - 1, a(i - 1)? - product_r)?
-            a.update(j, a(i)? - product_i)?
-            a.update(i - 1, a(i - 1)? + product_r)?
-            a.update(i, a(i)? + product_i)?
+            let ai_re = a(i - 1)?
+            let ai_im = a(i)?
+            a.update(j - 1, ai_re - product_r)?
+            a.update(j,     ai_im - product_i)?
+            a.update(i - 1, ai_re + product_r)?
+            a.update(i,     ai_im + product_i)?
           end
 
           // Trigonometric recurrence
@@ -533,14 +508,14 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         (factor_r, factor_i) = (factor_r + ((factor_r * multiplier_r) -
                                             (factor_i * multiplier_i)),
                                 factor_i + ((factor_i * multiplier_r) +
-                                           (factor_r * multiplier_i)))
+                                            (factor_r * multiplier_i)))
       end
 
       let hr = a(0)?
       if inverse then
         a.update(0, c1 * (hr + a(1)?))?
         a.update(1, c1 * (hr - a(1)?))?
-	a.update((size / 2) + 1, -a((size / 2) + 1)?)?
+	      a.update((size / 2) + 1, -a((size / 2) + 1)?)?
         fourier_complex(a, true, false)
         if normalize then
           let scale = two / F.from[USize](size)
@@ -551,7 +526,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
       else
         a.update(0, hr + a(1)?)?
         a.update(1, hr - a(1)?)?
-	a.update((size / 2) + 1, -a((size / 2) + 1)?)?
+	      a.update((size / 2) + 1, -a((size / 2) + 1)?)?
       end
     else
       Fail("Index out of bounds [0.." + size.string() + ")")
@@ -559,126 +534,6 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     // Return the array
     a
 
-
-/* Backup TODO DELETE
-  fun fourier_real(a: Array[F],
-                   inverse: Bool = false,
-                   normalize: Bool = true)
-                  : Array[F] =>
-    """
-    Calculate the Fourier transform on an array `a` of real numbers instead of
-    complex number. Array `a` is changed to contain the transform result. It
-    replaces these data by the positive frequency half of their complex Fourier
-    transform. The real-valued ﬁrst and last components of the complex transform
-    are returned as elements `a(0)` and `a(1)`, respectively. This is possible
-    because the Fourier transform is
-    [even symmetric](https://en.wikipedia.org/wiki/Discrete_Fourier_transform#DFT_of_real_and_purely_imaginary_signals).
-
-    Note that the Fourier transform of real data is complex data, and the result
-    array contains complex numbers with real and imaginary parts alternate
-    (i.e. a(2*k) = real; a(2*k+1) = imag).
-
-    When `inverse = true`, it calculates the inverse transform of a complex
-    array (where real and imaginary parts alternate) if it is the Fourier
-    transform of real data. No check is done to validate that the input array
-    is the complex DFT of a real array!
-
-    The size of `a` must be a power of 2.
-
-    This algorithm uses in-place transformation, and array `a` content is
-    replaced. It runs in `O(1)` for memory and `O(log2(a.size()))` for execution.
-
-    See [Numerical Recipes 12.3.2](http://numerical.recipes/) for more details.
-    """
-    let size = a.size()
-
-    ifdef debug then
-      try
-        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
-              size.string() + ") must be a power of 2. Enlarge it to " +
-              size.next_pow2().string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
-              "set to `false` only with inverse FFT", true)?
-      end
-    end
-
-    // Constants
-    let pi = F.from[F64](F64.pi())
-    let theta = if inverse then
-        pi / F.from[USize](size / 2)
-      else
-        -pi / F.from[USize](size / 2)
-      end
-    let one = F.from[ISize](1)
-    let two = F.from[ISize](2)
-    let c1 = one / two
-    let c2 = if inverse then c1 else -c1 end
-
-    if not inverse then
-      fourier_complex(a)
-    end
-
-    let temp = (theta / two).sin()
-    let multiplier_r = -two * temp * temp
-    let multiplier_i = theta.sin()
-    var factor_r = one + multiplier_r
-    var factor_i = multiplier_i
-
-    try
-      for i in Range(1, size / 4) do
-        let i1 = i + i
-        let i2 = i1 + 1
-        let i3 = size - i1
-        let i4 = i3 + 1
-
-        // The two transforms are separated
-        let h1r = c1 * (a(i1)? + a(i3)?)
-        let h1i = c1 * (a(i2)? - a(i4)?)
-        let h2r = -c2 * (a(i2)? + a(i4)?)
-        let h2i = c2 * (a(i1)? - a(i3)?)
-
-        // And recombined to form the true transform of the original data
-        let tr = (factor_r * h2r) - (factor_i * h2i)
-        let ti = (factor_r * h2i) + (factor_i * h2r)
-        a.update(i1, h1r + tr)?
-        a.update(i2, h1i + ti)?
-        a.update(i3, h1r - tr)?
-        a.update(i4, -h1i + ti)?
-	// TODO DELETE
-        //a.update(i1, h1r + ((factor_r * h2r) - (factor_i * h2i)))?
-        //a.update(i2, h1i + ((factor_r * h2i) + (factor_i * h2r)))?
-        //a.update(i3, h1r - ((factor_r * h2r) - (factor_i * h2i)))?
-        //a.update(i4, -h1i + ((factor_r * h2i) + (factor_i * h2r)))?
-
-        // Trigonometric recurrence
-        (factor_r, factor_i) = (factor_r + ((factor_r * multiplier_r) -
-                                            (factor_i * multiplier_i)),
-                                factor_i + (factor_i * multiplier_r) +
-                                           (factor_r * multiplier_i))
-      end
-
-      let hr = a(0)?
-      if inverse then
-        a.update(0, c1 * (hr + a(1)?))?
-        a.update(1, c1 * (hr - a(1)?))?
-        fourier_complex(a, true, false)
-        if normalize then
-          let scale = two / F.from[USize](size)
-          for i in Range(0, size) do
-            a.update(i, a(i)? * scale)?
-          end
-        end
-      else
-        a.update(0, hr + a(1)?)?
-        a.update(1, hr - a(1)?)?
-      end
-    else
-      Fail("Index out of bounds [0.." + size.string() + ")")
-    end
-    // Return the array
-    a
-*/
 
   fun fourier2(a: Array[Complex[F val]],
                inverse: Bool = false,
@@ -738,9 +593,10 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
           var k: USize = 0
           for i in Range[USize](group, group + half) do
             let j = i + half
+            let ai = a(i)?
             let product = a(j)? * root1(k)?
-            a.update(j, a(i)? - product)?
-            a.update(i, a(i)? + product)?
+            a.update(j, ai - product)?
+            a.update(i, ai + product)?
             k = k + jump
           end
         end
@@ -782,7 +638,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     vectors and uses the `Complex[F]]` class.
     """
     let size = a.size()
-    // Find a power-of-2 convolution length m such that m >= 2 * size + 1
+    // Find a power-of-2 convolution length m such that m >= 2 * size - 1
     let m = 2 * size.next_pow2()
 
     // Prepare trigonometric tables
@@ -802,16 +658,17 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
       let u = Array[Complex[F]].init(Complex[F], m)
       for i in Range[USize](0, size) do
         //let re = (a(i)?.real() * root1(i)?.real()) + (a(i)?.imag() * root1(i)?.imag())
-	//let im = (-a(i)?.real() * root1(i)?.imag()) + (a(i)?.imag() * root1(i)?.real())
+      	//let im = (-a(i)?.real() * root1(i)?.imag()) + (a(i)?.imag() * root1(i)?.real())
         //u.update(i, Complex[F](re, im))?
-	u.update(i, a(i)? * root1(i)?)?
+	      u.update(i, a(i)? * root1(i)?)?
       end
       
       let v = Array[Complex[F]].init(Complex[F], m)
       v.update(0, root1(0)?)?
       for i in Range[USize](1, size) do
-        v.update(i, root1(i)?.conj())?
-	v.update(m - i, root1(i)?.conj())?
+        let c = root1(i)?.conj()
+        v.update(i, c)?
+        v.update(m - i, c)?
       end
       
       // Convolution
@@ -820,9 +677,9 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
       // Postprocessing
       for i in Range[USize](0, size) do
         //let re = (w(i)?.real() * root1(i)?.real()) + (w(i)?.imag() * root1(i)?.imag())
-	//let im = (-w(i)?.real() * root1(i)?.imag()) + (w(i)?.imag() * root1(i)?.real())
+	      //let im = (-w(i)?.real() * root1(i)?.imag()) + (w(i)?.imag() * root1(i)?.real())
         //a.update(i, Complex[F](re, im))?
-	a.update(i, w(i)? * root1(i)?)?
+	      a.update(i, w(i)? * root1(i)?)?
       end
 
       // If inverse, scale the result if normalize is required
@@ -875,4 +732,3 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     // u' contains the convolution now
     u'
     
-

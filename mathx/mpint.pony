@@ -50,10 +50,10 @@ class val MPInt is Comparable[MPInt val]
     a fast multiplication algorithm. Mutliplication of arbitrary-long integers
     involves lots of sum of products:
     `(_digits(i)? * _digits(j - k)?) + (_digits(i + 1) * _digits(j - k - 1)?) + ...` 
-    These are convolutions, that can be calculated efficitiently by using FFT
+    These are convolutions, that can be calculated efficiently by using FFT
     (Fast Fourier Transforms). So the multiplication is transformed to a dual
     space with FFT and converted back with inverse FFT. But the result must be
-    and integer, while the FFT is calculated using floats. In order not to
+    an integer, while the FFT is calculated using floats. In order not to
     lose precision (and to be exact), we should use a range of floats that can
     represent integers (**flint**). `F64` in Pony is using iEEE-754 format and
     has a mantissa of 53 bits. Without taking into account the summation, a
@@ -325,6 +325,7 @@ class val MPInt is Comparable[MPInt val]
     let size = _digits.size()
     let digits: Array[U16] iso = Array[U16](size)
     var i: USize = 0
+    // The loop cannot be avoided
     try
       while i < size do
         digits.push(_digits(i)?)
@@ -353,7 +354,7 @@ class val MPInt is Comparable[MPInt val]
       return "0".clone()
     end
 
-    // Preallocate the string. A U16 can have 5 digits in decimal representation.
+    // Pre-allocate the string. A U16 can have 5 digits in decimal representation.
     var result: String iso = String(5 * size)
     // We get a copy because the _short_div has side effects
     let tmp = clone()
@@ -837,11 +838,11 @@ class val MPInt is Comparable[MPInt val]
     try
       while i < size do
         digits.update(i + n, _digits(i)?)?
-	i = i + 1
+	      i = i + 1
       end
     else
       Fail("Index (" + i.string() + ") out of bounds [0.." +
-	   (size + n).string() + ")")
+	        (size + n).string() + ")")
     end
     _from_array(_negative, consume digits)
 
@@ -864,12 +865,12 @@ class val MPInt is Comparable[MPInt val]
       var i: USize = n
       try
         while i < size do
-	  digits.update(i - n, _digits(i)?)?
-	  i = i + 1
-	end
+          digits.update(i - n, _digits(i)?)?
+          i = i + 1
+        end
       else
-	Fail("Index (" + i.string() + ") out of bounds [" +
-	     (size - n).string() + "..0)")
+	      Fail("Index (" + i.string() + ") out of bounds [" +
+	          (size - n).string() + "..0)")
       end
       _from_array(_negative, consume digits)
     end
@@ -881,19 +882,9 @@ class val MPInt is Comparable[MPInt val]
     """
     Return a new `MPInt` with value `-this`.
     """
-    let size = _digits.size()
-    let digits: Array[U16] iso = Array[U16](size)
-    var i: USize = 0
-
-    try
-      while i < size do
-        digits.push(_digits(i)?)
-	i = i + 1
-      end
-    else
-      Fail("Index (" + i.string() + ") out of range [0.." + size.string() + ")")
-    end
-    _from_array(not _negative, consume digits)
+    let result = clone()
+    result._negative = not _negative
+    result
 
 
   fun add(that: MPInt): MPInt =>
@@ -1022,44 +1013,44 @@ class val MPInt is Comparable[MPInt val]
 
     try
       var carry: U32 = 0
-        while i < size do
+      while i < size do
 //Debug("Sum1 i=" + i.string())
-          let s = _digits(i)?.u32() + that._digits(i)?.u32() + carry
-          carry = _high(s).u32()
+        let s = _digits(i)?.u32() + that._digits(i)?.u32() + carry
+        carry = _high(s).u32()
 //Debug("Sum1     d(i)=" + _digits(i)?.string() + ", ta(i)=" + that._digits(i)?.string())
-          _digits.update(i, _low(s))?
+        _digits.update(i, _low(s))?
 //Debug("Sum1 now d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
+        i = i + 1
+      end
+
+      if this_size < that_size then
+        while i < that_size do
+//Debug("Sum2 i=" + i.string())
+          let s = that._digits(i)?.u32() + carry
+//Debug("Sum2     d(i)=0, ta(i)=" + that._digits(i)?.string())
+          carry = _high(s).u32()
+          _digits.push(_low(s))
+//Debug("Sum2 now d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
           i = i + 1
         end
-
-        if this_size < that_size then
-          while i < that_size do
-//Debug("Sum2 i=" + i.string())
-            let s = that._digits(i)?.u32() + carry
-//Debug("Sum2     d(i)=0, ta(i)=" + that._digits(i)?.string())
-            carry = _high(s).u32()
-            _digits.push(_low(s))
-//Debug("Sum2 now d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
-            i = i + 1
-          end
-        else
-          while i < this_size do
+      else
+        while i < this_size do
 //Debug("Sum3 i=" + i.string())
-            let s = _digits(i)?.u32() + carry
+          let s = _digits(i)?.u32() + carry
 //Debug("Sum3     d(i)=" + _digits(i)?.string() + ", ta(i)=0")
-            carry = _high(s).u32()
-            _digits.update(i, _low(s))?
+          carry = _high(s).u32()
+          _digits.update(i, _low(s))?
 //Debug("Sum3 now d(i)=" + _digits(i)?.string() + ", carry=" + carry.string())
-            i = i + 1
-          end
-	  if carry != 0 then
-//Debug("Sum3 add carry=" + _low(carry).string())
-	    _digits.push(_low(carry))
-	  end
+          i = i + 1
         end
+        if carry != 0 then
+//Debug("Sum3 add carry=" + _low(carry).string())
+          _digits.push(_low(carry))
+        end
+      end
     else
       Fail("Index (" + i.string() + ") out of range [0.." + this_size.string() +
-           ") or [0.." + that_size.string() + ")")
+            ") or [0.." + that_size.string() + ")")
     end
 
 
@@ -1210,37 +1201,37 @@ class val MPInt is Comparable[MPInt val]
       let half = size / 2
 
       // Most of the time, these loops will raise an error for out of bound
-      // index. It won't only when size if odd and this and that have the same
+      // index. It won't only when size is odd and this and that have the same
       // size.
       let this_l: Array[U16] iso = Array[U16](half)
       try
         for i in Range(0, half) do
-	  this_l.push(_digits(i)?)
-	end
+      	  this_l.push(_digits(i)?)
+	      end
       end
       let this_low = recover val _from_array(_negative, consume this_l) end
 
       let this_h: Array[U16] iso = Array[U16](size - half)
       try
         for i in Range(0, half + 1) do
-	  this_h.push(_digits(i + half)?)
-	end
+          this_h.push(_digits(i + half)?)
+        end
       end
       let this_high = recover val _from_array(_negative, consume this_h) end
 
       let that_l: Array[U16] iso = Array[U16](half)
       try
         for i in Range(0, half) do
-	  that_l.push(that._digits(i)?)
-	end
+          that_l.push(that._digits(i)?)
+        end
       end
       let that_low = recover val _from_array(that._negative, consume that_l) end
 
       let that_h: Array[U16] iso = Array[U16](size - half)
       try
         for i in Range(0, half + 1) do
-	  that_h.push(that._digits(i + half)?)
-	end
+          that_h.push(that._digits(i + half)?)
+        end
       end
       let that_high = recover val _from_array(that._negative, consume that_h) end
 
@@ -1248,7 +1239,7 @@ class val MPInt is Comparable[MPInt val]
       let z0 = this_low.karatsuba_mul(that_low)
       let z1 = (this_low + this_high).karatsuba_mul(that_low + that_high) - z2 - z0
 
-        (z2 << (2 * half)) + (z1 << half) + z0
+      (z2 << (2 * half)) + (z1 << half) + z0
     end  
 
 
@@ -1287,7 +1278,7 @@ class val MPInt is Comparable[MPInt val]
         i = i + 1
       end
 
-a = cdump("astart=", consume a)
+//a = cdump("astart=", consume a)
 
       var b: Array[Complex[F64]] = Array[Complex[F64]](pow2)
       i = 0
@@ -1300,14 +1291,14 @@ a = cdump("astart=", consume a)
         i = i + 1
       end
 
-b = cdump("bstart=", consume b)
+//b = cdump("bstart=", consume b)
 
       // Convolution
       a = FFT.fourier(a)
       b = FFT.fourier(b)
 
-a = cdump("fouriera=", consume a)
-b = cdump("fourierb=", consume b)
+//a = cdump("fouriera=", consume a)
+//b = cdump("fourierb=", consume b)
       // Multiply in dual space with complex multiplication
       i = 0
       while i < max_size do
@@ -1315,12 +1306,12 @@ b = cdump("fourierb=", consume b)
         i = i + 1
       end
 
-b = cdump("fouriermult=", consume b)
+//b = cdump("fouriermult=", consume b)
 
       // Inverse FFT
       b = FFT.fourier(b, true)
 
-b = cdump("invfourmult=", consume b)
+//b = cdump("invfourmult=", consume b)
 
       // Convert back to integers
       let base: F64 = _base.f64()

@@ -2,11 +2,8 @@
 //
 // Some of these tests compare the results of FFT class with those of a naive DFT
 // implementations. The comparisons of both values, arrays of complex numbers,
-// is done relative to the modulus of the complex numbers. You'll see that two
-// complex are considered almost equals with a precision of 1e-2 or 1e-3. These
-// high error accuracy numbers results of the tests being done with big random
-// numbers being used to detect if overflows occur. In practice, relative errors
-// are much lower when using these functions.
+// is done relative to the modulus of the complex numbers, using appromimated
+// equality `almost_eq` with the default tolerance values (`F.epsilon().sqrt()`).
 
 use "format"
 
@@ -152,7 +149,7 @@ class iso _TestFFT[F: (Float & FloatingPoint[F])] is UnitTest
     try
       for i in Range(0, 1024) do
         // To avoid impact of calculation errors, we approximate equality with relative tolerance
-        h.assert_true(((x * a_fft(i)?) + (y * b_fft(i)?)).almost_eq(c_fft(i)?, F.from[F64](1e-6)), "Linear operator")
+        h.assert_true(((x * a_fft(i)?) + (y * b_fft(i)?)).almost_eq(c_fft(i)?), "Linear operator")
       end
     else
       h.fail("Error while testing FFT linearity")
@@ -166,18 +163,9 @@ class iso _TestFFT[F: (Float & FloatingPoint[F])] is UnitTest
       reverse.push(cx)
       reverse_fft.push(cx)
     end
-    // TODO DELETE
+
     let original = FFT[F].fourier(FFT[F].fourier(reverse), true)
-    try
-      for i in Range(0, 2048) do
-        h.assert_true(reverse_fft(i)?.almost_eq(original(i)?, F.from[F64](1e-6)), "Reverse FFT")
-      end
-    else
-      h.fail("Reverse FFT")
-    end
-    //h.assert_array_almost_eq[Complex[F], F](reverse_fft, original, "Reverse FFT")
-    // TODO HERE
-    h.assert_array_almost_eq[Complex[F], F](reverse_fft, original, F.from[F64](1e-6), F.from[F64](0.0), "Reverse FFT")
+    h.assert_array_almost_eq[Complex[F], F](reverse_fft, original, "Reverse FFT")
 
     // A more complex function
     let sinus: Array[Complex[F]] = []
@@ -203,18 +191,7 @@ class iso _TestFFT[F: (Float & FloatingPoint[F])] is UnitTest
     end
 
     let sfft = FFT[F].fourier(sinus)
-
-    // TODO DELETE
-    try
-      for i in Range(0, 256) do
-        h.assert_true(sinus_fft(i)?.almost_eq(sfft(i)?, F.from[F64](1e-6)), "Combined cosinus + sinus, i=" + i.string())
-      end
-    else
-      h.fail("Combined sinus + cosinus")
-    end
-    //h.assert_array_almost_eq[Complex[F], F](sinus_fft, sfft, "Combined cosinus + sinus")
-    // TODO HERE
-    h.assert_array_almost_eq[Complex[F], F](sinus_fft, sfft, F.from[F64](1e-6), F.from[F64](0.0), "Combined cosinus + sinus")
+    h.assert_array_almost_eq[Complex[F], F](sinus_fft, sfft, "Combined cosinus + sinus")
 
     // Compare with naive implementation
     let four = Array[Complex[F]](2048)
@@ -227,39 +204,100 @@ class iso _TestFFT[F: (Float & FloatingPoint[F])] is UnitTest
     let orig = four.clone()
     let four_fft = FFT[F].fourier(four)
     let naiv_fft = _FFT[F].naive_fft(naiv)
-    // TODO DELETE
-    try
-      for i in Range(0, 2048) do
-        // TODO: We need to lower accuracy to 0.05! Higher than 1e-2!
-        h.assert_true(four_fft(i)?.almost_eq(naiv_fft(i)?, F.from[F64](1e-6)), "Naive implementation, i=" + i.string())
-        if not four_fft(i)?.almost_eq(naiv_fft(i)?, F.from[F64](1e-6)) then
-          h.log("i=" + i.string() + ", four_fft=" + four_fft(i)?.string() + " / " + naiv_fft(i)?.string())
-        end
-      end
-    else
-      h.fail("Naive implementation")
-    end
-    //h.assert_array_almost_eq[Complex[F], F](four_fft, naiv_fft, "Naive implementation")
-    // TODO HERE
-    h.assert_array_almost_eq[Complex[F], F](four_fft, naiv_fft, F.from[F64](1e-6), F.from[F64](0.0), "Naive implementation")
+    h.assert_array_almost_eq[Complex[F], F](four_fft, naiv_fft, "Naive implementation")
 
     // Now inverse
     let rev = FFT[F].fourier(four_fft, true)
+    h.assert_array_almost_eq[Complex[F], F](rev, orig, "Inverse fourier")
 
-    // TODO DELETE
-    try
-      for i in Range(0, 2048) do
-        h.assert_true(rev(i)?.almost_eq(orig(i)?, F.from[F64](1e-6)), "Inverse fourier, i=" + i.string())
-        if not rev(i)?.almost_eq(orig(i)?, F.from[F64](1e-6)) then
-          h.log("i=" + i.string() + ", rev=" + rev(i)?.string() + " / " + orig(i)?.string())
-        end
-      end
-    else
-      h.fail("Inverse fourier")
+    // Parseval's theorem: sum(|x[n]|^2) == (1/N) * sum(|X[k]|^2)
+    // Energy is preserved under DFT (up to a 1/N normalization factor)
+    let px: Array[Complex[F]] = []
+    let parseval_n: USize = 256
+    for _ in Range(0, parseval_n) do
+      px.push(Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real())))
     end
-    //h.assert_array_almost_eq[Complex[F], F](rev, orig, "Inverse fourier")
-    // TODO HERE
-    h.assert_array_almost_eq[Complex[F], F](rev, orig, F.from[F64](1e-6), F.from[F64](0.0), "Inverse fourier")
+    var energy_x: F = zero
+    try
+      for i in Range(0, parseval_n) do
+        energy_x = energy_x + px(i)?.abs2()
+      end
+    end
+    let px_fft = FFT[F].fourier(px)
+    var energy_fft: F = zero
+    try
+      for i in Range(0, parseval_n) do
+        energy_fft = energy_fft + px_fft(i)?.abs2()
+      end
+    end
+    // Parseval: energy_x == energy_fft / N
+    let parseval_lhs = energy_x
+    let parseval_rhs = energy_fft / F.from[USize](parseval_n)
+    h.assert_true(
+      Complex[F](parseval_lhs).almost_eq(Complex[F](parseval_rhs)),
+      "Parseval's theorem")
+
+
+class iso _TestFFTUnsafe[F: (Float & FloatingPoint[F])] is UnitTest
+  """
+  Tests on `fourier_unsafe`, which must produce the same results as `fourier`.
+  """
+
+  fun name(): String =>
+    "fft/fourier_unsafe"
+
+  fun apply(h: TestHelper) =>
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+
+    // FFT of impulse is a constant
+    let impulse: Array[Complex[F]] = []
+    impulse.push(Complex[F](one))
+    for _ in Range(1, 256) do
+      impulse.push(Complex[F](zero))
+    end
+    let impulse_fft: Array[Complex[F]] = []
+    for _ in Range(0, 256) do
+      impulse_fft.push(Complex[F](one))
+    end
+    h.assert_array_eq[Complex[F]](impulse_fft,
+      FFT[F].fourier_unsafe(impulse), "fourier_unsafe of impulse is constant")
+
+    // FFT of constant is impulse
+    let constant: Array[Complex[F]] = []
+    for _ in Range(0, 512) do
+      constant.push(Complex[F](one))
+    end
+    let constant_fft: Array[Complex[F]] = []
+    constant_fft.push(Complex[F](F.from[ISize](512)))
+    for _ in Range(1, 512) do
+      constant_fft.push(Complex[F](zero))
+    end
+    h.assert_array_eq[Complex[F]](constant_fft,
+      FFT[F].fourier_unsafe(constant), "fourier_unsafe of constant is impulse")
+
+    // fourier_unsafe agrees with fourier on random input, and inverse round-trips
+    let rand = Rand
+    for n in Range(4, 12) do
+      let pow2 = UnsignedComp.pow2(n)
+      let a: Array[Complex[F]] = []
+      let b: Array[Complex[F]] = []
+      for _ in Range(0, pow2) do
+        let cx = Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real()))
+        a.push(cx)
+        b.push(cx)
+      end
+      let orig = a.clone()
+      let a_fft = FFT[F].fourier(a)
+      let b_fft = FFT[F].fourier_unsafe(b)
+      h.assert_array_almost_eq[Complex[F], F](a_fft, b_fft,
+        "fourier_unsafe == fourier, n=" + n.string())
+
+      // Inverse round-trip
+      let rev = FFT[F].fourier_unsafe(b_fft, true)
+      h.assert_array_almost_eq[Complex[F], F](orig, rev,
+        "fourier_unsafe inverse, n=" + n.string())
+    end
 
 
 class iso _TestFFTComplex[F: (Float & FloatingPoint[F])] is UnitTest
@@ -286,27 +324,27 @@ class iso _TestFFTComplex[F: (Float & FloatingPoint[F])] is UnitTest
           b.push(real)
           b.push(imag)
         end
-	let orig = b.clone()
+      	let orig = b.clone()
 
         let a_fft = _FFT[F].naive_fft(a)
         let b_fft = FFT[F].fourier_complex(b)
 
         for i in Range(0, pow2) do
-          h.assert_true(a_fft(i)?.almost_eq(Complex[F](b_fft(2 * i)?, b_fft((2 * i) + 1)?), F.from[F64](1e-6)), "fourier_complex, i=" + i.string())
-          if not a_fft(i)?.almost_eq(Complex[F](b_fft(2 * i)?, b_fft((2 * i) + 1)?), F.from[F64](1e-6)) then
+          h.assert_true(a_fft(i)?.almost_eq(Complex[F](b_fft(2 * i)?, b_fft((2 * i) + 1)?)), "fourier_complex, i=" + i.string())
+          if not a_fft(i)?.almost_eq(Complex[F](b_fft(2 * i)?, b_fft((2 * i) + 1)?)) then
             h.log("i=" + i.string() + ", a_fft=" + a_fft(i)?.string() + " / " + b_fft(2 * i)?.string() + ", " + b_fft((2 * i) + 1)?.string())
           end
         end
 
-	// Now inverse
-	let rev = FFT[F].fourier_complex(b_fft, true)
+        // Now inverse
+        let rev = FFT[F].fourier_complex(b_fft, true)
 
-	for i in Range(0, pow2) do
+        for i in Range(0, pow2) do
           h.assert_true(((rev(i)? - orig(i)?) / orig(i)?).abs() < F.from[F64](1e-3), "Inverse fourier_complex, i=" + i.string())
           if not (((rev(i)? - orig(i)?) / orig(i)?).abs() < F.from[F64](1e-3)) then
             h.log("i=" + i.string() + ", rev=" + rev(i)?.string() + " / " + orig(i)?.string())
           end
-	end
+	      end
       else
         h.fail("Equality naive fourier == fourier_complex")
       end
@@ -372,42 +410,40 @@ class iso _TestFFTReal[F: (Float & FloatingPoint[F])] is UnitTest
         let pow2 = UnsignedComp.pow2(n)
         let a = Array[Complex[F]](pow2)
         let b = Array[F](pow2)
-	let orig = Array[F](pow2)
+      	let orig = Array[F](pow2)
 
         for _ in Range(0, pow2) do
           let real = F.from[F64](rand.real() * I32.max_value().f64())
           a.push(Complex[F](real, F.from[F64](0.0)))
           b.push(real)
-	  orig.push(real)
+	        orig.push(real)
         end
 
         let a_fft = _FFT[F].naive_fft(a)
         let b_fft = FFT[F].fourier_real(b)
 
-        // TODO DELETE h.assert_true(((a_fft(0)?.real() - b_fft(0)?) / a_fft(0)?.real()).abs() < F.from[F64](1e-3), "fourier_real(0)")
-        // TODO DELETE h.assert_true(((a_fft(pow2 / 2)?.real() - b_fft(1)?) / a_fft(pow2 / 2)?.real()).abs() < F.from[F64](1e-3), "fourier_real(pow2 / 2)")
-        h.assert_almost_eq[Complex[F], F](Complex[F](b_fft(0)?), Complex[F](a_fft(0)?.real()), F.from[F64](1e-6), F.from[F64](0.0), "fourier_real(0)")
-        h.assert_almost_eq[Complex[F], F](Complex[F](b_fft(1)?), Complex[F](a_fft(pow2 / 2)?.real()), F.from[F64](1e-6), F.from[F64](0.0), "fourier_real(pow2 / 2)")
+        h.assert_almost_eq[Complex[F], F](Complex[F](b_fft(0)?), Complex[F](a_fft(0)?.real()), "fourier_real(0)")
+        h.assert_almost_eq[Complex[F], F](Complex[F](b_fft(1)?), Complex[F](a_fft(pow2 / 2)?.real()), "fourier_real(pow2 / 2)")
         for i in Range(1, pow2 / 2) do
       	  let c_i = Complex[F](b_fft(2 * i)?, b_fft((2 * i) + 1)?)
-          h.assert_almost_eq[Complex[F], F](c_i, a_fft(i)?, F.from[F64](1e-6), F.from[F64](0.0), "fourier_real, i=" + i.string())
-          if not c_i.almost_eq(a_fft(i)?, F.from[F64](1e-6)) then
+          h.assert_almost_eq[Complex[F], F](c_i, a_fft(i)?, "fourier_real, i=" + i.string())
+          if not c_i.almost_eq(a_fft(i)?) then
             h.log("i=" + i.string() + ", a_fft=" + a_fft(i)?.string() + " / " + b_fft(2 * i)?.string() + ", " + b_fft((2 * i) + 1)?.string())
           end
         end
 
         // Inverse FFT
         let rev = FFT[F].fourier_real(b_fft, true)
-
-        // TODO DELETE
+        // We can't use assert_array_almost_eq here because F32 and F64 don't have the
+        // trait Approximated.
+        //h.assert_array_almost_eq[F, F](rev, orig, "Inverse fourier_real")
         for i in Range(0, pow2) do
           h.assert_true(((rev(i)? - orig(i)?) / orig(i)?).abs() < F.from[F64](1e-2), "Inverse fourier_real, i=" + i.string())
           if not (((rev(i)? - orig(i)?) / orig(i)?).abs() < F.from[F64](1e-2)) then
             h.log("i=" + i.string() + ", rev=" + rev(i)?.string() + " / " + orig(i)?.string() + " eps=" + ((rev(i)? - orig(i)?) / orig(i)?).abs().string())
           end
         end
-        // TODO HERE
-        //h.assert_array_almost_eq[F, F](rev, orig, F.from[F64](1e-6), F.from[F64](0.0), "Inverse fourier_real")
+
       else
         h.fail("Equality naive fourier == fourier_real")
       end
@@ -426,48 +462,26 @@ class iso _TestFFT2[F: (Float & FloatingPoint[F])] is UnitTest
   fun apply(h: TestHelper) =>
     let rand = Rand
     for n in Range(4, 12) do
-      try
-        let pow2 = UnsignedComp.pow2(n)
-        let a: Array[Complex[F]] = []
-        let b: Array[Complex[F]] = []
+      let pow2 = UnsignedComp.pow2(n)
+      let a: Array[Complex[F]] = []
+      let b: Array[Complex[F]] = []
 
-        for _ in Range(0, pow2) do
-          let real = F.from[F64](rand.real() * I32.max_value().f64())
-          let imag = F.from[F64](rand.real() * I32.max_value().f64())
-          a.push(Complex[F](real, imag))
-          b.push(Complex[F](real, imag))
-        end
-
-	let orig = a.clone()
-
-        let a_fft = _FFT[F].naive_fft(a)
-        let b_fft = FFT[F].fourier2(b)
-
-        // TODO DELETE
-        for i in Range(0, pow2) do
-          h.assert_true(a_fft(i)?.almost_eq(b_fft(i)?, F.from[F64](1e-6)), "Almost equal")
-          if not a_fft(i)?.almost_eq(b_fft(i)?, F.from[F64](1e-6)) then
-            h.log("i=" + i.string() + ", a_fft=" + a_fft(i)?.string() + " / b_fft=" + b_fft(i)?.string())
-          end
-        end
-	// TODO THERE
-	h.assert_array_almost_eq[Complex[F], F](a_fft, b_fft, F.from[F64](1e-6), F.from[F64](0.0), "Almost equal")
-
-        // Now inverse
-	let rev = FFT[F].fourier2(b_fft, true)
-
-        // TODO DELETE
-	for i in Range(0, pow2) do
-          h.assert_true(rev(i)?.almost_eq(orig(i)?, F.from[F64](1e-6)), "Inverse fourier2, i=" + i.string())
-          if not rev(i)?.almost_eq(orig(i)?, F.from[F64](1e-6)) then
-            h.log("i=" + i.string() + ", rev=" + rev(i)?.string() + " / " + orig(i)?.string())
-          end
-	end
-	// TODO HERE
-	h.assert_array_almost_eq[Complex[F], F](rev, orig, F.from[F64](1e-6), F.from[F64](0.0), "Inverse fourier2")
-      else
-        h.fail("Equality naive fourier == fourier2")
+      for _ in Range(0, pow2) do
+        let real = F.from[F64](rand.real() * I32.max_value().f64())
+        let imag = F.from[F64](rand.real() * I32.max_value().f64())
+        a.push(Complex[F](real, imag))
+        b.push(Complex[F](real, imag))
       end
+
+      let orig = a.clone()
+      let a_fft = _FFT[F].naive_fft(a)
+      let b_fft = FFT[F].fourier2(b)
+
+      h.assert_array_almost_eq[Complex[F], F](a_fft, b_fft, "fourier2 almost equal")
+
+      // Now inverse
+      let rev = FFT[F].fourier2(b_fft, true)
+      h.assert_array_almost_eq[Complex[F], F](rev, orig, "Inverse fourier2")
     end
 
 
@@ -482,36 +496,55 @@ class iso _TestFFTConvolution[F: (Float & FloatingPoint[F])] is UnitTest
   fun apply(h: TestHelper) =>
     let rand = Rand
     for n in Range(4, 12) do
-      try
-        let pow2 = UnsignedComp.pow2(n)
-        let a: Array[Complex[F]] = []
-        let b: Array[Complex[F]] = []
+      let pow2 = UnsignedComp.pow2(n)
+      let a: Array[Complex[F]] = []
+      let b: Array[Complex[F]] = []
 
-        for _ in Range(0, pow2) do
-          let real_a = F.from[F64](rand.real() * I32.max_value().f64())
-          let imag_a = F.from[F64](rand.real() * I32.max_value().f64())
-          a.push(Complex[F](real_a, imag_a))
-          let real_b = F.from[F64](rand.real() * I32.max_value().f64())
-          let imag_b = F.from[F64](rand.real() * I32.max_value().f64())
-          b.push(Complex[F](real_b, imag_b))
-	end
-
-        let naive_conv = _FFT[F].naive_convolve(a, b)
-        let convolution = FFT[F].convolve(a, b)
-
-        // TODO DELETE
-        for i in Range(0, pow2) do
-          h.assert_true(convolution(i)?.almost_eq(naive_conv(i)?, F.from[F64](1e-6)), "Almost equal convolutions")
-          if not convolution(i)?.almost_eq(naive_conv(i)?, F.from[F64](1e-6)) then
-            h.log("i=" + i.string() + ", convolution=" + convolution(i)?.string() + " / naive_conv=" + naive_conv(i)?.string())
-          end
-        end
-	// TODO HERE
-	h.assert_array_almost_eq[Complex[F], F](convolution, naive_conv, F.from[F64](1e-6), F.from[F64](0.0), "Almost equal convolutions")
-      else
-        h.fail("Equality naive convolution == convolution")
+      for _ in Range(0, pow2) do
+        let real_a = F.from[F64](rand.real() * I32.max_value().f64())
+        let imag_a = F.from[F64](rand.real() * I32.max_value().f64())
+        a.push(Complex[F](real_a, imag_a))
+        let real_b = F.from[F64](rand.real() * I32.max_value().f64())
+        let imag_b = F.from[F64](rand.real() * I32.max_value().f64())
+        b.push(Complex[F](real_b, imag_b))
       end
+
+      let naive_conv = _FFT[F].naive_convolve(a, b)
+      let convolution = FFT[F].convolve(a, b)
+      h.assert_array_almost_eq[Complex[F], F](convolution, naive_conv, "Almost equal convolutions")
     end
+
+    let zero = F.from[ISize](0)
+    let one = F.from[ISize](1)
+
+    // Convolution identity: convolve(a, impulse) == a
+    // impulse[0]=1, rest=0 is the identity element for circular convolution
+    let n_id: USize = 256
+    let sig = Array[Complex[F]](n_id)
+    let imp_id = Array[Complex[F]](n_id)
+    imp_id.push(Complex[F](one))
+    for _ in Range(1, n_id) do
+      imp_id.push(Complex[F](zero))
+    end
+    for _ in Range(0, n_id) do
+      sig.push(Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real())))
+    end
+    let sig_orig = sig.clone()
+    // convolve clones its inputs internally so sig is not modified
+    h.assert_array_almost_eq[Complex[F], F](sig_orig, FFT[F].convolve(sig, imp_id),
+      "Convolution with impulse is identity")
+
+    // Convolution commutativity: convolve(a, b) == convolve(b, a)
+    let n_comm: USize = 128
+    let ca = Array[Complex[F]](n_comm)
+    let cb = Array[Complex[F]](n_comm)
+    for _ in Range(0, n_comm) do
+      ca.push(Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real())))
+      cb.push(Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real())))
+    end
+    let ab = FFT[F].convolve(ca.clone(), cb.clone())
+    let ba = FFT[F].convolve(cb, ca)
+    h.assert_array_almost_eq[Complex[F], F](ab, ba, "Convolution is commutative")
 
 
 class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
@@ -541,20 +574,7 @@ class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
       end
 
       let imp = FFT[F].bluestein(impulse)
-      h.assert_array_almost_eq[Complex[F], F](impulse_fft, imp, F.from[F64](1e-6), F.from[F64](0.0), "Bluestein FFT of impulse is constant")
-      // TODO DELETE
-      try
-        for i in Range(0, n) do
-          // To avoid impact of calculation errors, we approximate equality with relative tolerance
-          h.assert_true(imp(i)?.almost_eq(impulse_fft(i)?, F.from[F64](1e-6)), "Bluestein FFT of impulse is constant")
-          if not imp(i)?.almost_eq(impulse_fft(i)?, F.from[F64](1e-6)) then
-            h.log("i=" + i.string() + ", imp=" + imp(i)?.string() + " / " + impulse_fft(i)?.string())
-          end
-        end
-      else
-        h.fail("Error while testing Bluestein FFT of impulse")
-      end
-      // TODO HERE
+      h.assert_array_almost_eq[Complex[F], F](impulse_fft, imp, "Bluestein FFT of impulse is constant")
 
       // FFT of constant is impulse
       let constant = Array[Complex[F]](n)
@@ -569,20 +589,7 @@ class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
       end
 
       let const = FFT[F].bluestein(constant)
-      h.assert_array_almost_eq[Complex[F], F](constant_fft, const, F.from[F64](1e-6), F.from[F64](0.0), "Bluestein FFT of constant is impulse")
-      // TODO DELETE
-      try
-        for i in Range(0, n) do
-          // To avoid impact of calculation errors, we approximate equality with relative tolerance
-          h.assert_true(const(i)?.almost_eq(constant_fft(i)?, F.from[F64](1e-6)), "Bluestein FFT of constant is impulse")
-          if not const(i)?.almost_eq(constant_fft(i)?, F.from[F64](1e-6)) then
-            h.log("i=" + i.string() + ", const=" + const(i)?.string() + " / " + constant_fft(i)?.string())
-          end
-        end
-      else
-        h.fail("Error while testing Bluestein FFT of constant")
-      end
-      // TODO HERE
+      h.assert_array_almost_eq[Complex[F], F](constant_fft, const, "Bluestein FFT of constant is impulse")
 
       // FFT is linear
       let a = Array[Complex[F]](n)
@@ -601,7 +608,7 @@ class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
         a.push(ca)
         b.push(cb)
         c.push(cc)
-	a_orig.push(ca)
+      	a_orig.push(ca)
       end
 
       let a_fft = FFT[F].bluestein(a)
@@ -611,7 +618,7 @@ class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
       try
         for i in Range(0, n) do
           // To avoid impact of calculation errors, we approximate equality with relative tolerance
-          h.assert_true(((x * a_fft(i)?) + (y * b_fft(i)?)).almost_eq(c_fft(i)?, F.from[F64](1e-6)), "Linear operator")
+          h.assert_almost_eq[Complex[F], F]((x * a_fft(i)?) + (y * b_fft(i)?), c_fft(i)?, "Linear operator")
         end
       else
         h.fail("Error while testing Bluestein FFT linearity")
@@ -620,17 +627,31 @@ class iso _TestFFTBluestein[F: (Float & FloatingPoint[F])] is UnitTest
       // Check that we have a DFT when n is a power of 2
       if (n and (n - 1)) == 0 then
         let a_orig_fft = FFT[F].fourier2(a_orig)
-	// TODO DELETE
-	try
-	  for i in Range(0, n) do
-	    h.assert_true(a_fft(i)?.almost_eq(a_orig_fft(i)?, F.from[F64](1e-6)), "Bluestein DFT of " + i.string())
-	  end
-	else
-	  h.fail("Bluestein is not a DFT")
-	end
-	// TODO HERE
-	h.assert_array_almost_eq[Complex[F], F](a_fft, a_orig_fft, F.from[F64](1e-6), F.from[F64](0.0), "Bluestein DFT")
+	      h.assert_array_almost_eq[Complex[F], F](a_fft, a_orig_fft, "Bluestein DFT")
       end
     end
 
+    // Non-power-of-2 sizes: verify Bluestein against naive DFT and test inverse round-trip
+    let non_pow2_sizes: Array[USize] = [3; 5; 10; 100; 127; 500]
+    for n2 in non_pow2_sizes.values() do
+      let input = Array[Complex[F]](n2)
+      let input_orig = Array[Complex[F]](n2)
+      for _ in Range(0, n2) do
+        let cx = Complex[F](F.from[F64](rand.real()), F.from[F64](rand.real()))
+        input.push(cx)
+        input_orig.push(cx)
+      end
+
+      // naive_fft reads input without modifying it
+      let naive = _FFT[F].naive_fft(input)
+      // bluestein modifies input in-place and returns it
+      let blue = FFT[F].bluestein(input)
+      h.assert_array_almost_eq[Complex[F], F](naive, blue,
+        "Bluestein vs naive DFT, n=" + n2.string())
+
+      // Inverse round-trip
+      let rev = FFT[F].bluestein(blue, true)
+      h.assert_array_almost_eq[Complex[F], F](input_orig, rev,
+        "Bluestein inverse, n=" + n2.string())
+    end
 
