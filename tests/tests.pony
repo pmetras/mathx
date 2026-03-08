@@ -183,4 +183,8 @@ actor Main is TestList
     test(_TestMPIntKaratsuba)
     test(_TestMPIntFastMultiplication)
     test(_TestMPIntFastMultiplicationLarge)
+    test(_TestMPIntMultiplicationComparison)
+    test(_TestMPIntMultiplicationEdgeCases)
+    test(_TestMPIntTrait)
+    test(_TestMPIntDivision)
 

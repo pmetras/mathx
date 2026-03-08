@@ -712,23 +712,23 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
       end
     end
 
-    let u' = u.clone()
-    let v' = v.clone()
+    let new_u = u.clone()
+    let new_v = v.clone()
     
-    fourier(u')
-    fourier(v')
+    fourier(new_u)
+    fourier(new_v)
     
     try
       for i in Range[USize](0, size) do
-        u'.update(i, u'(i)? * v'(i)?)?
+        new_u.update(i, new_u(i)? * new_v(i)?)?
       end
     else
       Fail("Index access error")
     end
     
     // Inverse FFT
-    fourier(u', true)
+    fourier(new_u, true)
     
-    // u' contains the convolution now
-    u'
+    // new_u contains the convolution now
+    new_u
     

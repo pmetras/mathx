@@ -11,3 +11,11 @@ The library includes various mathematical algorithms.
 ## Setup
 
 You need to install `libgmp-dev` and `libmpfr-dev` if you want to use GMP and MPFR
+
+## TODO
+
+[x] Replace calls to `FFT.fourier` in `MPInt.fast_mul` by calls to `FFT.fourier_real` that is optimized for performance and memory.
+[ ] Check if there is any advantages of replacing `MPInt._base` type from `U32` to `USize`.
+[x] Complete implementation of `MPInt.divrem`.
+[ ] Conversion of `MPInt` to `Bitmap` and reverse, and complete bit operations.
+
