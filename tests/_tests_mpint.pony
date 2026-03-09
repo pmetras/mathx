@@ -885,3 +885,405 @@ class iso _TestMPIntPow is UnitTest
     h.assert_true(
       MPInt.from_ilong(999).pow_mod(MPInt.from_ilong(999), one) == zero,
       "x^n mod 1 = 0")
+
+
+class iso _TestMPIntPredicates is UnitTest
+  """
+  Tests for neg, is_one, is_minus_one, abs(0), min/max edge cases.
+  """
+
+  fun name(): String =>
+    "MPInt/predicates"
+
+  fun apply(h: TestHelper) =>
+    let zero = MPInt.from_ilong(0)
+    let one  = MPInt.from_ilong(1)
+    let m1   = MPInt.from_ilong(-1)
+
+    // neg
+    h.assert_true(MPInt.from_ilong(5).neg()  == MPInt.from_ilong(-5), "neg(5) = -5")
+    h.assert_true(MPInt.from_ilong(-5).neg() == MPInt.from_ilong(5),  "neg(-5) = 5")
+    h.assert_true(zero.neg().is_zero(),                                "neg(0) = 0")
+
+    // is_one
+    h.assert_true(one.is_one(),                         "1.is_one()")
+    h.assert_false(zero.is_one(),                       "0 not is_one")
+    h.assert_false(MPInt.from_ilong(2).is_one(),        "2 not is_one")
+    h.assert_false(m1.is_one(),                         "-1 not is_one")
+
+    // is_minus_one
+    h.assert_true(m1.is_minus_one(),                    "-1.is_minus_one()")
+    h.assert_false(zero.is_minus_one(),                 "0 not is_minus_one")
+    h.assert_false(one.is_minus_one(),                  "1 not is_minus_one")
+    h.assert_false(MPInt.from_ilong(-2).is_minus_one(), "-2 not is_minus_one")
+
+    // abs(0) == 0
+    h.assert_true(zero.abs().is_zero(), "abs(0) = 0")
+
+    // min/max with negative values
+    let neg3 = MPInt.from_ilong(-3)
+    let pos5 = MPInt.from_ilong(5)
+    h.assert_true(neg3.min(pos5) == neg3, "min(-3, 5) = -3")
+    h.assert_true(pos5.min(neg3) == neg3, "min(5, -3) = -3")
+    h.assert_true(neg3.max(pos5) == pos5, "max(-3, 5) = 5")
+    h.assert_true(pos5.max(neg3) == pos5, "max(5, -3) = 5")
+
+    // min/max with equal values
+    h.assert_true(pos5.min(pos5) == pos5, "min(x, x) = x")
+    h.assert_true(neg3.max(neg3) == neg3, "max(x, x) = x")
+
+    // min/max with both negative
+    let neg7 = MPInt.from_ilong(-7)
+    h.assert_true(neg3.min(neg7) == neg7, "min(-3, -7) = -7")
+    h.assert_true(neg3.max(neg7) == neg3, "max(-3, -7) = -3")
+
+
+class iso _TestMPIntHash is UnitTest
+  """
+  Tests for hash: equal values must hash equally; hash must be stable.
+  """
+
+  fun name(): String =>
+    "MPInt/hash"
+
+  fun apply(h: TestHelper) =>
+    let zero  = MPInt.from_ilong(0)
+    let one   = MPInt.from_ilong(1)
+    let m_one = MPInt.from_ilong(-1)
+
+    // Stability: same value → same hash
+    h.assert_true(zero.hash() == MPInt.from_ilong(0).hash(), "hash stable: 0")
+    h.assert_true(one.hash()  == MPInt.from_ilong(1).hash(), "hash stable: 1")
+
+    // Equal values have equal hashes (including signed-zero equivalence)
+    let rand = Rand(99)
+    for _ in Range(0, 500) do
+      let v = rand.ilong()
+      let a = MPInt.from_ilong(v)
+      let b = MPInt.from_ilong(v)
+      h.assert_true(a.hash() == b.hash(), "equal → same hash")
+    end
+
+    // Different signs produce different hashes (0 vs -1)
+    h.assert_false(zero.hash() == m_one.hash(), "hash(0) != hash(-1)")
+    h.assert_false(one.hash()  == m_one.hash(), "hash(1) != hash(-1)")
+
+
+class iso _TestMPIntCarry is UnitTest
+  """
+  Tests for addc, subc, mulc, divc, remc, fldc, modc.
+  For MPInt, overflow never occurs; the carry/borrow flag is always false
+  except for division by zero where it is true.
+  """
+
+  fun name(): String =>
+    "MPInt/carry"
+
+  fun apply(h: TestHelper) =>
+    let five = MPInt.from_ilong(5)
+    let three = MPInt.from_ilong(3)
+    let ten  = MPInt.from_ilong(10)
+    let zero = MPInt.from_ilong(0)
+
+    (let r_add, let c_add) = five.addc(three)
+    h.assert_true(r_add == MPInt.from_ilong(8), "addc: result")
+    h.assert_false(c_add,                       "addc: no carry")
+
+    (let r_sub, let c_sub) = five.subc(three)
+    h.assert_true(r_sub == MPInt.from_ilong(2), "subc: result")
+    h.assert_false(c_sub,                       "subc: no carry")
+
+    (let r_mul, let c_mul) = five.mulc(three)
+    h.assert_true(r_mul == MPInt.from_ilong(15), "mulc: result")
+    h.assert_false(c_mul,                        "mulc: no carry")
+
+    (let r_div, let c_div) = ten.divc(three)
+    h.assert_true(r_div == MPInt.from_ilong(3), "divc: result")
+    h.assert_false(c_div,                       "divc: no overflow")
+
+    (let r_div0, let c_div0) = ten.divc(zero)
+    h.assert_true(c_div0, "divc by zero: overflow flag set")
+
+    (let r_rem, let c_rem) = ten.remc(three)
+    h.assert_true(r_rem == MPInt.from_ilong(1), "remc: result")
+    h.assert_false(c_rem,                       "remc: no overflow")
+
+    (let r_rem0, let c_rem0) = ten.remc(zero)
+    h.assert_true(c_rem0, "remc by zero: overflow flag set")
+
+    (let r_fld, let c_fld) = ten.fldc(three)
+    h.assert_true(r_fld == MPInt.from_ilong(3), "fldc: result")
+    h.assert_false(c_fld,                       "fldc: no overflow")
+
+    (let r_fld0, let c_fld0) = ten.fldc(zero)
+    h.assert_true(c_fld0, "fldc by zero: overflow flag set")
+
+    (let r_mod, let c_mod) = ten.modc(three)
+    h.assert_true(r_mod == MPInt.from_ilong(1), "modc: result")
+    h.assert_false(c_mod,                       "modc: no overflow")
+
+    (let r_mod0, let c_mod0) = ten.modc(zero)
+    h.assert_true(c_mod0, "modc by zero: overflow flag set")
+
+
+class iso _TestMPIntPartialOps is UnitTest
+  """
+  Tests for add_partial, sub_partial, mul_partial, div_partial, rem_partial,
+  divrem_partial, fld_partial, mod_partial.
+  add/sub/mul never error; div/rem/fld/mod error on zero divisor.
+  """
+
+  fun name(): String =>
+    "MPInt/partial_ops"
+
+  fun apply(h: TestHelper) =>
+    let a = MPInt.from_ilong(10)
+    let b = MPInt.from_ilong(3)
+    let zero = MPInt.from_ilong(0)
+
+    // add/sub/mul: always succeed
+    h.assert_no_error({() ? => a.add_partial(b)? }, "add_partial ok")
+    h.assert_no_error({() ? => a.sub_partial(b)? }, "sub_partial ok")
+    h.assert_no_error({() ? => a.mul_partial(b)? }, "mul_partial ok")
+
+    try
+      h.assert_true(a.add_partial(b)? == MPInt.from_ilong(13), "add_partial result")
+      h.assert_true(a.sub_partial(b)? == MPInt.from_ilong(7),  "sub_partial result")
+      h.assert_true(a.mul_partial(b)? == MPInt.from_ilong(30), "mul_partial result")
+    else
+      h.fail("partial arith results")
+    end
+
+    // div/rem/fld/mod: succeed for non-zero
+    h.assert_no_error({() ? => a.div_partial(b)?     }, "div_partial ok")
+    h.assert_no_error({() ? => a.rem_partial(b)?     }, "rem_partial ok")
+    h.assert_no_error({() ? => a.divrem_partial(b)?  }, "divrem_partial ok")
+    h.assert_no_error({() ? => a.fld_partial(b)?     }, "fld_partial ok")
+    h.assert_no_error({() ? => a.mod_partial(b)?     }, "mod_partial ok")
+
+    try
+      h.assert_true(a.div_partial(b)?    == MPInt.from_ilong(3), "div_partial result")
+      h.assert_true(a.rem_partial(b)?    == MPInt.from_ilong(1), "rem_partial result")
+      h.assert_true(a.fld_partial(b)?    == MPInt.from_ilong(3), "fld_partial result")
+      h.assert_true(a.mod_partial(b)?    == MPInt.from_ilong(1), "mod_partial result")
+      (let q, let r) = a.divrem_partial(b)?
+      h.assert_true(q == MPInt.from_ilong(3), "divrem_partial q")
+      h.assert_true(r == MPInt.from_ilong(1), "divrem_partial r")
+    else
+      h.fail("partial div results")
+    end
+
+    // error on zero divisor
+    h.assert_error({() ? => a.div_partial(zero)?    }, "div_partial zero errors")
+    h.assert_error({() ? => a.rem_partial(zero)?    }, "rem_partial zero errors")
+    h.assert_error({() ? => a.divrem_partial(zero)? }, "divrem_partial zero errors")
+    h.assert_error({() ? => a.fld_partial(zero)?    }, "fld_partial zero errors")
+    h.assert_error({() ? => a.mod_partial(zero)?    }, "mod_partial zero errors")
+
+
+class iso _TestMPIntUnsafeArith is UnitTest
+  """
+  Tests that _unsafe arithmetic variants produce the same results as their
+  safe counterparts (for MPInt they are identical).
+  """
+
+  fun name(): String =>
+    "MPInt/unsafe_arith"
+
+  fun apply(h: TestHelper) =>
+    let a = MPInt.from_ilong(42)
+    let b = MPInt.from_ilong(7)
+
+    h.assert_true(a.add_unsafe(b) == (a + b), "add_unsafe")
+    h.assert_true(a.sub_unsafe(b) == (a - b), "sub_unsafe")
+    h.assert_true(a.mul_unsafe(b) == (a * b), "mul_unsafe")
+    h.assert_true(a.div_unsafe(b) == (a / b), "div_unsafe")
+    h.assert_true(a.rem_unsafe(b) == (a % b), "rem_unsafe")
+    h.assert_true(a.fld_unsafe(b) == a.fld(b), "fld_unsafe")
+    h.assert_true(a.mod_unsafe(b) == a.mod(b), "mod_unsafe")
+
+    (let q1, let r1) = a.divrem(b)
+    (let q2, let r2) = a.divrem_unsafe(b)
+    h.assert_true(q1 == q2, "divrem_unsafe q")
+    h.assert_true(r1 == r2, "divrem_unsafe r")
+
+    // Negative operands
+    let ma = MPInt.from_ilong(-42)
+    h.assert_true(ma.div_unsafe(b) == ma.div(b), "div_unsafe negative")
+    h.assert_true(ma.rem_unsafe(b) == ma.rem(b), "rem_unsafe negative")
+    h.assert_true(ma.fld_unsafe(b) == ma.fld(b), "fld_unsafe negative")
+    h.assert_true(ma.mod_unsafe(b) == ma.mod(b), "mod_unsafe negative")
+
+
+class iso _TestMPIntConversions is UnitTest
+  """
+  Tests for all numeric conversion methods: i8 through u128, f32, f64,
+  and all _unsafe variants.
+  """
+
+  fun name(): String =>
+    "MPInt/conversions"
+
+  fun apply(h: TestHelper) =>
+    let n = MPInt.from_ilong(42)
+    let z = MPInt.from_ilong(0)
+
+    // Signed integer round-trips for small value
+    h.assert_true(n.i8()    == 42,   "i8(42)")
+    h.assert_true(n.i16()   == 42,   "i16(42)")
+    h.assert_true(n.i32()   == 42,   "i32(42)")
+    h.assert_true(n.i64()   == 42,   "i64(42)")
+    h.assert_true(n.i128()  == 42,   "i128(42)")
+    h.assert_true(n.ilong() == 42,   "ilong(42)")
+    h.assert_true(n.isize() == 42,   "isize(42)")
+
+    // Unsigned integer round-trips for small value
+    h.assert_true(n.u8()    == 42,   "u8(42)")
+    h.assert_true(n.u16()   == 42,   "u16(42)")
+    h.assert_true(n.u32()   == 42,   "u32(42)")
+    h.assert_true(n.u64()   == 42,   "u64(42)")
+    h.assert_true(n.u128()  == 42,   "u128(42)")
+    h.assert_true(n.ulong() == 42,   "ulong(42)")
+    h.assert_true(n.usize() == 42,   "usize(42)")
+
+    // Zero
+    h.assert_true(z.i8()   == 0,  "i8(0)")
+    h.assert_true(z.u64()  == 0,  "u64(0)")
+    h.assert_true(z.f32()  == 0,  "f32(0)")
+
+    // Boundary: signed type limits
+    h.assert_true(MPInt.from_ilong(127).i8()    ==  127, "i8 max")
+    h.assert_true(MPInt.from_ilong(-128).i8()   == -128, "i8 min")
+    h.assert_true(MPInt.from_ilong(32767).i16() ==  32767, "i16 max")
+    h.assert_true(MPInt.from_ilong(-32768).i16() == -32768, "i16 min")
+
+    // Boundary: unsigned type limits
+    h.assert_true(MPInt.from_ilong(255).u8()   == 255,   "u8 max")
+    h.assert_true(MPInt.from_ilong(65535).u16() == 65535, "u16 max")
+    h.assert_true(MPInt.from_ilong(4294967295).u32() == 4294967295, "u32 max")
+
+    // u64 round-trip for value above I64.max_value() (2^63)
+    let big_pos = MPInt.from_ilong(ILong.max_value()) + MPInt.from_ilong(2)
+    h.assert_true(big_pos.u64() == (ILong.max_value().u64() + 2), "u64 > 2^63")
+
+    // u128 round-trip for value above I128.max_value()
+    let i128_max = MPInt.from_ilong(ILong.max_value()).bit_shl(MPInt.from_ilong(64))
+    let big128 = i128_max + MPInt.from_ilong(1)
+    h.assert_true(big128.u128() != 0, "u128 > 2^127 is non-zero")
+
+    // Float conversions
+    h.assert_true(n.f32() == 42.0, "f32(42)")
+    h.assert_true(n.f64() == 42.0, "f64(42)")
+    // f32 exact up to 2^24
+    h.assert_true(MPInt.from_ilong(16777216).f32() == 16777216.0, "f32 at 2^24")
+
+    // Negative conversions
+    h.assert_true(MPInt.from_ilong(-42).i8()  == -42, "i8(-42)")
+    h.assert_true(MPInt.from_ilong(-42).i32() == -42, "i32(-42)")
+    h.assert_true(MPInt.from_ilong(-42).f64() == -42.0, "f64(-42)")
+
+    // _unsafe variants equal safe variants
+    h.assert_true(n.i8_unsafe()    == n.i8(),    "i8_unsafe")
+    h.assert_true(n.i16_unsafe()   == n.i16(),   "i16_unsafe")
+    h.assert_true(n.i32_unsafe()   == n.i32(),   "i32_unsafe")
+    h.assert_true(n.i64_unsafe()   == n.i64(),   "i64_unsafe")
+    h.assert_true(n.i128_unsafe()  == n.i128(),  "i128_unsafe")
+    h.assert_true(n.ilong_unsafe() == n.ilong(), "ilong_unsafe")
+    h.assert_true(n.isize_unsafe() == n.isize(), "isize_unsafe")
+    h.assert_true(n.u8_unsafe()    == n.u8(),    "u8_unsafe")
+    h.assert_true(n.u16_unsafe()   == n.u16(),   "u16_unsafe")
+    h.assert_true(n.u32_unsafe()   == n.u32(),   "u32_unsafe")
+    h.assert_true(n.u64_unsafe()   == n.u64(),   "u64_unsafe")
+    h.assert_true(n.u128_unsafe()  == n.u128(),  "u128_unsafe")
+    h.assert_true(n.ulong_unsafe() == n.ulong(), "ulong_unsafe")
+    h.assert_true(n.usize_unsafe() == n.usize(), "usize_unsafe")
+    h.assert_true(n.f32_unsafe()   == n.f32(),   "f32_unsafe")
+    h.assert_true(n.f64_unsafe()   == n.f64(),   "f64_unsafe")
+
+
+class iso _TestMPIntShiftAlias is UnitTest
+  """
+  Tests that shl/shr/shl_unsafe/shr_unsafe delegate correctly to bit_shl/bit_shr.
+  """
+
+  fun name(): String =>
+    "MPInt/shift_alias"
+
+  fun apply(h: TestHelper) =>
+    let a = MPInt.from_ilong(42)
+    let n = MPInt.from_ilong(3)
+
+    h.assert_true(a.shl(n)        == a.bit_shl(n), "shl == bit_shl")
+    h.assert_true(a.shr(n)        == a.bit_shr(n), "shr == bit_shr")
+    h.assert_true(a.shl_unsafe(n) == a.bit_shl(n), "shl_unsafe == bit_shl")
+    h.assert_true(a.shr_unsafe(n) == a.bit_shr(n), "shr_unsafe == bit_shr")
+
+    // Also verify with zero shift and large shift
+    let zero_shift = MPInt.from_ilong(0)
+    h.assert_true(a.shl(zero_shift) == a, "shl(0) = identity")
+    h.assert_true(a.shr(zero_shift) == a, "shr(0) = identity")
+
+    // Cross-digit shift
+    let n16 = MPInt.from_ilong(16)
+    h.assert_true(a.shl(n16) == a.bit_shl(n16), "shl cross-digit")
+    h.assert_true(a.shl(n16).shr(n16) == a,     "shl/shr round-trip")
+
+
+class iso _TestMPIntPowEdge is UnitTest
+  """
+  Edge cases for pow, gcd, isqrt not covered by _TestMPIntPow.
+  """
+
+  fun name(): String =>
+    "MPInt/pow_edge"
+
+  fun apply(h: TestHelper) =>
+    let zero = MPInt.from_ilong(0)
+    let one  = MPInt.from_ilong(1)
+
+    // pow edge cases
+    // 0^0 = 1 (convention: n.is_zero() returns 1 before checking base)
+    h.assert_true(zero.pow(zero) == one, "0^0 = 1")
+    // 1^n = 1
+    h.assert_true(one.pow(MPInt.from_ilong(1000)) == one, "1^1000 = 1")
+    // n^1 = n
+    let five = MPInt.from_ilong(5)
+    h.assert_true(five.pow(one) == five, "5^1 = 5")
+    h.assert_true(MPInt.from_ilong(-3).pow(one) == MPInt.from_ilong(-3), "(-3)^1 = -3")
+    // large exponent
+    h.assert_true(
+      MPInt.from_ilong(2).pow(MPInt.from_ilong(32)) == MPInt.from_ilong(4294967296),
+      "2^32 = 4294967296")
+
+    // gcd with negative inputs (gcd operates on abs values)
+    h.assert_true(
+      MPInt.from_ilong(-12).gcd(MPInt.from_ilong(8)) == MPInt.from_ilong(4),
+      "gcd(-12, 8) = 4")
+    h.assert_true(
+      MPInt.from_ilong(12).gcd(MPInt.from_ilong(-8)) == MPInt.from_ilong(4),
+      "gcd(12, -8) = 4")
+    h.assert_true(
+      MPInt.from_ilong(-12).gcd(MPInt.from_ilong(-8)) == MPInt.from_ilong(4),
+      "gcd(-12, -8) = 4")
+    // gcd(0, 0) = 0
+    h.assert_true(zero.gcd(zero).is_zero(), "gcd(0, 0) = 0")
+    // gcd(x, x) = x
+    h.assert_true(
+      MPInt.from_ilong(12).gcd(MPInt.from_ilong(12)) == MPInt.from_ilong(12),
+      "gcd(12, 12) = 12")
+
+    // isqrt for larger perfect squares
+    // 65536 = 256^2
+    h.assert_true(
+      MPInt.from_ilong(65536).isqrt() == MPInt.from_ilong(256),
+      "isqrt(65536) = 256")
+    // 2^32 = (2^16)^2
+    h.assert_true(
+      MPInt.from_ilong(2).pow(MPInt.from_ilong(32)).isqrt() == MPInt.from_ilong(65536),
+      "isqrt(2^32) = 65536")
+    // Non-perfect-square: isqrt(2) = 1, isqrt(3) = 1, isqrt(8) = 2
+    h.assert_true(MPInt.from_ilong(2).isqrt() == one,                "isqrt(2) = 1")
+    h.assert_true(MPInt.from_ilong(3).isqrt() == one,                "isqrt(3) = 1")
+    h.assert_true(MPInt.from_ilong(8).isqrt() == MPInt.from_ilong(2), "isqrt(8) = 2")
+    // Just below a perfect square: isqrt(35) = 5 (since 5^2=25 ≤ 35 < 36=6^2)
+    h.assert_true(MPInt.from_ilong(35).isqrt() == MPInt.from_ilong(5), "isqrt(35) = 5")
