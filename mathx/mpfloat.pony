@@ -4,6 +4,89 @@ use "debug"
 use "../assertx"
 
 
+type RoundingMode is (RoundingNearest | RoundingNegInf | RoundingPosInf |
+                      RoundingZero | RoundingAwayZ | RoundingFaithful )
+  """
+  The rounding mode that must be applied to operations.
+
+  * MPFloat_RNDN: round to nearest, with the even rounding rule (roundTiesToEven in IEEE 754).
+  * MPFloat_RNDD: round toward negative infinity (roundTowardNegative in IEEE 754).
+  * MPFloat_RNDU: round toward positive infinity (roundTowardPositive in IEEE 754).
+  * MPFloat_RNDZ: round toward zero (roundTowardZero in IEEE 754).
+  * MPFloat_RNDA: round away from zero.
+  * MPFloat_RNDF: faithful rounding. This feature is currently experimental.
+
+  For full definition and background: https://www.mpfr.org/mpfr-current/mpfr.html#Rounding
+  and https://en.wikipedia.org/wiki/Rounding
+  """
+
+
+primitive RoundingNearest
+    """
+    Round to the nearest, with the even rounding rule.
+    """
+  fun apply(): I32 =>
+    0
+
+  fun string(): String =>
+    "MPFloat_RNDN"
+
+
+primitive RoundingNegInf
+    """
+    Round toward negative infinity.
+    """
+  fun apply(): I32 =>
+    3
+
+  fun string(): String =>
+    "MPFloat_RNDD"
+
+
+primitive RoundingPosInf
+    """
+    Round toward positive infinity.
+    """
+  fun apply(): I32 =>
+    2
+
+  fun string(): String =>
+    "MPFloat_RNDU"
+
+
+primitive RoundingZero
+    """
+    Round toward zero.
+    """
+  fun apply(): I32 =>
+    1
+
+  fun string(): String =>
+    "MPFloat_RNDZ"
+
+
+primitive RoundingAwayZ
+    """
+    Round away from zero.
+    """
+  fun apply(): I32 =>
+    4
+
+  fun string(): String =>
+    "MPFloat_RNDA"
+
+
+primitive RoundingFaithful
+    """
+    Faithfull rounding.
+    """
+  fun apply(): I32 =>
+    5
+
+  fun string(): String =>
+    "MPFloat_RNDF"
+
+
 class MPFloat
   """
   MPFloat represent real numbers with arbitrary precision.

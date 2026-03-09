@@ -187,4 +187,9 @@ actor Main is TestList
     test(_TestMPIntMultiplicationEdgeCases)
     test(_TestMPIntTrait)
     test(_TestMPIntDivision)
+    test(_TestMPIntShift)
+    test(_TestMPIntBitwise)
+    test(_TestMPIntSign)
+    test(_TestMPIntBitAccess)
+    test(_TestMPIntPow)
 

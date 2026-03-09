@@ -2,11 +2,12 @@
 
 use "debug"
 use "../assertx"
+use "../bitsx"
 use "format"
 use "collections"
 
 
-class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
+class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Comparable[MPInt] & Stringable)
   """
   A multiple-precision integer that can be used for arbitrary precision
   calculation on integers.
@@ -457,7 +458,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     ctz()
 
 
-  fun \do_not_use\ rotl(y: MPInt val): MPInt =>
+  fun \do_not_use\ rotl(that: MPInt val): MPInt =>
     """
     Rotate left. Not supported for arbitrary precision, returns a copy.
 
@@ -466,7 +467,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     _create(_negative, _digits)
 
 
-  fun \do_not_use\ rotr(y: MPInt val): MPInt =>
+  fun \do_not_use\ rotr(that: MPInt val): MPInt =>
     """
     Rotate right. Not supported for arbitrary precision, returns a copy.
 
@@ -475,58 +476,117 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     _create(_negative, _digits)
 
 
-  fun \do_not_use\ bit_shl(y: MPInt val): MPInt =>
+  fun bit_shl(that: MPInt val): MPInt =>
     """
-    Bit-level shift left.
+    Bit-level shift left: return `this * 2^that`, preserving sign.
+    If `that` is negative or `this` is zero, return a copy unchanged.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    The shift is decomposed into a *digit*-level shift (`that / 16`) and a
+    sub-digit bit shift (`that % 16`), with carry propagation between *digits*.
     """
-    _create(_negative, _digits) // TODO
+    if that._negative or is_zero() then
+      return _create(_negative, _digits)
+    end
+
+    let n = that.usize()
+    let digit_shift = n / _base_bits()
+    let bit_shift = n % _base_bits()
+    let d = recover val
+      let res = Array[U16](_digits.size() + digit_shift + 1)
+      // Zero-fill the low digits
+      for _ in Range(0, digit_shift) do
+        res.push(0)
+      end
+
+      // Shift each digit left, propagating carry
+      var carry: U32 = 0
+      for digit in _digits.values() do
+        let v = (digit.u32() << bit_shift.u32()) or carry
+        res.push(v.u16())
+        carry = v >> 16
+      end
+      if carry > 0 then
+        res.push(carry.u16())
+      end
+      res
+    end
+    _create(_negative, d)
 
 
-  fun \do_not_use\ bit_shr(y: MPInt val): MPInt =>
+  fun bit_shr(that: MPInt val): MPInt =>
     """
-    Bit-level shift right.
+    Bit-level shift right: return `this / 2^that` (truncating), preserving sign.
+    If `that` is negative or `this` is zero, return a copy unchanged.
+    If `that >= bitwidth()`, return 0.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    The shift is decomposed into a digit-level shift (`that / 16`) and a
+    sub-digit bit shift (`that % 16`), reading overlapping bits from adjacent digits.
     """
-    _create(_negative, _digits) // TODO
+    if that._negative or is_zero() then
+      return _create(_negative, _digits)
+    end
+
+    let n = that.usize()
+    let digit_shift = n / _base_bits()
+    let bit_shift = n % _base_bits()
+    if digit_shift >= _digits.size() then
+      return MPInt.from_ilong(0)
+    end
+
+    let new_size = _digits.size() - digit_shift
+    let d = recover val
+      let res = Array[U16](new_size)
+      for i in Range(0, new_size) do
+        let lo: U16 = try _digits(i + digit_shift)? >> bit_shift.u16() else 0 end
+        let hi: U16 = if (bit_shift > 0) and ((i + digit_shift + 1) < _digits.size()) then
+          try (_digits(i + digit_shift + 1)? << (16 - bit_shift).u16()) else 0 end
+        else
+          0
+        end
+        res.push(lo or hi)
+      end
+      _normalize(res)
+      res
+    end
+    _create(_negative, d)
 
 
-  fun \do_not_use\ shl(y: MPInt val): MPInt =>
+  fun shl(that: MPInt val): MPInt =>
     """
-    Bitwise shift left.
+    Bitwise shift left. Delegates to `bit_shl`.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    See [`bit_shl`](#bit_shl)
     """
-    bit_shl(y)
+    bit_shl(that)
 
 
-  fun \do_not_use\ shr(y: MPInt val): MPInt =>
+  fun shr(that: MPInt val): MPInt =>
     """
-    Bitwise shift right.
+    Bitwise shift right. Delegates to `bit_shr`.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    See [`bit_shr`](#bit_shr)
     """
-    bit_shr(y)
+    bit_shr(that)
 
 
-  fun \do_not_use\ shl_unsafe(y: MPInt val): MPInt =>
+  fun shl_unsafe(that: MPInt val): MPInt =>
     """
-    Unsafe bitwise shift left.
+    Bitwise shift left (no overflow check; it can't happen).
+    Delegates to `bit_shl`.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    See [`bit_shl`](#bit_shl)
     """
-    bit_shl(y)
+    bit_shl(that)
 
 
-  fun \do_not_use\ shr_unsafe(y: MPInt val): MPInt =>
+  fun shr_unsafe(that: MPInt val): MPInt =>
     """
-    Unsafe bitwise shift right.
+    Bitwise shift right (no overflow check; it can't happen).
+    Delegates to `bit_shr`.
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    See [`bit_shr`](#bit_shr)
     """
-    bit_shr(y)
+    bit_shr(that)
 
 
   //- Arithmetic --------------------------------------------------------------
@@ -1017,6 +1077,114 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     end
 
 
+  fun pow(n: MPInt val): MPInt =>
+    """
+    Return `this` raised to the power `n` using binary (square-and-multiply)
+    exponentiation. `O(log n)` multiplications.
+
+    - `x^0 = 1` for any `x` (including 0).
+    - `x^n` for negative `n` returns 0 (integer semantics, no fractions).
+    """
+    let one = MPInt.from_ilong(1)
+    if n.is_zero() then
+      return one
+    end
+    if n._negative then
+      return MPInt.from_ilong(0)
+    end
+
+    var base: MPInt = _create(_negative, _digits)
+    var exp: MPInt  = n
+    var result: MPInt = one
+    while not exp.is_zero() do
+      if exp.bit_get(0) then
+        result = result * base
+      end
+      base = base * base
+      exp  = exp.bit_shr(one)
+    end
+    result
+
+
+  fun isqrt(): MPInt =>
+    """
+    Return the integer square root, i.e. `floor(sqrt(this))`.
+    Uses Newton's method, which converges quadratically without any
+    floating-point arithmetic.
+
+    Returns 0 for negative or zero input.
+    """
+    if _negative or is_zero() then
+      return MPInt.from_ilong(0)
+    end
+    let one = MPInt.from_ilong(1)
+    if is_one() then
+      return one
+    end
+
+    // Initial guess: 2^(ceil(bitwidth/2)), always >= sqrt(this).
+    let half_bits = ((bitwidth().usize() + 1) / 2)
+    var x: MPInt  = one.bit_shl(MPInt.from_ilong(half_bits.ilong()))
+    var x1: MPInt = (x + (this / x)).bit_shr(one)
+    while x1 < x do
+      x  = x1
+      x1 = (x + (this / x)).bit_shr(one)
+    end
+    x
+
+
+  fun gcd(that: MPInt): MPInt =>
+    """
+    Return the greatest common divisor of `|this|` and `|that|` using the
+    Euclidean algorithm.
+
+    `gcd(0, x) = x`, `gcd(x, 0) = x`, `gcd(0, 0) = 0`.
+    """
+    var a: MPInt = abs()
+    var b: MPInt = that.abs()
+    while not b.is_zero() do
+      let t = b
+      b = a.rem(b)
+      a = t
+    end
+    a
+
+
+  fun pow_mod(exp: MPInt val, m: MPInt val): MPInt =>
+    """
+    Return `(this ^ exp) mod m` using square-and-multiply with modular
+    reduction at each step. Much faster than `pow(exp).mod(m)` for large
+    exponents since intermediate values stay bounded by `m^2`.
+
+    - `pow_mod(0, m) = 1` (for m > 1).
+    - Returns 0 for negative `exp` (integer semantics).
+    - Returns 0 for `m = 1` since every integer is congruent to 0 mod 1.
+    """
+    let zero = MPInt.from_ilong(0)
+    let one = MPInt.from_ilong(1)
+    if m.is_one() then
+      return zero
+    end
+    if exp.is_zero() then
+      return one
+    end
+    if exp._negative then
+      return zero
+    end
+
+    var base: MPInt   = abs().mod(m)
+    var e: MPInt      = exp
+    var result: MPInt = one
+    while not e.is_zero() do
+      if e.bit_get(0) then
+        result = (result * base).mod(m)
+      end
+      base = (base * base).mod(m)
+      e = e.bit_shr(one)
+    end
+    result
+
+
   fun add_partial(that: MPInt val): MPInt ? =>
     """
     Partial addition. `MPInt` can't overflow or underflow and no errors are raised.
@@ -1252,40 +1420,135 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
   //- Bitwise -----------------------------------------------------------------
 
-  fun \do_not_use\ op_and(that: MPInt): MPInt =>
+  fun op_and(that: MPInt): MPInt =>
     """
-    Bitwise AND.
-
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    Bitwise AND using two's complement semantics for arbitrary precision.
     """
-    _create(_negative, _digits) // TODO
+    _bitwise_op(that, {(a: BitMap ref, b: BitMap ref): BitMap ref => a.and_in_place(b)})
 
 
-  fun \do_not_use\ op_or(that: MPInt): MPInt =>
+  fun op_or(that: MPInt): MPInt =>
     """
-    Bitwise OR.
-
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    Bitwise OR using two's complement semantics for arbitrary precision.
     """
-    _create(_negative, _digits) // TODO
+    _bitwise_op(that, {(a: BitMap ref, b: BitMap ref): BitMap ref => a.or_in_place(b)})
 
 
-  fun \do_not_use\ op_xor(that: MPInt): MPInt =>
+  fun op_xor(that: MPInt): MPInt =>
     """
-    Bitwise XOR.
-
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    Bitwise XOR using two's complement semantics for arbitrary precision.
     """
-    _create(_negative, _digits) // TODO
+    _bitwise_op(that, {(a: BitMap ref, b: BitMap ref): BitMap ref => a.xor_in_place(b)})
 
 
-  fun \do_not_use\ op_not(): MPInt =>
+  fun _bitwise_op(that: MPInt,
+      op: {(BitMap ref, BitMap ref): BitMap ref} ref): MPInt =>
     """
-    Bitwise NOT.
+    Convert both operands to two's complement `BitMap`s, apply `op` in place on
+    the first, then convert the result back to sign-magnitude `MPInt`.
+    """
+    // Size the BitMaps to hold both operands plus one sign bit.
+    let n_bits = ((_digits.size().max(that._digits.size()) + 1) * _base_bits()) + 1
+    let a = BitMap.from_u16_array(_digits, n_bits)
+    if _negative then
+      a.not_in_place()
+      a.increment()
+    end
+    let b = BitMap.from_u16_array(that._digits, n_bits)
+    if that._negative then
+      b.not_in_place()
+      b.increment()
+    end
 
-    DO NOT USE THIS METHOD. NOT IMPLEMENTED.
+    op(a, b)
+
+    // Two's complement sign bit determines result sign. And convert back
+    // to MPInt.
+    let negative = a(n_bits - 1)
+    if negative then
+      a.not_in_place()
+      a.increment()
+    end
+    let n_digits = (n_bits + (_base_bits() - 1)) / _base_bits()
+    let raw = a.to_u16_array(n_digits)
+    let d = recover val
+      let res = Array[U16](raw.size())
+      for v in raw.values() do res.push(v) end
+      _normalize(res)
+      res
+    end
+    _create(negative, d)
+
+
+  fun op_not(): MPInt =>
+    """
+    Bitwise NOT using two's complement identity: `~x = -(x + 1)`.
     """
     neg() - MPInt.from_ilong(1)
+
+
+  fun bit_get(n: USize): Bool =>
+    """
+    Return the value of bit `n` in the absolute value of this `MPInt`.
+    Bit 0 is the least significant. Returns `false` for bits above the
+    most significant digit.
+    """
+    let digit_idx = n / _base_bits()
+    let bit_pos = (n % _base_bits()).u16()
+    if digit_idx >= _digits.size() then
+      false
+    else
+      try ((_digits(digit_idx)? >> bit_pos) and 1) == 1 else false end
+    end
+
+
+  fun bit_set(n: USize): MPInt =>
+    """
+    Return a new `MPInt` with bit `n` of the absolute value set to 1.
+    The sign is preserved.
+    """
+    let digit_idx = n / _base_bits()
+    let bit_pos = (n % _base_bits()).u16()
+    let d = recover val
+      let res = Array[U16](_digits.size().max(digit_idx + 1))
+      for k in Range(0, _digits.size()) do
+        try res.push(_digits(k)?) end
+      end
+      while res.size() <= digit_idx do res.push(0) end
+      try res(digit_idx)? = res(digit_idx)? or (U16(1) << bit_pos) end
+      res
+    end
+    _create(_negative, d)
+
+
+  fun bit_clear(n: USize): MPInt =>
+    """
+    Return a new `MPInt` with bit `n` of the absolute value cleared to 0.
+    The sign is preserved. If the bit is already 0, returns a copy.
+    """
+    if not bit_get(n) then
+      return _create(_negative, _digits)
+    end
+    let digit_idx = n / _base_bits()
+    let bit_pos = (n % _base_bits()).u16()
+    let d = recover val
+      let res = Array[U16](_digits.size())
+      for k in Range(0, _digits.size()) do
+        try res.push(_digits(k)?) end
+      end
+      try res(digit_idx)? = res(digit_idx)? and (not (U16(1) << bit_pos)) end
+      _normalize(res)
+      res
+    end
+    _create(_negative, d)
+
+
+  fun bit_flip(n: USize): MPInt =>
+    """
+    Return a new `MPInt` with bit `n` of the absolute value toggled.
+    The sign is preserved.
+    """
+    if bit_get(n) then bit_clear(n) else bit_set(n) end
 
 
   fun \do_not_use\ bit_reverse(): MPInt =>
@@ -1294,7 +1557,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits)
+    _create(_negative, _digits) // TODO
 
 
   fun \do_not_use\ bswap(): MPInt =>
@@ -1303,48 +1566,68 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits)
+    _create(_negative, _digits) // TODO
 
 
   //- Conversions -------------------------------------------------------------
+  // All conversions are silent: no error or panic is raised on overflow or
+  // precision loss. Use `bitwidth()` to verify the value fits before converting.
 
   fun i8(): I8 =>
     """
-    Convert to I8.
+    Convert to `I8`. Delegates to `ilong().i8()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.i8()`
+    further clips to 8 bits. Safe only when `-128 ≤ this ≤ 127`.
     """
     ilong().i8()
 
 
   fun i16(): I16 =>
     """
-    Convert to I16.
+    Convert to `I16`. Delegates to `ilong().i16()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.i16()`
+    further clips to 16 bits. Safe only when `-32768 ≤ this ≤ 32767`.
     """
     ilong().i16()
 
 
   fun i32(): I32 =>
     """
-    Convert to I32.
+    Convert to `I32`. Delegates to `ilong().i32()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.i32()`
+    further clips to 32 bits. Safe only when `-2^31 ≤ this ≤ 2^31 - 1`.
     """
     ilong().i32()
 
 
   fun i64(): I64 =>
     """
-    Convert to I64.
+    Convert to `I64`. Delegates to `ilong().i64()`. On 64-bit platforms
+    `ILong` is `I64`, so `.i64()` is a no-op cast and the only data loss is
+    the `ilong()` truncation: values outside `[-2^63, 2^63 - 1]` silently
+    return the low 64 bits of `|this|`, negated if negative.
     """
     ilong().i64()
 
 
   fun i128(): I128 =>
     """
-    Convert to I128.
+    Convert to `I128` by reconstructing the value from the little-endian
+    base-65536 *digit* array using I128 accumulation.
+
+    **Overflow behaviour (silent, no error).**
+    Safe for `|this| ≤ I128.max_value()` (= 2^127 - 1). When the `MPInt`
+    value exceeds that range, the `weight` variable wraps to 0 at *digit* index
+    8 (`65536^8 = 2^128 ≡ 0`), higher *digits* contribute nothing, and the
+    intermediate additions wrap silently. The net effect is that the function
+    returns the low 128 bits of `|this|` reinterpreted as `I128`, then negated
+    if negative.
     """
     var res: I128 = 0
     var weight: I128 = 1
     for d in _digits.values() do
-      res = res + (d.i128() * weight)
-      weight = weight * _base().i128()
+      res = res +~ (d.i128() *~ weight)
+      weight = weight *~ _base().i128()
     end
     if _negative then
       -res
@@ -1355,13 +1638,29 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
   fun ilong(): ILong =>
     """
-    Convert to ILong.
+    Convert to `ILong` by reconstructing the value from the little-endian
+    base-65536 digit array: `sum(digit[i] * 65536^i)`, negated when negative.
+
+    **Overflow behaviour (silent, no error).**
+    `ILong` is a signed 64-bit integer on 64-bit platforms (LP64 / C `long`).
+    When `|this| > ILong.max_value()` (= 2^63 - 1 on 64-bit), the
+    intermediate arithmetic wraps in the following way:
+
+    - The per-digit `weight` value (`65536^i`) overflows to 0 starting at
+      `i = 4` (`65536^4 = 2^64 ≡ 0` under 64-bit wrapping).
+    - All digits at position 4 and beyond therefore contribute 0 to `res`.
+    - The additions and multiplications on `res` itself also wrap silently.
+
+    The net effect is that the function returns the value of the **lowest 64
+    bits** of `|this|` reinterpreted as `ILong`, then negated if negative —
+    i.e. `this mod 2^64` truncated to `ILong`, without any indication that
+    data was lost. Check [`bitwidth`](#bitwidth) before converting if the range matters.
     """
     var res: ILong = 0
     var weight: ILong = 1
     for d in _digits.values() do
-      res = res + (d.ilong() * weight)
-      weight = weight * _base().ilong()
+      res = res +~ (d.ilong() *~ weight)
+      weight = weight *~ _base().ilong()
     end
     if _negative then
       -res
@@ -1372,70 +1671,130 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
   fun isize(): ISize =>
     """
-    Convert to ISize.
+    Convert to `ISize`. Delegates to `ilong().isize()`. On 64-bit platforms
+    `ISize` equals `ILong`, so the only loss is the `ilong()` truncation.
+    On 32-bit platforms an additional 32-bit truncation occurs afterward.
+    Safe when `ISize.min_value() ≤ this ≤ ISize.max_value()`.
     """
     ilong().isize()
 
 
   fun u8(): U8 =>
     """
-    Convert to U8.
+    Convert to `U8`. Delegates to `ilong().u8()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.u8()`
+    further clips to 8 bits (and reinterprets the sign bit).
+    Safe only when `0 ≤ this ≤ 255`.
     """
     ilong().u8()
 
 
   fun u16(): U16 =>
     """
-    Convert to U16.
+    Convert to `U16`. Delegates to `ilong().u16()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.u16()`
+    further clips to 16 bits. Negative values yield the two's-complement
+    reinterpretation. Safe only when `0 ≤ this ≤ 65535`.
     """
     ilong().u16()
 
 
   fun u32(): U32 =>
     """
-    Convert to U32.
+    Convert to `U32`. Delegates to `ilong().u32()`, so two silent truncations
+    can occur: `ilong()` clips to the low 64 bits of `|this|`, then `.u32()`
+    further clips to 32 bits. Negative values yield the two's-complement
+    reinterpretation. Safe only when `0 ≤ this ≤ 2^32 - 1`.
     """
     ilong().u32()
 
 
   fun u64(): U64 =>
     """
-    Convert to U64.
+    Convert to `U64` by accumulating the little-endian base-65536 digits
+    using wrapping `U64` arithmetic.
+
+    Each digit contributes `digit × 65536^i`. Because `65536^4 = 2^64 ≡ 0
+    (mod 2^64)`, digits at index ≥ 4 contribute 0; only the low 64 bits of
+    the magnitude are retained.
+
+    Safe for `0 ≤ this ≤ U64.max_value()` (= 2^64 − 1). Larger positive
+    values silently truncate to the low 64 bits. Negative values yield the
+    two's-complement `U64` representation of the magnitude.
     """
-    ilong().u64()
+    var res: U64 = 0
+    var weight: U64 = 1
+    for d in _digits.values() do
+      res = res +~ (d.u64() *~ weight)
+      weight = weight *~ _base().u64()
+    end
+    if _negative then -res else res end
 
 
   fun u128(): U128 =>
     """
-    Convert to U128.
+    Convert to `U128` by accumulating the little-endian base-65536 digits
+    using wrapping `U128` arithmetic.
+
+    Each digit contributes `digit × 65536^i`. Because `65536^8 = 2^128 ≡ 0
+    (mod 2^128)`, digits at index ≥ 8 contribute 0; only the low 128 bits of
+    the magnitude are retained.
+
+    Safe for `0 ≤ this ≤ U128.max_value()` (= 2^128 − 1). Larger positive
+    values silently truncate to the low 128 bits. Negative values yield the
+    two's-complement `U128` representation of the magnitude.
     """
-    i128().u128()
+    var res: U128 = 0
+    var weight: U128 = 1
+    for d in _digits.values() do
+      res = res +~ (d.u128() *~ weight)
+      weight = weight *~ _base().u128()
+    end
+    if _negative then -res else res end
 
 
   fun ulong(): ULong =>
     """
-    Convert to ULong.
+    Convert to `ULong`. Delegates to `ilong().ulong()`. On 64-bit platforms
+    `ULong` equals `U64`. The `ilong()` truncation applies first (low 64
+    bits of `|this|`); negative values then yield the two's-complement
+    `ULong` representation. Safe for `0 ≤ this ≤ ULong.max_value()`.
     """
     ilong().ulong()
 
 
   fun usize(): USize =>
     """
-    Convert to USize.
+    Convert to `USize`. Delegates to `ilong().usize()`. On 64-bit platforms
+    `USize` equals `U64`. The `ilong()` truncation applies first; negative
+    values yield the two's-complement `USize`. Safe for `0 ≤ this ≤ USize.max_value()`.
     """
     ilong().usize()
 
 
   fun f32(): F32 =>
     """
-    Convert to F32.
+    Convert to `F32`. Delegates to `f64().f32()`.
+
+    `F32` has a 24-bit mantissa, so integers are represented exactly only for
+    `|this| ≤ 2^24` (= 16 777 216). Larger values are rounded to the nearest
+    representable single-precision float. Values exceeding `F32.max_value()`
+    (≈ 3.4 x 10^38) become `+Inf` or `-Inf`. No error is raised.
     """
     f64().f32()
 
 
   fun f64(): F64 =>
     """
-    Convert to F64.
+    Convert to `F64` by reconstructing the value from the little-endian
+    base-65536 digit array using `F64` accumulation.
+
+    **Precision loss (silent, no error).**
+    `F64` has a 53-bit mantissa (IEEE 754 double), so integers are represented
+    exactly only for `|this| ≤ 2^53` (≈ 9 x 10^15, roughly three U16 digits).
+    Beyond that, the result is rounded to the nearest representable double.
+    Values exceeding `F64.max_value()` (≈ 1.8 x 10^308) become `+Inf` or
+    `-Inf`. No error is raised.
     """
     var res: F64 = 0
     var weight: F64 = 1.0
@@ -1452,112 +1811,129 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
 
   fun i8_unsafe(): I8 =>
     """
-    Unsafe conversion to I8.
+    Identical to `i8()`. For `MPInt`, the `_unsafe` suffix signals that the
+    caller asserts the value fits in `I8`, but no runtime check is removed —
+    `MPInt` conversions never panic; they silently truncate.
     """
     i8()
 
 
   fun i16_unsafe(): I16 =>
     """
-    Unsafe conversion to I16.
+    Identical to `i16()`. See `i16` for overflow behaviour. The caller asserts
+    `-32768 ≤ this ≤ 32767`.
     """
     i16()
 
 
   fun i32_unsafe(): I32 =>
     """
-    Unsafe conversion to I32.
+    Identical to `i32()`. See `i32` for overflow behaviour. The caller asserts
+    `-2^31 ≤ this ≤ 2^31 - 1`.
     """
     i32()
 
 
   fun i64_unsafe(): I64 =>
     """
-    Unsafe conversion to I64.
+    Identical to `i64()`. See `i64` for overflow behaviour. The caller asserts
+    `-2^63 ≤ this ≤ 2^63 - 1`.
     """
     i64()
 
 
   fun i128_unsafe(): I128 =>
     """
-    Unsafe conversion to I128.
+    Identical to `i128()`. See `i128` for overflow behaviour. The caller
+    asserts `|this| ≤ 2^127 - 1`.
     """
     i128()
 
 
   fun ilong_unsafe(): ILong =>
     """
-    Unsafe conversion to ILong.
+    Identical to `ilong()`. See `ilong` for overflow behaviour. The caller
+    asserts `ILong.min_value() ≤ this ≤ ILong.max_value()`.
     """
     ilong()
 
 
   fun isize_unsafe(): ISize =>
     """
-    Unsafe conversion to ISize.
+    Identical to `isize()`. See `isize` for overflow behaviour. The caller
+    asserts `ISize.min_value() ≤ this ≤ ISize.max_value()`.
     """
     isize()
 
 
   fun u8_unsafe(): U8 =>
     """
-    Unsafe conversion to U8.
+    Identical to `u8()`. See `u8` for overflow behaviour. The caller asserts
+    `0 ≤ this ≤ 255`.
     """
     u8()
 
 
   fun u16_unsafe(): U16 =>
     """
-    Unsafe conversion to U16.
+    Identical to `u16()`. See `u16` for overflow behaviour. The caller asserts
+    `0 ≤ this ≤ 65535`.
     """
     u16()
 
 
   fun u32_unsafe(): U32 =>
     """
-    Unsafe conversion to U32.
+    Identical to `u32()`. See `u32` for overflow behaviour. The caller asserts
+    `0 ≤ this ≤ 2^32 - 1`.
     """
     u32()
 
 
   fun u64_unsafe(): U64 =>
     """
-    Unsafe conversion to U64.
+    Identical to `u64()`. See `u64` for overflow behaviour. The caller asserts
+    `0 ≤ this ≤ 2^64 - 1`.
     """
     u64()
 
 
   fun u128_unsafe(): U128 =>
     """
-    Unsafe conversion to U128.
+    Identical to `u128()`. See `u128` for overflow behaviour. The caller
+    asserts `0 ≤ this ≤ U128.max_value()` (= 2^128 − 1).
     """
     u128()
 
 
   fun ulong_unsafe(): ULong =>
     """
-    Unsafe conversion to ULong.
+    Identical to `ulong()`. See `ulong` for overflow behaviour. The caller
+    asserts `0 ≤ this ≤ ULong.max_value()`.
     """
     ulong()
 
 
   fun usize_unsafe(): USize =>
     """
-    Unsafe conversion to USize.
+    Identical to `usize()`. See `usize` for overflow behaviour. The caller
+    asserts `0 ≤ this ≤ USize.max_value()`.
     """
     usize()
 
 
   fun f32_unsafe(): F32 =>
     """
-    Unsafe conversion to F32.
+    Identical to `f32()`. See `f32` for precision-loss behaviour. The caller
+    asserts `|this| ≤ 2^24` for an exact result.
     """
     f32()
 
 
   fun f64_unsafe(): F64 =>
     """
-    Unsafe conversion to F64.
+    Identical to `f64()`. See `f64` for precision-loss behaviour. The caller
+    asserts `|this| ≤ 2^53` for an exact result.
     """
     f64()
 
@@ -1630,6 +2006,40 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     _negative and (_digits.size() == 1) and (try _digits(0)? == 1 else false end)
 
 
+  fun is_negative(): Bool =>
+    """
+    Return `true` when the current `MPInt` is strictly negative (< 0).
+    """
+    _negative and not is_zero()
+
+
+  fun is_positive(): Bool =>
+    """
+    Return `true` when the current `MPInt` is strictly positive (> 0).
+    """
+    (not _negative) and (not is_zero())
+
+
+  fun compare(that: box->MPInt): Compare =>
+    """
+    Three-way comparison. Returns `Less`, `Equal`, or `Greater`.
+
+    Satisfies `Comparable[MPInt]`. All comparison operators (`<`, `<=`, `>`,
+    `>=`) are derived from this method by the trait's default implementations.
+    """
+    if _negative != that._negative then
+      if is_zero() and that.is_zero() then return Equal end
+      return if _negative then Less else Greater end
+    end
+    let u_lt = _uabs_lt(that)
+    let u_eq = _uabs_eq(that)
+    if _negative then
+      if u_lt then Greater elseif u_eq then Equal else Less end
+    else
+      if u_lt then Less elseif u_eq then Equal else Greater end
+    end
+
+
   fun eq(that: box->MPInt): Bool =>
     """
     `this` and `that` are equals when they have the same sign and the same
@@ -1649,38 +2059,28 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt])
     """
     Return `true` when `this < that`.
     """
-    if _negative and not that._negative then
-      return true
-    end
-    if not _negative and that._negative then
-      return false
-    end
-    if _negative then
-      not (_uabs_lt(that) or _uabs_eq(that))
-    else
-      _uabs_lt(that)
-    end
+    compare(that) is Less
 
 
   fun le(that: box->MPInt): Bool =>
     """
     Return `true` when `this <= that`.
     """
-    (this < that) or (this == that)
+    not (compare(that) is Greater)
 
 
   fun ge(that: box->MPInt): Bool =>
     """
     Return `true` when `this >= that`.
     """
-    not (this < that)
+    not (compare(that) is Less)
 
 
   fun gt(that: box->MPInt): Bool =>
     """
     Return `true` when `this > that`.
     """
-    not (this <= that)
+    compare(that) is Greater
 
 
   fun ne(that: box->MPInt): Bool =>
