@@ -2,7 +2,7 @@
 
 The class `FLimits` determines the Pony compiler/platform limits for the floating point types (`F32` and `F64`, or eventually `F128` if Pony supports such type in the future). The algorithms used were taken from the MACHAR Fortran source ported to C, and now to Pony. You can read a version of [`machar.c`](machar.c) that compiles with GCC or clang.
 
-The [`platform_limits.pony`](platform_limit.pony) executes the MACHAR algorithms and compare the results with the results of limit functions from `F32` and `F64`.
+The [`platform_limits.pony`](platform_limits.pony) executes the MACHAR algorithms and compare the results with the results of limit functions from `F32` and `F64`.
 
 ## Sample output
 
@@ -111,7 +111,7 @@ $ ./machar.clang
 ```
 ### Sample output
 
-Look at [source code](../../platform_limits.pony) to get the new names and the explanations of values. On linux amd64:
+Look at [source code](platform_limits.pony) to get the new names and the explanations of values. On linux amd64:
 
 ```
 Double  precision MACHAR constants

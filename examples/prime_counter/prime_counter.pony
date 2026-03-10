@@ -11,13 +11,26 @@ actor Main
   """
   Inifinite calculation of the number of prime numbers.
   """
+
   let _out: OutStream
+    """
+    The output stream to print prime counting status.
+    """
+
 
   new create(env: Env) =>
+    """
+    Initializes the prime counter and selects the calculation strategy.
+    """
     _out = env.out
 
     _out.print("Prime counting function. Experimental proof of the prime number theorem...")
     _out.print("--------------------------------------------------------------------------")
+    _out.print("Arguments:")
+    _out.print("\tNone:\tProbabilistic test with actor messages")
+    _out.print("\t1:\tProbabilistic prime test in loop")
+    _out.print("\t2:\tPony stdlib primality test in loop")
+    _out.print("")
     _out.print("The number of prime numbers in the interval [1 .. n], named `Pi(n)`, tends to")
     _out.print("`n/log(n)` when `n` tends to the infinite.")
     _out.print("")
@@ -103,7 +116,11 @@ actor Main
       end
       n = n + 2
 
-      // As we could leak memory (where?), we stop before crashing the OS...
+      // The while true loop in fast_find is a synchronous fun that never
+      // returns to the Pony scheduler. All String allocations (from .string()
+      // calls and + concatenation) accumulate without GC, growing at a rate
+      // of ~several allocations per million numbers tested. The breakpoint
+      // at n > 1_000_000_000 is the workaround.
       if n > 1_000_000_000 then
         @fprintf(@pony_os_stdout(), "Completed at n = %s\n".cstring(), n.string().cstring())
         break

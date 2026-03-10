@@ -20,9 +20,15 @@ use "debug"
 use "collections"
 
 actor Main
+  """
+  Main entry point for drawing an ASCII Mandelbrot fractal.
+  """
   let _out: OutStream
-  
-  
+    """
+    The output stream to print the fractal plot.
+    """
+
+
   new create(env: Env) =>
     """
     Plot the fractal on the standard output as ASCII art.

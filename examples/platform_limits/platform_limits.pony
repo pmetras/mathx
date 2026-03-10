@@ -8,7 +8,15 @@ use "../../mathx"
 
 
 actor Main
+  """
+  Main entry point for displaying floating-point platform limits.
+  """
+
   let _out: OutStream
+    """
+    The output stream to print the limits.
+    """
+
 
   new create(env: Env) =>
     """
@@ -21,6 +29,7 @@ actor Main
     print_limits[F32](f32_limits)
     let f64_limits = FLimits[F64]
     print_limits[F64](f64_limits)
+
 
   fun print_limits[F: FloatingPoint[F] val](fl: FLimits[F]) =>
     """
