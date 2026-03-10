@@ -44,6 +44,8 @@ actor Main is TestList
     // Modular arithmetic
     test(_TestGCDLCM)
     test(_TestModularInverse)
+    test(_TestModularMPIntBasic)
+    test(_TestModularMPIntBig)
 
     // Complex numbers
     test(_TestComplexAdd[F32])

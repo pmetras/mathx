@@ -8,6 +8,12 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
 
   Operations on modular arithmetic: unsigned integer parameters are considered
   modulo `m` (elements of Z/nZ).
+
+  Though this primitive is defined to work on `UnsignedInteger`, the code is guarded
+  by `Assert(x >= 0)` conditions. The reason is that positive integers can be seen
+  as unsigned, as long as the methods used are defined in the trait/interface. Not
+  all `UnsignedInteger` encode the sign in the bits of the value. That's the case
+  of the `MPInt` class that implements both `UnsignedInteger` and `SignedInteger`.
   """
 
   fun add_mod(a: A, b: A, m: A): A =>
@@ -15,6 +21,15 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     Calculate `(a + b) % m` i.e. `a` plus `b` modulo `m`, taking care of
     overflows.
     """
+    ifdef debug then
+      let zero = A.from[USize](0)
+      try
+        Assert(a >= zero, "Modular.add_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.add_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.add_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
     let a' = a % m
     let b' = m - (b % m)
     if b' == m then
@@ -31,6 +46,15 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     Calculate `(a - b) % m`, i.e. `a` minus `b` modulo `m`, taking care of
     overflows.
     """
+    ifdef debug then
+      let zero = A.from[USize](0)
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
     let a' = a % m
     let b' = b % m
     if a' >= b' then
@@ -44,6 +68,14 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     Negation of `a` modulo `m`.
     """
+    ifdef debug then
+      try
+        let zero = A.from[USize](0)
+        Assert(a >= zero, "Modular.neg_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.neg_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
     let zero = A.from[USize](0)
     let a' = a % m
     if a' == zero then
@@ -61,9 +93,18 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     Without overflows, `mul_mod(a, b, m) = ((a % m) * (b % m)) % m`.
     """
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
 
     // If a and b are small enough, we won't overflow and we can use direct
     // multiplication
+    // This test even works with MPInt because clz() = 0 and bitwidth() = 0,
+    // so 0 + 0 > 0 is false and we use the slow path.
     if (a.clz() + b.clz()) > zero.bitwidth() then
       ((a % m) * (b % m)) % m
     else
@@ -96,8 +137,15 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     See [explanations](https://en.wikipedia.org/wiki/Modular_multiplicative_inverse)
     and Knuth TAOCP 2.4.5.2 Algorithm X, Extended Euclid's algorithm.
     """
-    // Initialize
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
+    // Initialize
     let one = A.from[USize](1)
     var positive: Bool = true
     var u = one
@@ -135,6 +183,14 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     When `b` has no inverse, returns the value `0`.
     """
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
     let inv = inverse_mod(b, m)
     if inv == zero then
       // Division is not possible
@@ -152,6 +208,14 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     This is done by using modular multiplication `mul_mod`.
     """
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+      end
+    end
+
     let one = A.from[USize](1)
 
     // a^0 = 1
@@ -193,8 +257,15 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
       env.out.print(Modular.gcd(24, 78).string()) // should be 6
     ```
     """
-    (var big, var small) = if a > b then (a, b) else (b, a) end
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+      end
+    end
+
+    (var big, var small) = if a > b then (a, b) else (b, a) end
     var res: A = big
     while small != zero do
       res = small
@@ -212,6 +283,13 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     O(a.log() + b.log())^2).
     """
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+      end
+    end
+
     if a == zero then
       return b
     elseif b == zero then
@@ -264,6 +342,13 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     ```
     """
     let zero = A.from[USize](0)
+    ifdef debug then
+      try
+        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+      end
+    end
+
     if (a == zero) or (b == zero) then
       return zero
     end
