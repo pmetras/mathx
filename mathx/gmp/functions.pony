@@ -1005,7 +1005,7 @@ primitive MPF
     let n2 = tab2.size()
     ifdef debug then
       try
-        Assert(n1 == n2, "MPF.dot: the two arrays don't have the same size: " +
+        Assert(n1 == n2, "[MPF.dot] The two arrays don't have the same size: " +
               n1.string() + " != " + n2.string() + ". Can't calculate dot product.", true)?
       end
     end

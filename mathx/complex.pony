@@ -113,7 +113,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     """
     ifdef debug then
       try
-        Assert(tol >= F.from[ISize](0), "Precision tolerance (" + tol.string() +
+        Assert(tol >= F.from[ISize](0), "[Complex.is_real] Precision tolerance (" + tol.string() +
               ") must be positive", true)?
       end
     end
@@ -127,7 +127,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     """
     ifdef debug then
       try
-        Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
+        Assert(abs_tol >= F.from[ISize](0), "[Complex.is_imag] Precision tolerance (" +
               abs_tol.string() + ") must be positive", true)?
       end
     end
@@ -142,7 +142,7 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     """
     ifdef debug then
       try
-        Assert(abs_tol >= F.from[ISize](0), "Precision tolerance (" +
+        Assert(abs_tol >= F.from[ISize](0), "[Complex.is_null] Precision tolerance (" +
               abs_tol.string() + ") must be positive", true)?
       end
     end
@@ -242,11 +242,11 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     let one: F = F.from[F64](1.0)
     ifdef debug then
       try
-        Assert(rel_tol >= zero, "Relative tolerance (" + rel_tol.string() +
+        Assert(rel_tol >= zero, "[Complex.almost_eq] Relative tolerance (" + rel_tol.string() +
               ") must be positive", true)?
-        Assert(rel_tol <= one, "Relative tolerance (" + rel_tol.string() +
+        Assert(rel_tol <= one, "[Complex.almost_eq] Relative tolerance (" + rel_tol.string() +
               ") should be lower than 1.0", true)?
-        Assert(abs_tol >= zero, "Absolute tolerance (" + abs_tol.string() +
+        Assert(abs_tol >= zero, "[Complex.almost_eq] Absolute tolerance (" + abs_tol.string() +
               ") must be positive", true)?
       end
     end

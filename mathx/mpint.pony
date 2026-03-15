@@ -135,7 +135,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Don't abuse it!
     """
     ifdef debug then
-      Assert((2 <= base) and (base <= 36), "The base must be in [2..36]", true)?
+      Assert((2 <= base) and (base <= 36), "[MPint.from_string] The base must be in [2..36]", true)?
     end
 
     if s.size() == 0 then

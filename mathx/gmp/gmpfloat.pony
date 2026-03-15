@@ -90,10 +90,10 @@ class val MPFloat
 
   //- Constructors ------------------------------------------------------------
 
-  new val create(s: String = "",
-                 prec: ULong = 112,
-                 base: U32 = 10,
-                 rnd: RoundingMode = RoundingNearest) ? =>
+  new val from_string(s: String = "",
+                      prec: ULong = 112,
+                      base: U32 = 10,
+                      rnd: RoundingMode = RoundingNearest) ? =>
     """
     Create a new `MPFloat` initialized to `s` value interpreted in base `base`,
     (default decimal base) with precision `prec` (default 112) and rounding mode
@@ -182,7 +182,7 @@ class val MPFloat
     _rnd = rnd
     MPF.init2(_mpfr, prec.ilong())
     let tmp = try
-        create(n.string(), prec, 10, rnd)?
+        from_string(n.string(), prec, 10, rnd)?
       else
         Debug("MPFloat.from: Conversion failed. Converting from F64 with possible " +
               "lost accuracy")
@@ -478,7 +478,7 @@ class val MPFloat
     """
     ifdef debug then
       try
-        Assert((2 <= base) and (base <= 36), "MPFloat.string: The base (" +
+        Assert((2 <= base) and (base <= 36), "[MPFloat.string] The base (" +
               base.string() + ") must be in the range [2..36]", true)?
       end
     end

@@ -111,11 +111,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = a.size()
     ifdef debug then
       try
-        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+        Assert((size and (size - 1)) == 0, "[FFT.fourier] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
+        Assert(size > 0, "[FFT.fourier] Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "[FFT.fourier] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
     end
@@ -192,11 +192,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = a.size()
     ifdef debug then
       try
-        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+        Assert((size and (size - 1)) == 0, "[FFT.fourier_unsafe] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
+        Assert(size > 0, "[FFT.fourier_unsafe] Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "[FFT.fourier_unsafe] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
     end
@@ -277,11 +277,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     ifdef debug then
       try
         Assert((size2 and (size2 - 1)) == 0,
-              "The input array 'a' size (" + size.string() +
+              "[FFT.fourier_complex] The input array 'a' size (" + size.string() +
               ") must be a power of 4. Enlarge it to " +
               (size2.next_pow2() * 2).string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
+        Assert(size > 0, "[FFT.fourier_complex] Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "[FFT.fourier_complex] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
     end
@@ -452,11 +452,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
 
     ifdef debug then
       try
-        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+        Assert((size and (size - 1)) == 0, "[FFT.fourier_real] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
+        Assert(size > 0, "[FFT.fourier_real] Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "[FFT.fourier_real] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
     end
@@ -519,8 +519,10 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         fourier_complex(a, true, false)
         if normalize then
           let scale = two / F.from[USize](size)
-          for i in Range(0, size) do
-            a.update(i, a(i)? * scale)?
+          var iscale: USize = 0
+          while iscale < size do
+            a.update(iscale, a(iscale)? * scale)?
+            iscale = iscale + 1
           end
         end
       else
@@ -558,11 +560,11 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = a.size()
     ifdef debug then
       try
-        Assert((size and (size - 1)) == 0, "The input array 'a' size (" +
+        Assert((size and (size - 1)) == 0, "[FFT.fourier2] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "Array 'a' can't be empty", true)?
-        Assert(normalize or inverse, "`normalize` must be " +
+        Assert(size > 0, "[FFT.fourier2] Array 'a' can't be empty", true)?
+        Assert(normalize or inverse, "[FFT.fourier2] `normalize` must be " +
             "set to `false` only with inverse FFT", true)?
       end
     end
@@ -591,13 +593,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         let jump = size / step
         for group in Range[USize](0, size, step) do
           var k: USize = 0
-          for i in Range[USize](group, group + half) do
-            let j = i + half
-            let ai = a(i)?
+          var ig: USize = group
+          while ig < (group + half) do
+            let j = ig + half
+            let ai = a(ig)?
             let product = a(j)? * root1(k)?
             a.update(j, ai - product)?
-            a.update(i, ai + product)?
+            a.update(ig, ai + product)?
             k = k + jump
+            ig = ig + 1
           end
         end
 
@@ -656,30 +660,30 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     try
       // Temporary vectors
       let u = Array[Complex[F]].init(Complex[F], m)
-      for i in Range[USize](0, size) do
-        //let re = (a(i)?.real() * root1(i)?.real()) + (a(i)?.imag() * root1(i)?.imag())
-      	//let im = (-a(i)?.real() * root1(i)?.imag()) + (a(i)?.imag() * root1(i)?.real())
-        //u.update(i, Complex[F](re, im))?
-	      u.update(i, a(i)? * root1(i)?)?
+      var iu: USize = 0
+      while iu < size do
+        u.update(iu, a(iu)? * root1(iu)?)?
+        iu = iu + 1
       end
-      
+
       let v = Array[Complex[F]].init(Complex[F], m)
       v.update(0, root1(0)?)?
-      for i in Range[USize](1, size) do
-        let c = root1(i)?.conj()
-        v.update(i, c)?
-        v.update(m - i, c)?
+      var iv: USize = 1
+      while iv < size do
+        let c = root1(iv)?.conj()
+        v.update(iv, c)?
+        v.update(m - iv, c)?
+        iv = iv + 1
       end
-      
+
       // Convolution
       let w = convolve(u, v)
 
       // Postprocessing
-      for i in Range[USize](0, size) do
-        //let re = (w(i)?.real() * root1(i)?.real()) + (w(i)?.imag() * root1(i)?.imag())
-	      //let im = (-w(i)?.real() * root1(i)?.imag()) + (w(i)?.imag() * root1(i)?.real())
-        //a.update(i, Complex[F](re, im))?
-	      a.update(i, w(i)? * root1(i)?)?
+      var iw: USize = 0
+      while iw < size do
+        a.update(iw, w(iw)? * root1(iw)?)?
+        iw = iw + 1
       end
 
       // If inverse, scale the result if normalize is required
@@ -707,7 +711,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = u.size()
     ifdef debug then
       try
-        Assert(v.size() == size, "Array sizes must be identical: u.size = " +
+        Assert(v.size() == size, "[FFT.convolve] Array sizes must be identical: u.size = " +
               size.string() + ", v.size = " + v.size().string(), true)?
       end
     end

@@ -1,5 +1,7 @@
 // Modular arithmetic
 
+use "collections"
+
 use "../assertx"
 
 primitive Modular[A: UnsignedInteger[A] val = USize]
@@ -7,7 +9,7 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
   # Modular arithmetic
 
   Operations on modular arithmetic: unsigned integer parameters are considered
-  modulo `m` (elements of Z/nZ).
+  modulo `m` (elements of Z/n).
 
   Though this primitive is defined to work on `UnsignedInteger`, the code is guarded
   by `Assert(x >= 0)` conditions. The reason is that positive integers can be seen
@@ -24,9 +26,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     ifdef debug then
       let zero = A.from[USize](0)
       try
-        Assert(a >= zero, "Modular.add_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.add_mod: Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.add_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.add_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.add_mod] Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.add_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -49,9 +51,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     ifdef debug then
       let zero = A.from[USize](0)
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.sub_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.sub_mod] Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.sub_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -71,8 +73,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     ifdef debug then
       try
         let zero = A.from[USize](0)
-        Assert(a >= zero, "Modular.neg_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.neg_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.neg_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.neg_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -95,9 +97,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.mul_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.mul_mod] Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.mul_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -127,7 +129,7 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     end
 
 
-  fun inverse_mod(a: A, m: A): A =>
+  fun inv_mod(a: A, m: A): A =>
     """
     Calculate the inverse of `a` modulo `m`. This is possible only when
     `a` is coprime with `m`, that is `gcd(a, m) == 1`.
@@ -140,8 +142,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.inv_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.inv_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -185,13 +187,13 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.div_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.div_mod] Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.div_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
-    let inv = inverse_mod(b, m)
+    let inv = inv_mod(b, m)
     if inv == zero then
       // Division is not possible
       zero
@@ -210,9 +212,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "Modular.sub_mod: Modulo parameter (" + m.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.pow_mod] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.pow_mod] Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(m >= zero, "[Modular.pow_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
       end
     end
 
@@ -260,8 +262,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.gcd] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.gcd] Second parameter (" + b.string() + ") must be positive", true)?
       end
     end
 
@@ -285,8 +287,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.gcd2] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.gcd2] Second parameter (" + b.string() + ") must be positive", true)?
       end
     end
 
@@ -308,7 +310,7 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     while true do
       ifdef debug then
         try
-          Assert(((u % two) == one) and ((v % two) == one), "u (" + u.string() +
+          Assert(((u % two) == one) and ((v % two) == one), "[Modular.gcd2] u (" + u.string() +
                 ") and v (" + v.string() + ") should be odd...", true)?
         end
       end
@@ -344,8 +346,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       try
-        Assert(a >= zero, "Modular.sub_mod: First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "Modular.sub_mod: Second parameter (" + b.string() + ") must be positive", true)?
+        Assert(a >= zero, "[Modular.lcm] First parameter (" + a.string() + ") must be positive", true)?
+        Assert(b >= zero, "[Modular.lcm] Second parameter (" + b.string() + ") must be positive", true)?
       end
     end
 
@@ -353,6 +355,4 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
       return zero
     end
     (a / gcd2(a, b)) * b
-
-
 

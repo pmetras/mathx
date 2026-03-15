@@ -64,7 +64,7 @@ class _TestModularInverse is UnitTest
   fun apply(h: TestHelper) =>
     // Inverse modulo prime number
     for i in Range[U32](1, 997) do
-      h.assert_ne[U32](0, Modular[U32].inverse_mod(i, 997), "Modulo prime")
+      h.assert_ne[U32](0, Modular[U32].inv_mod(i, 997), "Modulo prime")
     end
 
 
@@ -120,10 +120,10 @@ class _TestModularMPIntBasic is UnitTest
     h.assert_eq[MPInt](m0,        Modular[MPInt].lcm(m0, m0))
     h.assert_eq[MPInt](m0,        Modular[MPInt].lcm(m0, mp(5)))
 
-    // inverse_mod: 3 * 5 ≡ 1 (mod 7)
-    h.assert_eq[MPInt](mp(5), Modular[MPInt].inverse_mod(mp(3), m7))
+    // inv_mod: 3 * 5 ≡ 1 (mod 7)
+    h.assert_eq[MPInt](mp(5), Modular[MPInt].inv_mod(mp(3), m7))
     // no inverse when not coprime
-    h.assert_eq[MPInt](m0, Modular[MPInt].inverse_mod(mp(2), mp(4)))
+    h.assert_eq[MPInt](m0, Modular[MPInt].inv_mod(mp(2), mp(4)))
 
     // div_mod: 6 / 3 ≡ 2 (mod 7)
     h.assert_eq[MPInt](mp(2), Modular[MPInt].div_mod(mp(6), mp(3), m7))
@@ -164,7 +164,7 @@ class _TestModularMPIntBig is UnitTest
 
     // Modular inverse round-trip: a * a^(-1) ≡ 1 (mod p)
     let a   = MPInt.from[U64](123_456_789)
-    let inv = Modular[MPInt].inverse_mod(a, p)
+    let inv = Modular[MPInt].inv_mod(a, p)
     h.assert_ne[MPInt](MPInt.from[USize](0), inv, "123456789 must be invertible mod p")
     h.assert_eq[MPInt](one, Modular[MPInt].mul_mod(a, inv, p))
 
