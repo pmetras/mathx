@@ -133,8 +133,8 @@ class iso _DisabledTestMPFloatAdd is UnitTest
 class iso _DisabledTestMPFloatSub is UnitTest
   """
   Old `sub` tests — disabled during the class val redesign. The original
-  version returned a `(MPFloat val, I8)` tuple; `sub` now returns a plain
-  `MPFloat val`. Tests have been superseded by `_TestMPFloatSub`.
+  version returned a `(MPFloat, I8)` tuple; `sub` now returns a plain
+  `MPFloat`. Tests have been superseded by `_TestMPFloatSub`.
   """
   fun name(): String => "MPFloat/sub/disabled"
 
@@ -253,7 +253,7 @@ class iso _DisabledTestMPFloatString is UnitTest
     // All-zero digits → "0.0_000_000_0" for size 8
     // string() returns String iso^; annotate as String val so it can be passed
     // as String box to _MPFStr.
-    let z: String val = MPFloat(8).string()
+    let z: String = MPFloat(8).string()
     h.assert_true(z.at("0."), "zero(8) starts with '0.'")
     // All decimal digits should be '0'
     let zs = _MPFStr(z)   // remove '_'  (String box accepted)
@@ -526,7 +526,7 @@ class iso _TestMPFloatNewString is UnitTest
     h.assert_true(fhalf.string().at("0."), "from_f64(0.5, 4) starts with \"0.\"")
 
     // Verify decimal accuracy: 0.5 → first fractional digit is 5
-    let shalf: String val = fhalf.string()
+    let shalf: String = fhalf.string()
     h.assert_true(
       try shalf(2)? == '5' else false end,
       "from_f64(0.5, 4): first fractional digit is 5")
@@ -915,3 +915,129 @@ class iso _TestMPFloatSqrt is UnitTest
     h.assert_true(
       MPFloat.from_f64(4.0, p).sqrt().mul(MPFloat.from_f64(4.0, p).sqrt()).string().at("4."),
       "sqrt(4) × sqrt(4) = 4")
+
+
+// ── Comparisons ──────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatCmp is UnitTest
+  """
+  Verifies all six comparison operators (eq, ne, lt, le, ge, gt) and
+  `compare` against the full IEEE 754 truth tables, including:
+    - NaN (unordered: all comparisons false except ne)
+    - ±∞ self-equality and cross-sign inequality
+    - finite == ±∞ is false
+    - −0 == +0 (equal); −0 is not < +0
+    - mixed-sign finite pairs (negative < positive)
+    - same-sign pairs with different exponents (256 > 1)
+    - same-sign pairs with equal exponents but different digits
+    - min_value() == −∞ and max_value() == +∞ sanity
+  """
+  fun name(): String => "MPFloat/cmp"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 8
+    let nan  = MPFloat.nan_val()
+    let pinf = MPFloat.inf_val(true)
+    let ninf = MPFloat.inf_val(false)
+    let pz   = MPFloat.create(p)             // +0
+    let nz   = MPFloat.create(p).neg()       // -0
+    let one  = MPFloat.from_f64(1.0, p)
+    let two  = MPFloat.from_f64(2.0, p)
+    let neg1 = MPFloat.from_f64(-1.0, p)
+    let neg2 = MPFloat.from_f64(-2.0, p)
+    let big  = MPFloat.from_f64(256.0, p)   // exponent = 2
+
+    // ── NaN: all comparisons false except ne ─────────────────────────────────
+    h.assert_false(nan.eq(nan),   "NaN == NaN is false")
+    h.assert_true( nan.ne(nan),   "NaN != NaN is true")
+    h.assert_false(nan.lt(one),   "NaN < x is false")
+    h.assert_false(nan.le(one),   "NaN <= x is false")
+    h.assert_false(nan.ge(one),   "NaN >= x is false")
+    h.assert_false(nan.gt(one),   "NaN > x is false")
+    h.assert_false(one.lt(nan),   "x < NaN is false")
+    h.assert_false(one.le(nan),   "x <= NaN is false")
+    h.assert_false(one.ge(nan),   "x >= NaN is false")
+    h.assert_false(one.gt(nan),   "x > NaN is false")
+    h.assert_false(nan.eq(one),   "NaN == x is false")
+    h.assert_true( nan.ne(one),   "NaN != x is true")
+
+    // ── Infinities ───────────────────────────────────────────────────────────
+    h.assert_true( pinf.eq(pinf),  "+inf == +inf")
+    h.assert_true( ninf.eq(ninf),  "-inf == -inf")
+    h.assert_false(pinf.eq(ninf),  "+inf != -inf")
+    h.assert_false(ninf.eq(pinf),  "-inf != +inf")
+    h.assert_false(pinf.eq(one),   "+inf != finite")
+    h.assert_false(one.eq(pinf),   "finite != +inf")
+    h.assert_false(pinf.eq(pz),    "+inf != 0")
+    h.assert_true( pinf.ne(ninf),  "+inf ne -inf")
+    h.assert_false(pinf.lt(pinf),  "+inf < +inf is false")
+    h.assert_false(ninf.gt(ninf),  "-inf > -inf is false")
+    h.assert_true( ninf.lt(pinf),  "-inf < +inf")
+    h.assert_true( ninf.lt(one),   "-inf < finite")
+    h.assert_true( one.lt(pinf),   "finite < +inf")
+    h.assert_false(one.lt(ninf),   "finite < -inf is false")
+    h.assert_false(pinf.lt(one),   "+inf < finite is false")
+    h.assert_true( pinf.ge(pinf),  "+inf >= +inf")
+    h.assert_true( ninf.le(ninf),  "-inf <= -inf")
+
+    // ── min_value / max_value sanity ─────────────────────────────────────────
+    h.assert_true(MPFloat.min_value().is_inf(),      "min_value is inf")
+    h.assert_true(MPFloat.min_value().is_negative(), "min_value is -inf (negative)")
+    h.assert_true(MPFloat.max_value().is_inf(),      "max_value is inf")
+    h.assert_false(MPFloat.max_value().is_negative(),"max_value is +inf (positive)")
+    h.assert_true(MPFloat.min_value().lt(MPFloat.max_value()), "-inf < +inf")
+    h.assert_true(MPFloat.min_value().eq(ninf), "min_value == -inf")
+    h.assert_true(MPFloat.max_value().eq(pinf), "max_value == +inf")
+
+    // ── ±0 ──────────────────────────────────────────────────────────────────
+    h.assert_true( pz.eq(nz),    "+0 == -0")
+    h.assert_true( nz.eq(pz),    "-0 == +0")
+    h.assert_false(pz.ne(nz),    "+0 ne -0 is false")
+    h.assert_false(pz.lt(nz),    "+0 < -0 is false")
+    h.assert_false(nz.lt(pz),    "-0 < +0 is false")
+    h.assert_true( pz.le(nz),    "+0 <= -0")
+    h.assert_true( nz.le(pz),    "-0 <= +0")
+    h.assert_true( pz.ge(nz),    "+0 >= -0")
+    h.assert_true( nz.ge(pz),    "-0 >= +0")
+    h.assert_false(pz.gt(nz),    "+0 > -0 is false")
+    h.assert_false(nz.gt(pz),    "-0 > +0 is false")
+
+    // ── mixed sign ──────────────────────────────────────────────────────────
+    h.assert_true( neg1.lt(one),  "-1 < 1")
+    h.assert_false(one.lt(neg1),  "1 < -1 is false")
+    h.assert_true( one.gt(neg1),  "1 > -1")
+    h.assert_false(neg1.gt(one),  "-1 > 1 is false")
+    h.assert_false(neg1.eq(one),  "-1 != 1")
+    h.assert_true( neg1.ne(one),  "-1 ne 1")
+    h.assert_true( neg1.le(one),  "-1 <= 1")
+    h.assert_true( one.ge(neg1),  "1 >= -1")
+
+    // ── same sign, different exponents (1 vs 256) ────────────────────────────
+    h.assert_false(big.eq(one),  "256 != 1")
+    h.assert_false(one.eq(big),  "1 != 256")
+    h.assert_true( one.lt(big),  "1 < 256")
+    h.assert_false(big.lt(one),  "256 < 1 is false")
+    h.assert_true( big.gt(one),  "256 > 1")
+    h.assert_false(one.gt(big),  "1 > 256 is false")
+    h.assert_true( one.le(big),  "1 <= 256")
+    h.assert_true( big.ge(one),  "256 >= 1")
+
+    // Negative counterparts
+    h.assert_true( neg1.gt(neg2), "-1 > -2")
+    h.assert_true( neg2.lt(neg1), "-2 < -1")
+    h.assert_false(neg1.eq(neg2), "-1 != -2")
+
+    // ── same exponent, different digits ──────────────────────────────────────
+    h.assert_true( one.lt(two),   "1 < 2")
+    h.assert_false(two.lt(one),   "2 < 1 is false")
+    h.assert_true( one.eq(one),   "1 == 1")
+    h.assert_false(one.lt(one),   "1 < 1 is false")
+    h.assert_true( one.le(one),   "1 <= 1")
+    h.assert_true( one.ge(one),   "1 >= 1")
+    h.assert_false(one.gt(one),   "1 > 1 is false")
+
+    // ── compare helper ───────────────────────────────────────────────────────
+    h.assert_true(one.compare(two)  is Less,    "compare(1, 2) = Less")
+    h.assert_true(two.compare(one)  is Greater, "compare(2, 1) = Greater")
+    h.assert_true(one.compare(one)  is Equal,   "compare(1, 1) = Equal")
+    h.assert_true(neg1.compare(one) is Less,    "compare(-1, 1) = Less")

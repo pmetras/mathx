@@ -15,4 +15,4 @@ Follow the [Pony standard library Style Guide](https://github.com/ponylang/ponyc
 ```
 The same applies for `error` that must be on a its own line.`
 - Never remove docstring text if its content is still valid. Add complement or ask the user before the change.
-
+- Favor using the names `i`, `j`, `k` in that order for loop variables.

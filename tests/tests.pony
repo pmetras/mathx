@@ -164,6 +164,7 @@ actor Main is TestList
     test(_TestMPFloatInv)
     test(_TestMPFloatDiv)
     test(_TestMPFloatSqrt)
+    test(_TestMPFloatCmp)
 
     // MPFloat numbers — old tests (disabled during redesign)
     // test(_DisabledTestMPFloatCreate)

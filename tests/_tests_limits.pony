@@ -4,7 +4,7 @@ use "../mathx"
 use "../pony_testx"
 
 
-class iso _TestFLimits[F: (Float & FloatingPoint[F] val)] is UnitTest
+class iso _TestFLimits[F: (Float & FloatingPoint[F])] is UnitTest
   """
   Property-based tests for FLimits[F]: verify definitional guarantees that hold
   on any IEEE 754 platform, independent of the specific values.

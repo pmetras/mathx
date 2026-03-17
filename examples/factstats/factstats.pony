@@ -97,7 +97,7 @@ actor Main
     """
     Calculates digit counts for a single factorial, updates globals and prints the data line.
     """
-    let s: String val = fact.string()
+    let s: String = fact.string()
     let digit_count = s.size()
     
     // Update total digit count sum
@@ -118,8 +118,8 @@ actor Main
     end
     
     // Display string: keep only the 120 most significant digits and append '...' if needed
-    let display_s: String val = if s.size() > 120 then
-      recover val s.substring(0, 120) + "..." end
+    let display_s: String = if s.size() > 120 then
+      s.substring(0, 120) + "..."
     else
       s
     end
@@ -135,7 +135,7 @@ actor Main
     out.print(consume line)
 
 
-  fun pad(s: String val, width: USize, left: Bool = true): String val =>
+  fun pad(s: String, width: USize, left: Bool = true): String =>
     """
     Right or left-pads a string with spaces to reach the specified width.
     """
@@ -143,7 +143,7 @@ actor Main
       s
     else
       let p_size = width - s.size()
-      let p: String val = recover
+      let p: String = recover
         let s' = String(p_size)
         var k: USize = 0
         while k < p_size do
@@ -153,8 +153,8 @@ actor Main
         s'
       end
       if left then
-        recover val s + p end
+        s + p
       else
-        recover val p + s end
+        p + s
       end
     end

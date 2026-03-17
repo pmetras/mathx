@@ -163,9 +163,9 @@ class val MPFloat
     end
 
 
-  new val from[N: (Number & Real[N] val)](n: N,
-                                          prec: ULong = 112,
-                                          rnd: RoundingMode = RoundingNearest) =>
+  new val from[N: (Number & Real[N])](n: N,
+                                      prec: ULong = 112,
+                                      rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` with value `n` and precision `prec` (default 112),
     using rounding mode `rnd` (default nearest).
@@ -458,7 +458,7 @@ class val MPFloat
 
 
   fun exact_string(base: U32 = 10, rnd: RoundingMode = RoundingNearest)
-                  : (String iso^, I64 val, Bool) =>
+                  : (String iso^, I64, Bool) =>
     """
     Convert the `MPFloat` to a `String` using base `base` (default 10) and
     rounding mode `rnd` (default to nearest). The result is a tuple where
@@ -694,7 +694,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.eq] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -710,7 +710,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.ne] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -726,7 +726,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.lt] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -742,7 +742,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.le] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -758,7 +758,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.ge] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -774,7 +774,7 @@ class val MPFloat
       let this_prec = get_precision()
       let that_prec = that.get_precision()
       if this_prec != that_prec then
-        Debug("MPFloat.eq: The two floats have different precisions (" +
+        Debug("[MPFloat.gt] The two floats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). Comparison can be incorrect")
       end
@@ -842,7 +842,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec < this_prec then
-        Debug("MPFloat.add: Trying to add two floats with different precisions (" +
+        Debug("[MPFloat.add] Trying to add two floats with different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " is inexact")
       end
@@ -868,7 +868,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec < this_prec then
-        Debug("MPFloat.sub: Trying to substract two floats with different precisions (" +
+        Debug("[MPFloat.sub] Trying to substract two floats with different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " is inexact")
       end
@@ -894,7 +894,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec < this_prec then
-        Debug("MPFloat.sub: Trying to multiply two floats with different precisions (" +
+        Debug("[MPFloat.mul] Trying to multiply two floats with different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
@@ -924,7 +924,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec < this_prec then
-        Debug("MPFloat.sub: Trying to divide two floats with different precisions (" +
+        Debug("[MPFloat.div] Trying to divide two floats with different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
@@ -1060,7 +1060,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec != this_prec then
-        Debug("MPFloat.pow: The two MPFloats have different precisions (" +
+        Debug("[MPFloat.pow] The two MPFloats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
@@ -1277,7 +1277,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec != this_prec then
-        Debug("MPFloat.rem: The two MPFloats have different precisions (" +
+        Debug("[MPFloat.mod] The two MPFloats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The results with precision " + this_prec.string() + " can be less precise")
       end
@@ -1302,7 +1302,7 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec != this_prec then
-        Debug("MPFloat.divrem: The two MPFloats have different precisions (" +
+        Debug("[MPFloat.divrem] The two MPFloats have different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The results with precision " + this_prec.string() + " can be less precise")
       end

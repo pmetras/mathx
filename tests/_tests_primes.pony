@@ -10,7 +10,7 @@ use "../pony_testx"
 
 class _TestPrimeTest is UnitTest
   // everyone should know them
-  let primes_expected: Array[USize] val = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
+  let primes_expected: Array[USize] = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
     31; 37; 41; 43; 47]
 
   fun name(): String =>
@@ -21,12 +21,12 @@ class _TestPrimeTest is UnitTest
     for n in Range[USize](0, 50) do
       if Prime.is_prime(n) then primes.push(n) end
     end
-    h.assert_array_eq[USize](primes_expected, consume val primes, "Prime.is_prime error!")
+    h.assert_array_eq[USize](primes_expected, primes, "Prime.is_prime error!")
 
 
 class _TestPrimeTestExtended is UnitTest
   // you don't have to learn these :)
-  let primes_expected: Array[USize] val = [10007; 10009; 10037; 10039; 10061
+  let primes_expected: Array[USize] = [10007; 10009; 10037; 10039; 10061
     10067; 10069; 10079; 10091; 10093; 10099; 10103; 10111; 10133; 10139; 10141
     10151; 10159; 10163; 10169; 10177; 10181; 10193; 10211; 10223; 10243; 10247
     10253; 10259; 10267; 10271; 10273; 10289; 10301; 10303; 10313; 10321; 10331
@@ -46,7 +46,7 @@ class _TestPrimeTestExtended is UnitTest
     for n in Range[USize](10000, 11000) do
       if Prime.is_prime(n) then primes.push(n) end
     end
-    h.assert_array_eq[USize](primes_expected, consume val primes, "Prime.is_prime error!")
+    h.assert_array_eq[USize](primes_expected, primes, "Prime.is_prime error!")
 
 
 class _TestNextPrime is UnitTest
@@ -325,7 +325,7 @@ class _TestPrevPrime is UnitTest
 
 
 class _TestPrimeSieve is UnitTest
-  let primes_to_50: Array[USize] val = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
+  let primes_to_50: Array[USize] = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
     31; 37; 41; 43; 47]
 
   fun name(): String =>
@@ -385,7 +385,7 @@ class _TestPrimeSieve is UnitTest
 
 
 class _TestSegmentedSieve is UnitTest
-  let primes_to_50: Array[USize] val = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
+  let primes_to_50: Array[USize] = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29
     31; 37; 41; 43; 47]
 
   fun name(): String =>
@@ -419,7 +419,7 @@ class _TestSegmentedSieve is UnitTest
     let seg100 = SegmentedSieve(100, 150)
     h.assert_eq[USize](100, seg100.lower())
     h.assert_eq[USize](150, seg100.limit())
-    let expected100: Array[USize] val = [101; 103; 107; 109; 113; 127; 131
+    let expected100: Array[USize] = [101; 103; 107; 109; 113; 127; 131
       137; 139; 149]
     h.assert_array_eq[USize](expected100, seg100.all_primes())
     h.assert_eq[USize](10, seg100.count())

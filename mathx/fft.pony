@@ -66,7 +66,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         end
         j = j or bit
         if i < j then
-          a.update(i, a.update(j, a(i)?)?)? // Swap a(i) and a(j) values
+          a(i)? = (a(j)? = a(i)?) // Swap a(i) and a(j) values
         end
       end
     else
@@ -250,10 +250,10 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     a
 
 
-  fun fourier_complex(a: Array[F val],
+  fun fourier_complex(a: Array[F],
                       inverse: Bool = false,
                       normalize: Bool = true)
-                     : Array[F val] =>
+                     : Array[F] =>
     """
     Calculate the discrete fast Fourier tranform of `a`. It calculates the
     inverse transform when `inverse = true`.
@@ -537,7 +537,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     a
 
 
-  fun fourier2(a: Array[Complex[F val]],
+  fun fourier2(a: Array[Complex[F]],
                inverse: Bool = false,
                normalize: Bool = true)
               : Array[Complex[F]] =>
@@ -583,7 +583,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     end
 
     // Reorganize the array content in bits order
-    _rearrange[Complex[F val]](a)
+    _rearrange[Complex[F]](a)
 
     // Cooley-Tukey decimation-in-time radix-2 FFT
     try

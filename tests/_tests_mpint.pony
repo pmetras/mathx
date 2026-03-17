@@ -165,8 +165,8 @@ class iso _TestMPIntComparisons is UnitTest
         end
 
         let s = rand.u8()
-        var x: String val = String(s.usize() * 10)
-        var y: String val = String(s.usize() * 10)
+        var x: String = String(s.usize() * 10)
+        var y: String = String(s.usize() * 10)
         if rand.i8() >= 0 then
           x = "+".clone()
         else
@@ -657,7 +657,7 @@ class iso _TestMPIntShift is UnitTest
 
     // Round-trip x.bit_shl(n).bit_shr(n) == x
     let shift = MPInt.from_ilong(7)
-    let rt_vals: Array[MPInt val] val = [
+    let rt_vals: Array[MPInt] = [
       MPInt.from_ilong(1); MPInt.from_ilong(15); MPInt.from_ilong(16)
       MPInt.from_ilong(17); MPInt.from_ilong(32); MPInt.from_ilong(100)
       MPInt.from_ilong(65535); MPInt.from_ilong(65536); MPInt.from_ilong(131072)]

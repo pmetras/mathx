@@ -182,7 +182,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
     end
 
-    let tmp_str: String val = if iexp >= 0 then
+    let tmp_str: String = if iexp >= 0 then
       let ie = iexp.usize()
       let exp_val_str = s.substring(iexp + 1)
       if exp_val_str.size() == 0 then
@@ -218,7 +218,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         error
       end
 
-      recover val
+      recover
         let pads = String.create(exp.usize())
         var k: ILong = 0
         while k < exp do
@@ -235,7 +235,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       error
     end
 
-    _digits = recover val
+    _digits = recover
       let d: Array[U16] ref = [0]
       var has_real_digit = false
       for dc in tmp_str.values() do
@@ -281,7 +281,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _negative = (n < 0)
     var q: ULong = n.abs().ulong()
     let base: ULong = _base().ulong()
-    _digits = recover val
+    _digits = recover
       let d: Array[U16] iso = Array[U16]
       while q >= base do
         (q, let r) = q.divrem(base)
@@ -310,7 +310,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _digits = value._digits
 
 
-  new val from[A: (Number & Real[A] val)](a: A) =>
+  new val from[A: (Number & Real[A])](a: A) =>
     """
     Create an `MPInt` from another number.
 
@@ -320,7 +320,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     _negative = (a.f64() < 0)
     let base = U128.from[U32](_base())
-    _digits = recover val
+    _digits = recover
       var q: U128 = if _negative then
         (-a).u128()
       else
@@ -458,7 +458,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     ctz()
 
 
-  fun \do_not_use\ rotl(that: MPInt val): MPInt =>
+  fun \do_not_use\ rotl(that: MPInt): MPInt =>
     """
     Rotate left. Not supported for arbitrary precision, returns a copy.
 
@@ -467,7 +467,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _create(_negative, _digits)
 
 
-  fun \do_not_use\ rotr(that: MPInt val): MPInt =>
+  fun \do_not_use\ rotr(that: MPInt): MPInt =>
     """
     Rotate right. Not supported for arbitrary precision, returns a copy.
 
@@ -476,7 +476,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _create(_negative, _digits)
 
 
-  fun bit_shl(that: MPInt val): MPInt =>
+  fun bit_shl(that: MPInt): MPInt =>
     """
     Bit-level shift left: return `this * 2^that`, preserving sign.
     If `that` is negative or `this` is zero, return a copy unchanged.
@@ -513,7 +513,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _create(_negative, d)
 
 
-  fun bit_shr(that: MPInt val): MPInt =>
+  fun bit_shr(that: MPInt): MPInt =>
     """
     Bit-level shift right: return `this / 2^that` (truncating), preserving sign.
     If `that` is negative or `this` is zero, return a copy unchanged.
@@ -551,7 +551,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _create(_negative, d)
 
 
-  fun shl(that: MPInt val): MPInt =>
+  fun shl(that: MPInt): MPInt =>
     """
     Bitwise shift left. Delegates to `bit_shl`.
 
@@ -560,7 +560,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     bit_shl(that)
 
 
-  fun shr(that: MPInt val): MPInt =>
+  fun shr(that: MPInt): MPInt =>
     """
     Bitwise shift right. Delegates to `bit_shr`.
 
@@ -569,7 +569,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     bit_shr(that)
 
 
-  fun shl_unsafe(that: MPInt val): MPInt =>
+  fun shl_unsafe(that: MPInt): MPInt =>
     """
     Bitwise shift left (no overflow check; it can't happen).
     Delegates to `bit_shl`.
@@ -579,7 +579,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     bit_shl(that)
 
 
-  fun shr_unsafe(that: MPInt val): MPInt =>
+  fun shr_unsafe(that: MPInt): MPInt =>
     """
     Bitwise shift right (no overflow check; it can't happen).
     Delegates to `bit_shr`.
@@ -824,28 +824,28 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     else
       let size = _digits.size().max(that._digits.size())
       let half = size / 2
-      let this_low = _create(_negative, recover val 
+      let this_low = _create(_negative, recover
         let d_low = Array[U16](half)
         for k in Range(0, half) do
           try d_low.push(_digits(k)?) end
         end
         d_low
       end)
-      let this_high = _create(_negative, recover val
+      let this_high = _create(_negative, recover
         let d_high = Array[U16](_digits.size() - half)
         for k in Range(half, _digits.size()) do
           try d_high.push(_digits(k)?) end
         end
         d_high
       end)
-      let that_low = _create(that._negative, recover val
+      let that_low = _create(that._negative, recover
         let d_low_that = Array[U16](half)
         for k in Range(0, half) do
           try d_low_that.push(that._digits(k)?) end
         end
         d_low_that
       end)
-      let that_high = _create(that._negative, recover val
+      let that_high = _create(that._negative, recover
         let d_high_that = Array[U16](that._digits.size() - half)
         for k in Range(half, that._digits.size()) do
           try d_high_that.push(that._digits(k)?) end
@@ -933,7 +933,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       a
     end
 
-    let v_ref: Array[U16] val = recover val
+    let v_ref: Array[U16] = recover
       let a: Array[U16] = Array[U16].create(that._digits.size())
       for x in that._digits.values() do a.push(x) end
       _short_mul(a, d_val)
@@ -1005,14 +1005,14 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
     end
 
-    let q_digits: Array[U16] val = recover val
+    let q_digits: Array[U16] val = recover
       let a: Array[U16] ref = consume q_ref
       _normalize(a)
       a
     end
 
     // Step D7: Unnormalize
-    let r_digits: Array[U16] val = recover val
+    let r_digits: Array[U16] val = recover
       let a: Array[U16] ref = Array[U16].init(0, n_val)
       try
         var k_rem: USize = 0
@@ -1077,7 +1077,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
 
-  fun pow(n: MPInt val): MPInt =>
+  fun pow(n: MPInt): MPInt =>
     """
     Return `this` raised to the power `n` using binary (square-and-multiply)
     exponentiation. `O(log n)` multiplications.
@@ -1150,7 +1150,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     a
 
 
-  fun pow_mod(exp: MPInt val, m: MPInt val): MPInt =>
+  fun pow_mod(exp: MPInt, m: MPInt): MPInt =>
     """
     Return `(this ^ exp) mod m` using square-and-multiply with modular
     reduction at each step. Much faster than `pow(exp).mod(m)` for large
@@ -1185,7 +1185,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     result
 
 
-  fun add_partial(that: MPInt val): MPInt ? =>
+  fun add_partial(that: MPInt): MPInt ? =>
     """
     Partial addition. `MPInt` can't overflow or underflow and no errors are raised.
 
@@ -1195,7 +1195,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     add(that)
 
 
-  fun sub_partial(that: MPInt val): MPInt ? =>
+  fun sub_partial(that: MPInt): MPInt ? =>
     """
     Partial subtraction. `MPInt` can't overflow or underflow and no errors are raised.
 
@@ -1205,7 +1205,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     sub(that)
 
 
-  fun mul_partial(that: MPInt val): MPInt ? =>
+  fun mul_partial(that: MPInt): MPInt ? =>
     """
     Partial multiplication. `MPInt` can't overflow or underflow and no errors are raised.
 
