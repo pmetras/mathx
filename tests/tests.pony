@@ -165,6 +165,9 @@ actor Main is TestList
     test(_TestMPFloatDiv)
     test(_TestMPFloatSqrt)
     test(_TestMPFloatCmp)
+    test(_TestMPFloatFromMPInt)
+    test(_TestMPFloatDivRem)
+    test(_TestMPFloatRounding)
 
     // MPFloat numbers — old tests (disabled during redesign)
     // test(_DisabledTestMPFloatCreate)
@@ -233,4 +236,5 @@ actor Main is TestList
     test(_TestMPIntConversions)
     test(_TestMPIntShiftAlias)
     test(_TestMPIntPowEdge)
+    test(_TestMPIntFromMPFloat)
 

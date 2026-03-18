@@ -26,5 +26,5 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [x] `from_string` must accept numbers larger than `F64`.
 [ ] In `from_string`, why operation are done with `F64` instead of `U32`, for instance, and converted to `F64.from_bits` in the end?
 [ ] Recognize `_` digit-separator in `from_string`.
-[ ] Add `from_mpint` to create a new `MPFloat`from an `MPInt`.
+[x] Add `from_mpint` to create a new `MPFloat`from an `MPInt`.
 [ ] Add `mpint` to convert into a `MPInt`. The type of rounding must be thought about and if the function must be partial...

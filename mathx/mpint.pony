@@ -2020,6 +2020,130 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     (not _negative) and (not is_zero())
 
 
+  fun raw_digits(): Array[U8] val =>
+    """
+    Return the absolute value of this `MPInt` as a big-endian `Array[U8]`.
+
+    Each base-65536 `U16` word is split into its high byte (`word >> 8`) and
+    low byte (`word and 0xFF`).  The words are emitted most-significant first
+    (i.e. `_digits` is reversed), so the result is a standard big-endian
+    byte representation of the magnitude.
+
+    Leading zero bytes are stripped so that, for a non-zero value, the first
+    byte is always non-zero.  Zero itself returns a single-element array
+    `[0]`.
+
+    This is used by `MPFloat.from_mpint` to convert directly from the
+    base-65536 representation to base-256 without going through a decimal
+    string, reducing conversion cost from O(n²) to O(n).
+    """
+    let n: USize = _digits.size()
+    recover
+      // Build big-endian bytes: MSW first, each word as (hi, lo).
+      // _digits is val, so it is accessible inside the recover block.
+      let raw = Array[U8].create(n * 2)
+      var k: USize = n
+      while k > 0 do
+        k = k - 1
+        let w: U16 = try _digits(k)? else 0 end
+        raw.push((w >> 8).u8())
+        raw.push((w and 0xFF).u8())
+      end
+      // Strip leading zero bytes, keeping at least one byte.
+      var start: USize = 0
+      while (start < (raw.size() - 1)) and
+            (try raw(start)? == 0 else false end)
+      do
+        start = start + 1
+      end
+      // Copy the significant suffix into the result array.
+      let result = Array[U8].create(raw.size() - start)
+      var i: USize = start
+      while i < raw.size() do
+        try result.push(raw(i)?) end
+        i = i + 1
+      end
+      result
+    end
+
+
+  new val from_mpfloat(f: MPFloat) ? =>
+    """
+    Create a new `MPInt` equal to the truncation toward zero of the `MPFloat`
+    value `f`: `trunc(f)`, i.e. the integer nearest to `f` in the direction
+    of zero.
+
+    - Fractional bytes of `f` (those below the units position) are discarded
+      without rounding.
+    - The result is exact for every finite `MPFloat` whose magnitude is an
+      integer: `MPInt.from_mpfloat(MPFloat.from_mpint(n, prec))` returns `n`
+      unchanged as long as `|n| < 256^prec`.
+    - `trunc(±0.9)` = 0.  `trunc(−5.9)` = −5 (not −6).
+
+    Special cases:
+    - NaN or ±∞ → `error` (no integer representation exists).
+    - Zero or `|f| < 1` (non-positive exponent) → `0`.
+    - Negative → a negative `MPInt` with magnitude `trunc(|f|)`.
+
+    Algorithm: `MPFloat.exponent()` gives the number of integer bytes `e` in
+    the big-endian base-256 mantissa returned by `MPFloat.raw_digits()`.
+    Those bytes (plus any implicit trailing zeros when `e` exceeds the stored
+    precision) are re-paired right-to-left into little-endian base-65536 `U16`
+    words — a pure byte reordering, O(e) with no decimal arithmetic.
+
+    This is the inverse of `MPFloat.from_mpint` (up to precision limits).
+    """
+    if f.is_nan() or f.is_infinite() then
+      error
+    end
+    if f.is_zero() or (f.exponent() <= 0) then
+      _negative = false
+      _digits = [0]
+      return
+    end
+
+    _negative = f.is_negative()
+
+    // Number of integer bytes in the big-endian mantissa representation.
+    let e: USize = f.exponent().usize()
+
+    let stored = f.raw_digits()
+
+    // Stored bytes that belong to the integer part (bytes at index >= e are
+    // fractional and are discarded).
+    let int_stored: USize = e.min(stored.size())
+
+    // Number of little-endian U16 words needed to hold all integer bytes.
+    let n_words: USize = (e + 1) / 2
+
+    _digits = recover
+      // Zero-initialise: bytes beyond int_stored are implicit zeros, which
+      // map to zero words with no extra work.
+      let d = Array[U16].init(0, n_words)
+
+      // Map each stored integer byte to its U16 word.
+      //
+      // Byte at index `i` (0 = MSB) sits at position `pos = e − 1 − i` from
+      // the LSB end.  It lands in word `widx = pos / 2`.  When `pos` is odd
+      // it is the HIGH byte of that word; when even it is the LOW byte.
+      var i: USize = 0
+      while i < int_stored do
+        let bval: U16 = try stored(i)?.u16() else 0 end
+        let pos: USize = e - 1 - i
+        let widx: USize = pos / 2
+        try
+          if (pos % 2) == 1 then
+            d(widx)? = d(widx)? or (bval << 8)
+          else
+            d(widx)? = d(widx)? or bval
+          end
+        end
+        i = i + 1
+      end
+      d
+    end
+
+
   fun compare(that: box->MPInt): Compare =>
     """
     Three-way comparison. Returns `Less`, `Equal`, or `Greater`.

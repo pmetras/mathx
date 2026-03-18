@@ -1287,3 +1287,90 @@ class iso _TestMPIntPowEdge is UnitTest
     h.assert_true(MPInt.from_ilong(8).isqrt() == MPInt.from_ilong(2), "isqrt(8) = 2")
     // Just below a perfect square: isqrt(35) = 5 (since 5^2=25 ≤ 35 < 36=6^2)
     h.assert_true(MPInt.from_ilong(35).isqrt() == MPInt.from_ilong(5), "isqrt(35) = 5")
+
+
+// ── from_mpfloat ──────────────────────────────────────────────────────────────
+
+class iso _TestMPIntFromMPFloat is UnitTest
+  """
+  `MPInt.from_mpfloat` converts an `MPFloat` to an `MPInt` by truncating
+  toward zero.  Covers:
+  - NaN and ±∞ raise an error.
+  - Zero and purely fractional values (exponent ≤ 0) map to 0.
+  - Positive and negative integers round-trip exactly via `from_mpint`.
+  - Fractional parts are discarded without rounding (truncation toward zero).
+  - Large values beyond the `F64` / `I64` range are exact.
+  """
+
+  fun name(): String =>
+    "MPInt/from_mpfloat"
+
+  fun apply(h: TestHelper) =>
+    let zero = MPInt.from_ilong(0)
+    let one  = MPInt.from_ilong(1)
+
+    // NaN and ±∞ must raise an error (no integer representation).
+    h.assert_error({() ? => MPInt.from_mpfloat(MPFloat.nan_val())?},  "from_mpfloat(NaN) errors")
+    h.assert_error({() ? => MPInt.from_mpfloat(MPFloat.inf_val())?},  "from_mpfloat(+∞) errors")
+    h.assert_error({() ? => MPInt.from_mpfloat(MPFloat.inf_val().neg())?}, "from_mpfloat(−∞) errors")
+
+    // Zero → 0.
+    let iz = try MPInt.from_mpfloat(MPFloat.create())? else MPInt.from_ilong(-1) end
+    h.assert_true(iz.is_zero(), "from_mpfloat(+0) = 0")
+
+    // Purely fractional (exponent ≤ 0): truncation toward zero yields 0.
+    let fhalf  = try MPFloat.from_string("0.5")?  else MPFloat.create() end
+    let fnhalf = try MPFloat.from_string("-0.9")? else MPFloat.create() end
+    h.assert_true(
+      (try MPInt.from_mpfloat(fhalf)?  else MPInt.from_ilong(-1) end).is_zero(),
+      "from_mpfloat(0.5) = 0")
+    h.assert_true(
+      (try MPInt.from_mpfloat(fnhalf)? else MPInt.from_ilong(-1) end).is_zero(),
+      "from_mpfloat(-0.9) = 0 (truncation toward zero, not floor)")
+
+    // Positive integers: exact round-trip through MPFloat.from_mpint.
+    let rt = {(h2: TestHelper, v: ILong) =>
+      let n  = MPInt.from_ilong(v)
+      let f  = MPFloat.from_mpint(n, 8)
+      let n2 = try MPInt.from_mpfloat(f)? else MPInt.from_ilong(-1) end
+      h2.assert_true(n == n2, "round-trip " + v.string())
+    }
+    rt(h, 1)
+    rt(h, 3)
+    rt(h, 127)
+    rt(h, 256)
+    rt(h, 65535)
+    rt(h, 65536)
+    rt(h, 1000000)
+    rt(h, -1)
+    rt(h, -3)
+    rt(h, -256)
+    rt(h, -65536)
+
+    // Truncation of positive fractional value: 1.9 → 1 (not 2).
+    let f19 = try MPFloat.from_string("1.9")? else MPFloat.create() end
+    h.assert_true(
+      (try MPInt.from_mpfloat(f19)? else MPInt.from_ilong(-1) end) == one,
+      "from_mpfloat(1.9) = 1 (truncated, not rounded)")
+
+    // Truncation of negative fractional value: -5.9 → -5 (not -6).
+    let fn59 = try MPFloat.from_string("-5.9")? else MPFloat.create() end
+    h.assert_true(
+      (try MPInt.from_mpfloat(fn59)? else MPInt.from_ilong(0) end) == MPInt.from_ilong(-5),
+      "from_mpfloat(-5.9) = -5 (truncated toward zero, not floor)")
+
+    // Large value: 10^20 (beyond I64/F64 range), exact with prec=12.
+    let e20: MPInt =
+      try MPInt.from_string("100000000000000000000")?
+      else MPInt.from_ilong(0)
+      end
+    let ie20 = try MPInt.from_mpfloat(MPFloat.from_mpint(e20, 12))? else MPInt.from_ilong(0) end
+    h.assert_true(ie20 == e20, "round-trip 10^20 with prec=12")
+
+    // 29-digit value: exact round-trip with sufficient precision.
+    let d29: MPInt =
+      try MPInt.from_string("12345678901234567890123456789")?
+      else MPInt.from_ilong(0)
+      end
+    let id29 = try MPInt.from_mpfloat(MPFloat.from_mpint(d29, 16))? else MPInt.from_ilong(0) end
+    h.assert_true(id29 == d29, "round-trip 29-digit integer with prec=16")
