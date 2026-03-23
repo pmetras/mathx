@@ -114,7 +114,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         Assert((size and (size - 1)) == 0, "[FFT.fourier] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "[FFT.fourier] Array 'a' can't be empty", true)?
+        Assert(size >= 2, "[FFT.fourier] Array 'a' must have at least 2 elements", true)?
         Assert(normalize or inverse, "[FFT.fourier] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
@@ -195,7 +195,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         Assert((size and (size - 1)) == 0, "[FFT.fourier_unsafe] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "[FFT.fourier_unsafe] Array 'a' can't be empty", true)?
+        Assert(size >= 2, "[FFT.fourier_unsafe] Array 'a' must have at least 2 elements", true)?
         Assert(normalize or inverse, "[FFT.fourier_unsafe] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
@@ -280,7 +280,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
               "[FFT.fourier_complex] The input array 'a' size (" + size.string() +
               ") must be a power of 4. Enlarge it to " +
               (size2.next_pow2() * 2).string(), true)?
-        Assert(size > 0, "[FFT.fourier_complex] Array 'a' can't be empty", true)?
+        Assert(size >= 2, "[FFT.fourier_complex] Array 'a' must have at least 2 elements", true)?
         Assert(normalize or inverse, "[FFT.fourier_complex] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
@@ -455,7 +455,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         Assert((size and (size - 1)) == 0, "[FFT.fourier_real] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "[FFT.fourier_real] Array 'a' can't be empty", true)?
+        Assert(size >= 4, "[FFT.fourier_real] Array 'a' must have at leat 4 elements", true)?
         Assert(normalize or inverse, "[FFT.fourier_real] `normalize` must be " +
               "set to `false` only with inverse FFT", true)?
       end
@@ -563,7 +563,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         Assert((size and (size - 1)) == 0, "[FFT.fourier2] The input array 'a' size (" +
               size.string() + ") must be a power of 2. Enlarge it to " +
               size.next_pow2().string(), true)?
-        Assert(size > 0, "[FFT.fourier2] Array 'a' can't be empty", true)?
+        Assert(size >= 2, "[FFT.fourier2] Array 'a' must have at least 2 elements", true)?
         Assert(normalize or inverse, "[FFT.fourier2] `normalize` must be " +
             "set to `false` only with inverse FFT", true)?
       end

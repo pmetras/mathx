@@ -58,7 +58,7 @@ class val MPFloat
 
   The precision of a `MPFloat` is set when the instance is created. Contrarily
   to MPFR where the precision of an operation is defined by the result variable,
-  it is expected that all `MPFfloat`s involved in operations use the same
+  it is expected that all `MPFloat`s involved in operations use the same
   precision. If that's not the case, warning messages are printed when compiled
   in debug mode, and results can be not the one expected by the developer. As a
   consequence, the precision of the result of the operation `this op that` or
@@ -446,7 +446,7 @@ class val MPFloat
     let buf_size = @mpfr_snprintf(Pointer[U8], 0, fmt, _mpfr) + 1
     if buf_size < 0 then
       // We return an error message instead of the string representation
-      return "MPFloat.string: MPFR error".clone()
+      return "[MPFloat.string] MPFR error".clone()
     end
     let result: String iso = recover iso
       // Memory managed by Pony

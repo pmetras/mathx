@@ -28,3 +28,18 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] Recognize `_` digit-separator in `from_string`.
 [x] Add `from_mpint` to create a new `MPFloat`from an `MPInt`.
 [ ] Add `mpint` to convert into a `MPInt`. The type of rounding must be thought about and if the function must be partial...
+[ ] Evaluate id we rename `raw_digits` and `???` to `bits` and `from_bits` to be compatible with `F64` or `F32`? The signature is different...
+[ ] Write extensive tests for `from_string` to check coverage.
+[ ] Check all constructors to see if precision is defined correctly and compatible with GMPFR: If there is an overflow interpreting the value and it can't be coded with the desired precision, the number becomes `-inf` or `inf`.
+[ ] Optimize working directly on the `_digits` array instead of creating a new `MPFloat` at each operation.
+[ ] Evaluate if worth replacing some `while ... end` loops by `for i in Range...` loops, for easier readability.
+[ ] Correct `almost_eq` function to use `MPFloat` instead of `F64`.
+[ ] See if pi calculation by Kudnovsky calculation can be optimized by using `MPInt`.
+[ ] Test that digit separators `_` are accepted in `from_string`.
+[ ] Option to add figit separators `_` in `exact_string`.
+
+### Anomalies
+[ ] What the use of `FloatingPoint` functions `ldexp` and `frexp` that seems not to use the value of `this` but the paramter `x`?
+[ ] Boolean function `nan`, `finite` and `infinite` should be renamed `is_nan`, `is_finite` an `is_infinite` to stay consistent with usage.
+[ ] Add boolean function `is_integer` to `FloatingPoint`.
+[ ] Why are `SignedIteger.bitwidth` and `SignedInteger.bytewidth` returning different types (respectively `A` and `USize`?

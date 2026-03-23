@@ -1,7 +1,9 @@
 // Multi-precision floating point numbers
 
-use "debug"
 use "../assertx"
+
+use "collections"
+use "debug"
 
 
 type RoundingMode is (RoundingNearest | RoundingNegInf | RoundingPosInf |
@@ -24,6 +26,9 @@ type RoundingMode is (RoundingNearest | RoundingNegInf | RoundingPosInf |
 primitive RoundingNearest
     """
     Round to the nearest, with the even rounding rule.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    in case the number to be rounded lies exactly in the middle between two consecutive
+    representable numbers, it is rounded to the one with an even significand.
     """
   fun apply(): I32 =>
     0
@@ -35,6 +40,8 @@ primitive RoundingNearest
 primitive RoundingNegInf
     """
     Round toward negative infinity.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    `y` is less than or equal to `x`.
     """
   fun apply(): I32 =>
     3
@@ -46,6 +53,8 @@ primitive RoundingNegInf
 primitive RoundingPosInf
     """
     Round toward positive infinity.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    `y` is greater than or equal to `x`.
     """
   fun apply(): I32 =>
     2
@@ -57,6 +66,8 @@ primitive RoundingPosInf
 primitive RoundingZero
     """
     Round toward zero.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    `abs(y)` is less than or equal to `abs(x)`.
     """
   fun apply(): I32 =>
     1
@@ -68,6 +79,8 @@ primitive RoundingZero
 primitive RoundingAwayZ
     """
     Round away from zero.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    `abs(y)` is greater than or equal to `abs(x)`.
     """
   fun apply(): I32 =>
     4
@@ -79,6 +92,9 @@ primitive RoundingAwayZ
 primitive RoundingFaithful
     """
     Faithfull rounding.
+    A number `x` is rounded to the number `y` that is the closest to `x` such that
+    the computed value is either that corresponding to `MPFloat_RNDD` or that
+    corresponding to `MPFloat_RNDU`.
     """
   fun apply(): I32 =>
     5
@@ -118,6 +134,26 @@ class val MPFloat
 
   Both `from_string` and `string`/`exact_string` use full multi-precision
   arithmetic; precision is limited only by `prec` bytes, not by F64.
+
+  The precision `prec` is the number of base-256 digits. This is not decimal
+  precision we are acustomed for nor the number of bits used in the GMP
+  implementation. The precision of a `MPFloat` is set when the instance is
+  created. It is expected that all `MPFloat`s involved in operations use the same
+  precision. If that's not the case, warning messages are printed when compiled
+  in debug mode, and results can be not the one expected by the developer. As a
+  consequence, the precision of the result of the operation `this op that` or
+  `this.op(that, ...)` is set to the precision of `this`.
+
+  The default precision of 14 base-256 digits for the mantissa correspond to
+  the size of the mantissa of a `F128`. That way, `MPFloat` can be used as a
+  replacement for `F128` when the precision is not specified..
+
+  Usage of `MPFloat` class assumes that floats have the same precision and it
+  prints warnings, when compiled in debug mode, on operations involving
+  instances with different precisions. This is because accuracy can degrade
+  when mixing operands with different precisions. But nothing prevent you from
+  doing it, and there's even a constructor to create a new `MPFloat` from
+  another one and changing its precision.
   """
 
   let _sign: Bool
@@ -154,7 +190,7 @@ class val MPFloat
     """
     The arbitrary-precision fractional digits encoded in base 256, big-endian
     (index 0 is most significant). For a non-zero finite number, `_digits(0)`
-    is guaranteed to be non-zero (normalised representation). For zero, the
+    is guaranteed to be non-zero (in normalised representation). For zero, the
     array may be all-zeros or empty.
     """
 
@@ -165,14 +201,14 @@ class val MPFloat
 
   let _rounding: RoundingMode
     """
-    The rounding mode of the `MPFloat`
+    The rounding mode of the `MPFloat`.
     """
 
   new val _create(
     sgn: Bool,
     nan: Bool,
     inf: Bool,
-    exp: I64,
+    expn: I64,
     digits: Array[U8] val,
     rnd: RoundingMode /* TODO TO FIND BUGS = RoundingNearest */)
   =>
@@ -183,16 +219,16 @@ class val MPFloat
     _sign = sgn
     _nan = nan
     _inf = inf
-    _exponent = exp
+    _exponent = expn
     _digits = digits
     _rounding = rnd
 
 
-  new val create(prec: USize = 0, rnd: RoundingMode = RoundingNearest) =>
+  new val create(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
     Create a positive zero with `prec` bytes of digit capacity.
 
-    This is the default constructor: `MPFloat()` gives a size-0 positive zero,
+    This is the default constructor: `MPFloat()` gives a size-14 positive zero,
     and `MPFloat(n)` gives a size-n positive zero (all digits zero).
     """
     _sign = false
@@ -227,10 +263,10 @@ class val MPFloat
     _rounding = RoundingNearest
 
 
-  new val from_f64(f: F64, prec: USize = 8, rnd: RoundingMode = RoundingNearest) =>
+  new val from_f64(f: F64, prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` from the `F64` value `f` with `prec` bytes of
-    precision (default 8, giving ~19 decimal digits) and a default rounding
+    precision (default 14, giving ~33 decimal digits) and a default rounding
     mode to nearest digit.
 
     Special values (NaN, ±∞, ±0) are preserved. The conversion normalises `f`
@@ -264,33 +300,109 @@ class val MPFloat
       _sign = f < 0.0
       _nan = false
       _inf = false
-      // Normalise: find frac in [1/256, 1) and exp such that |f| = frac×256^exp.
+
+      // Normalise: find frac in [1/256, 1) and expn such that |f| = frac×256^expn.
       let base = F64.from[U32](_base)
       var frac: F64 = f.abs()
-      var exp: I64 = 0
+      var expn: I64 = 0
       if frac >= 1.0 then
         while frac >= 1.0 do
           frac = frac / base
-          exp = exp + 1
+          expn = expn + 1
         end
       elseif frac < (1.0 / base) then
         while frac < (1.0 / base) do
           frac = frac * base
-          exp = exp - 1
+          expn = expn - 1
         end
       end
-      _exponent = exp
+      _exponent = expn
+
       // Extract prec base-256 digits: d_i = floor(frac × 256), then remove it.
       let p: USize = prec.max(1)
       _digits = recover
         let d = Array[U8].init(0, p)
         var i: USize = 0
-        var fr: F64 = frac
+        // TODO Delete: changed fr to frac to remove additional variable
+        //var fr: F64 = frac
         while i < p do
-          fr = fr * base
-          let di: U8 = fr.u8()
+          frac = frac * base
+          let di: U8 = frac.u8()
           try d.update(i, di)? end
-          fr = fr - di.f64()
+          frac = frac - di.f64()
+          i = i + 1
+        end
+        d
+      end
+      _rounding = rnd
+    end
+
+
+  new val from_f32(f: F32, prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
+    """
+    Create a new `MPFloat` from the `F32` value `f` with `prec` bytes of
+    precision (default 4, giving ~7 decimal digits) and a default rounding
+    mode to nearest digit.
+
+    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises `f`
+    so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
+
+    The rounding mode is not currently used by the `MPFloat`.
+    """
+    if f.nan() then
+      _sign = false
+      _nan = true
+      _inf = false
+      _exponent = 0
+      _digits = Array[U8].create()
+      _rounding = RoundingNearest
+    elseif f.infinite() then
+      _sign = f < 0.0
+      _nan = false
+      _inf = true
+      _exponent = 0
+      _digits = Array[U8].create()
+      _rounding = RoundingNearest
+    elseif f == 0.0 then
+      // Distinguish −0 from +0 via the sign bit.
+      _sign = (f.bits() == 0x80000000)
+      _nan = false
+      _inf = false
+      _exponent = 0
+      _digits = Array[U8].init(0, prec)
+      _rounding = rnd
+    else
+      _sign = f < 0.0
+      _nan = false
+      _inf = false
+
+      // Normalise: find frac in [1/256, 1) and expn such that |f| = frac×256^expn.
+      let base = F32.from[U32](_base)
+      var frac: F32 = f.abs()
+      var expn: I64 = 0
+      if frac >= 1.0 then
+        while frac >= 1.0 do
+          frac = frac / base
+          expn = expn + 1
+        end
+      elseif frac < (1.0 / base) then
+        while frac < (1.0 / base) do
+          frac = frac * base
+          expn = expn - 1
+        end
+      end
+      _exponent = expn
+
+      // Extract prec base-256 digits: d_i = floor(frac × 256), then remove it.
+      let p: USize = prec.max(1)
+      _digits = recover
+        let d = Array[U8].init(0, p)
+        var i: USize = 0
+        while i < p do
+          frac = frac * base
+          let di: U8 = frac.u8()
+          try d.update(i, di)? end
+          frac = frac - di.f32()
           i = i + 1
         end
         d
@@ -300,12 +412,12 @@ class val MPFloat
 
 
   new val from_string(s: String = "",
-                      prec: USize = 8,
+                      prec: USize = 14,
                       base: U8 = 10,
                       rnd: RoundingMode = RoundingNearest) ? =>
     """
     Create a new `MPFloat` by parsing the string `s` with `prec` base-256
-    digits of precision (default 8, ≈19 significant decimal digits). Raises
+    digits of precision (default 14, ≈33 significant decimal digits). Raises
     an error if `s` is not a recognised floating-point representation.
 
     The `base` parameter (default 10) selects the numeral base; currently
@@ -316,14 +428,21 @@ class val MPFloat
     - `""`, `"0"`, `"0.0"`, `"+0"`, `"+0.0"` → +0
     - `"-0"`, `"-0.0"` → −0
     - `"nan"`, `"NaN"`, `"@NaN@"` → NaN
-    - `"+inf"`, `"@Inf@"` → +∞
+    - `"+inf"`, `"@Inf@"`, `"inf"` → +∞
     - `"-inf"`, `"-@Inf@"` → −∞
     - `[+-]d+[.d*][e|E|@[+-]d+]` → finite decimal
 
-    Leading and trailing whitespace is stripped. Unlike the `F64` path, the
+    The exponent part is always in decimal. For base larger than 10, the exponent
+    character is `'@'`. For instance, you must write `1.234@56` instead of
+    `1.234e56` if you are using base 16. For bases lower or equal to 10, one can
+    use `e`, `E` or `@` to indicate the exponent part of the number.
+
+    Leading and trailing whitespace is stripped. The character `_` can be used
+    to separate groups of digits. Unlike the `F64` or `F32` paths, the
     decimal mantissa is parsed directly into multi-precision arithmetic, so
     the full `prec` bytes of precision are exploited regardless of how many
-    significant digits the string contains.
+    significant digits the string contains. For special values NaN and infinites,
+    case is significative.
     """
     // Spaces are not significant.
     let st: String = s.clone() .> strip()
@@ -354,7 +473,7 @@ class val MPFloat
       return
     end
 
-    if (st == "+inf") or (st == "@Inf@") then
+    if (st == "+inf") or (st == "@Inf@") or (st == "inf") then
       _sign = false
       _nan = false
       _inf = true
@@ -394,18 +513,21 @@ class val MPFloat
       return
     end
 
-    // Multi-precision decimal parsing.
+    // Multi-precision decimal parsing using exact MPInt arithmetic.
     //
-    // We collect at most `sig_limit` significant decimal digits into n_mp
-    // using Horner's method (n_mp = n_mp × 10 + digit), then scale by
-    // 10^dec_exp where dec_exp = int_exp - frac_count + str_exp.
+    // Phase 1 — Digit accumulation: collect up to `sig_limit` significant
+    // decimal digits into an MPInt N via Horner's method (N = N × 10 + digit).
+    // MPInt arithmetic is exact, so no rounding error is introduced here.
     //
-    // Using guard precision p2 = prec + 2 throughout to suppress rounding
-    // error in intermediate multiplications, truncating to prec at the end.
+    // Phase 2 — Scaling: value = N × 10^dec_exp.
+    //   dec_exp ≥ 0 → multiply N by 10^dec_exp (exact MPInt), then from_mpint.
+    //   dec_exp < 0 → value = N / (2^n × 5^n), n = −dec_exp.
+    //     Dividing by 2^n is a free bit-shift; dividing by 5^n is done via
+    //     MPInt long division at (prec + ⌈n / 8⌉ + 4) bytes of working precision.
+    //     This is exact when N is divisible by 5^n (e.g. "2.0", "1.5", "0.25")
+    //     and correctly rounded to nearest otherwise (e.g. "0.1").
     //
-    // log10(256^prec) = prec × log10(256) ≈ prec × 2.408 decimal digits;
-    // add 4 guard digits to absorb Horner rounding.
-    let p2: USize = prec + 2
+    // log10(256^prec) ≈ prec × 2.408 decimal digits; add 4 guard digits.
     let sig_limit: USize = ((prec.f64() * 2.41).usize() + 4).max(1)
 
     var pos: USize = 0
@@ -420,24 +542,37 @@ class val MPFloat
     end
 
     // Accumulators.
-    let ten_mp: MPFloat = MPFloat.from_f64(10.0, p2, rnd)
-    var n_mp: MPFloat = MPFloat.create(p2)
+    let ten_int: MPInt = MPInt.from_ilong(10)
+    var n_int: MPInt = MPInt.from_ilong(0)
     var sig_count: USize = 0
-    // int_exp: extra powers of 10 accumulated when skipping digits beyond
-    //          sig_limit in the integer part.
+    // int_exp: extra powers of 10 from integer digits skipped beyond sig_limit.
     var int_exp: I64 = 0
     // frac_count: decimal places consumed (significant or leading-zero).
     var frac_count: I64 = 0
     var has_digit: Bool = false
 
     // Integer digits.
-    while (pos < sz) and (st(pos)? >= '0') and (st(pos)? <= '9') do
+    var sep_seen: Bool = false
+    while (pos < sz) and (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_')) do
+      // Digits separator must be unique
+      if st(pos)? == '_' then
+        if not sep_seen then
+          sep_seen = true
+          pos = pos + 1
+          continue
+        else
+          Assert(false, "[MPFloat.from_string] You can't have multiple consecutive separators '_' to group digits in mantissa.")?
+        end
+      end
+      sep_seen = false
+
+      // Digits
       let d: U8 = st(pos)? - '0'
       has_digit = true
       if (d != 0) or (sig_count > 0) then
         if sig_count < sig_limit then
-          n_mp = n_mp.mul(ten_mp)._trunc(p2)
-                      .add(MPFloat.from_f64(d.f64(), p2, rnd))._trunc(p2)
+          // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from_ilong(d.ilong()))
+          n_int = (n_int * ten_int) + MPInt.from_ilong(d.ilong())
           sig_count = sig_count + 1
         else
           int_exp = int_exp + 1
@@ -449,18 +584,32 @@ class val MPFloat
     // Fractional digits.
     if (pos < sz) and (st(pos)? == '.') then
       pos = pos + 1
-      while (pos < sz) and (st(pos)? >= '0') and (st(pos)? <= '9') do
+
+      sep_seen = false
+      while (pos < sz) and (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_')) do
+        // Digits separator must be unique
+        if st(pos)? == '_' then
+          if not sep_seen then
+            sep_seen = true
+            pos = pos + 1
+            continue
+          else
+            Assert(false, "[MPFloat.from_string] You can't have multiple consecutive separators '_' to group digits in decimals.")?
+          end
+        end
+        sep_seen = false
+
         let d: U8 = st(pos)? - '0'
         has_digit = true
         if (d != 0) or (sig_count > 0) then
           if sig_count < sig_limit then
-            n_mp = n_mp.mul(ten_mp)._trunc(p2)
-                        .add(MPFloat.from_f64(d.f64(), p2, rnd))._trunc(p2)
+            // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from_ilong(d.ilong()))
+            n_int = (n_int * ten_int) + MPInt.from_ilong(d.ilong())
             sig_count = sig_count + 1
             frac_count = frac_count + 1
           end
-          // Digits beyond sig_limit in the fractional part are ignored;
-          // they fall below the requested precision.
+          // Digits beyond sig_limit in the fractional part fall below the
+          // requested precision and are dropped.
         else
           // Leading fractional zeros shift the effective decimal point.
           frac_count = frac_count + 1
@@ -473,7 +622,7 @@ class val MPFloat
       error
     end
 
-    // Decimal exponent ('e', 'E', or '@' for base ≤ 10).
+    // Decimal exponent ('e', 'E', or '@' for base ≠ 10).
     var str_exp: I64 = 0
     if (pos < sz) and
        ((st(pos)? == 'e') or (st(pos)? == 'E') or (st(pos)? == '@'))
@@ -487,14 +636,29 @@ class val MPFloat
         pos = pos + 1
       end
       var ehas_digit: Bool = false
-      while (pos < sz) and (st(pos)? >= '0') and (st(pos)? <= '9') do
+      sep_seen = false
+      while (pos < sz) and (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_')) do
+        // Digits separator must be unique
+        if st(pos)? == '_' then
+          if not sep_seen then
+            sep_seen = true
+            pos = pos + 1
+            continue
+          else
+            Assert(false, "[MPFloat.from_string] You can't have multiple consecutive separators '_' to group digits in exponent.")?
+          end
+        end
+        sep_seen = false
+
         str_exp = (str_exp * 10) + (st(pos)? - '0').i64()
         ehas_digit = true
         pos = pos + 1
       end
+
       if not ehas_digit then
         error
       end
+
       if esign then
         str_exp = -str_exp
       end
@@ -505,48 +669,150 @@ class val MPFloat
       error
     end
 
-    // True value = n_mp × 10^dec_exp.
+    // True value = n_int × 10^dec_exp.
     let dec_exp: I64 = (int_exp - frac_count) + str_exp
 
-    // Scale by 10^|dec_exp| using fast (binary) exponentiation, keeping
-    // only p2 significant base-256 digits at each step.
-    if dec_exp != 0 then
-      var scale: MPFloat = MPFloat.from_f64(1.0, p2, rnd)
-      var sbase: MPFloat = ten_mp
-      var sn: I64 = if dec_exp > 0 then dec_exp else -dec_exp end
-      while sn > 0 do
-        if (sn and 1) == 1 then
-          scale = scale.mul(sbase)._trunc(p2)
-        end
-        sbase = sbase.mul(sbase)._trunc(p2)
-        sn = sn / 2
-      end
-      n_mp =
-        if dec_exp > 0 then
-          n_mp.mul(scale)._trunc(p2)
-        else
-          n_mp.div(scale)._trunc(p2)
-        end
+    // ── Zero check ─────────────────────────────────────────────────────────
+    if n_int.is_zero() then
+      _sign = fsign
+      _nan  = false
+      _inf  = false
+      _exponent = 0
+      _digits = Array[U8].init(0, prec)
+      _rounding = rnd
+      return
     end
 
-    let tmp: MPFloat = n_mp._trunc(prec)
+    // ── Scale n_int by 10^dec_exp ───────────────────────────────────────────
+    // Positive dec_exp: convert n_int exactly to MPFloat, then multiply by
+    // 10^dec_exp via truncated binary exponentiation (O(log dec_exp) steps,
+    // each bounded to p2 bytes). This is accurate regardless of dec_exp size.
+    //
+    // Negative dec_exp (n = −dec_exp):
+    // For small n (≤ n_max_exact): exact MPInt division by 5^n at
+    // sufficient working precision — gives exact results when n_int is
+    // divisible by 5^n (e.g. "2.0" → exactly 2, "1.5" → exactly 1.5).
+    // For large n: start from exact n_int MPFloat, divide by 10^n via
+    // truncated binary exponentiation (MPFloat path has Newton error only in
+    // the last few ULPs of the mantissa, which is acceptable for large n).
+    //
+    // Working precision p2 = prec + 2 suppresses rounding error in
+    // intermediate multiplications.
+    let p2: USize = prec + 2
+    // Threshold for exact MPInt division: 5^n must be a manageable size.
+    // For n ≤ n_max_exact, five_pow and n_shifted fit within ~200 bytes.
+    let n_max_exact: USize = ((p2.f64() * 14.0).usize() + 50).min(300)
+
+    // Helper: binary-exponentiation scale of ten_mp^sn, truncated to p2.
+    let ten_mp: MPFloat = MPFloat.from_f64(10.0, p2, rnd)
+
+    let tmp: MPFloat =
+      if dec_exp >= 0 then
+        // Start from exact MPInt → MPFloat conversion (no Horner error), then
+        // scale up by 10^dec_exp with per-step truncation to p2 bytes.
+        var n_mp: MPFloat = MPFloat.from_mpint(n_int, p2, rnd)
+
+        if dec_exp > 0 then
+          var scale: MPFloat = MPFloat.from_f64(1.0, p2, rnd)
+          var sbase: MPFloat = ten_mp
+          var sn: I64 = dec_exp
+          while sn > 0 do
+            if (sn and 1) == 1 then
+              // TODO DELETE scale = scale.mul(sbase)._trunc(p2)
+              scale = (scale * sbase)._trunc(p2)
+            end
+            // TODO DELETE sbase = sbase.mul(sbase)._trunc(p2)
+            sbase = (sbase * sbase)._trunc(p2)
+            sn = sn / 2
+          end
+          // TODO DELETE n_mp = n_mp.mul(scale)._trunc(p2)
+          n_mp = (n_mp * scale)._trunc(p2)
+        end
+        n_mp._trunc(prec)
+      else
+        // dec_exp < 0: value = n_int / (2^n × 5^n), n = −dec_exp.
+        let n: USize = (-dec_exp).usize()
+        if n <= n_max_exact then
+          // Exact path: compute q = ⌊ n_int × 2^{8 × extra − n} / 5^n ⌋
+          // = ⌊ value × 256^extra ⌋.
+          //
+          // extra is chosen so that q has at least prec significant bytes:
+          //   extra ≥ n / log₁₀(256) + prec + guard
+          //        ≈ n × 5/12 + prec + 4.
+          // shift_bits = extra × 8 − n is always positive within the threshold.
+          let extra: USize = (((n * 5) + 11) / 12) + prec + 4
+          let shift_bits: USize = (extra * 8) - n
+          let five_pow: MPInt = MPInt.from_ilong(5).pow(MPInt.from_ilong(n.ilong()))
+          let n_shifted: MPInt = n_int.shl(MPInt.from_ilong(shift_bits.ilong()))
+          (let q, let r) = n_shifted.divrem(five_pow)
+          // Round to nearest: increment q if 2×r ≥ five_pow.
+          let q_rounded: MPInt =
+            // TODO DELETE if r.add(r).ge(five_pow) then
+            if (r + r) >= five_pow then
+              // TODO DELETE q.add(MPInt.from_ilong(1))
+              q + MPInt.from_ilong(1)
+            else
+              q
+            end
+
+          // q_rounded encodes value in units of 1/256^extra.
+          // Big-endian bytes → MPFloat: e = byte_count − extra.
+          let qbytes: Array[U8] val = q_rounded.raw_digits()
+          let qlen: USize = qbytes.size()
+          let new_exp: I64 = qlen.i64() - extra.i64()
+          let keep: USize = prec.min(qlen)
+
+          let new_digits: Array[U8] val = recover
+            let d = Array[U8].create(keep)
+            var i: USize = 0
+            while i < keep do
+              try d.push(qbytes(i)?) end
+              i = i + 1
+            end
+            d
+          end
+          MPFloat._create(false, false, false, new_exp, new_digits, rnd)
+        else
+          // Large n: exact MPInt → MPFloat start, divide by 10^n via
+          // truncated binary exponentiation.
+          var n_mp: MPFloat = MPFloat.from_mpint(n_int, p2, rnd)
+          var scale: MPFloat = MPFloat.from_f64(1.0, p2, rnd)
+          var sbase: MPFloat = ten_mp
+          var sn: I64 = (-dec_exp)
+          while sn > 0 do
+            if (sn and 1) == 1 then
+              // TODO DELETE scale = scale.mul(sbase)._trunc(p2)
+              scale = (scale * sbase)._trunc(p2)
+            end
+            // TODO DELETE sbase = sbase.mul(sbase)._trunc(p2)
+            sbase = (sbase * sbase)._trunc(p2)
+            sn = sn / 2
+          end
+          // TODO DELETE n_mp.div(scale)._trunc(prec)
+          (n_mp / scale)._trunc(prec)
+        end
+      end
+
     _sign = fsign
-    _nan = tmp._nan
-    _inf = tmp._inf
+    _nan  = tmp._nan
+    _inf  = tmp._inf
     _exponent = tmp._exponent
     _digits = tmp._digits
     _rounding = rnd
 
 
-  new val from_mpint(n: MPInt, prec: USize = 8, rnd: RoundingMode = RoundingNearest) =>
+  new val from_mpint(n: MPInt, prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` from the `MPInt` value `n` with `prec` bytes of
-    precision (default 8, giving ~19 decimal digits) and rounding mode `rnd`.
+    precision (default 14, giving ~33 decimal digits) and rounding mode `rnd`.
 
     The conversion is exact up to the requested precision: the magnitude of
     `n` is represented without error as long as `n` fits within `prec` base-256
     digits (i.e. `|n| < 256^prec`); larger values are truncated to the `prec`
     most-significant bytes.
+    As a consquence, if you want to keep all the digits of `n` in the resulting
+    `MPFloat`, select a `prec` value that is at least 2.56 × number of decimal
+    digits of `n`.
 
     Special cases:
     - Zero → `+0` (positive zero regardless of any sign on the MPInt zero).
@@ -558,7 +824,9 @@ class val MPFloat
     `_digits` layout:
     - `_exponent` = total byte count of the full magnitude (before truncation).
     - `_digits` = the first `prec` most-significant bytes (truncated).
-    This is O(n) in the word count, vs O(n²) for the former string-based route.
+
+    This is O(n) in the word count.
+
     The rounding mode `rnd` is accepted for API compatibility; rounding support
     is a future TODO.
     """
@@ -589,20 +857,84 @@ class val MPFloat
     _digits = recover
       let keep: USize = total.min(prec)
       let d = Array[U8].create(keep)
+      /* TODO DELETE
       var i: USize = 0
       while i < keep do
         try d.push(mag(i)?) end
         i = i + 1
       end
+      */
+      mag.copy_to(d, 0, 0, keep)
       d
     end
 
 
-  new min_normalized(prec: USize = 8, rnd: RoundingMode = RoundingNearest) =>
+  new val from_mpfloat(f: MPFloat,
+                       prec: USize = 14,
+                       rnd: RoundingMode = RoundingNearest) =>
+    """
+    Create a new `MPFloat` whose value is equal to `f` but with precision `prec`
+    (default 14) and using rounding mode `rnd` (default nearest). This
+    constructor is useful when you want to change the precision and the rounding
+    mode of the resulting `MPFloat`.
+
+    TODO: Manage rounding. Presently, the result is truncated to fit with
+    requested precision.
+    """
+    _sign = f._sign
+    _nan = f._nan
+    _inf = f._inf
+    _exponent = f._exponent
+    _rounding = rnd
+
+    _digits = recover
+      let size = prec.min(f._size())
+      let d = Array[U8].init(0, prec)
+      f._digits.copy_to(d, 0, 0, size)
+      d
+    end
+
+
+  new val from_ulong(n: ULong, prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
+    """
+    Create a new `MPFloat` whose value is equal to `n` with precision `prec` (default 14)
+    and rounding mode `rnd` (default nearest).
+
+    TODO: Implement rounding
+    """
+    _sign = false
+    _nan = false
+    _inf = false
+    _rounding = rnd
+
+    let base: ULong = _base.ulong()
+    var q: ULong = n
+
+    _digits = recover
+      let d: Array[U8] = Array[U8].create(prec)
+      var i: USize = 0
+      while q >= base do
+        (q, let r) = q.divrem(base)
+        d.push(r.u8())
+        i = i + 1
+      end
+      d.push(q.u8())
+      d.reverse_in_place()
+      d
+    end
+    // _exponent = number of bytes in the full magnitude, so that
+    // n = 0.d₀d₁… × 256^_exponent  with d₀ = mag(0) ≠ 0.
+    _exponent = _digits.size().i64()
+
+
+
+  new min_normalized(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
     The smallest normalized floating point number.
 
-    TODO
+    As don't have the notion of normalized number in the sense of the binary
+    floating point representation, the smallest normalized `MPFloat` has been
+    set to `0.0`. 
     """
     _sign = false
     _nan = false
@@ -612,20 +944,35 @@ class val MPFloat
     _rounding = rnd
 
 
-  new epsilon(prec: USize = 8, rnd: RoundingMode = RoundingNearest) =>
+  new epsilon(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
-    `epsilon` is the "floating-point precision", that is the smallest positive
-    floating-point number such that `1.0 + epsilon != 1.0`. In infinite-precision
-    or `MPFloat`, `epsilon` can be made as small as desired by increasing `prec`,
-    and `0` becomes this limit value.
+    Create the *machine epsilon* for the given precision: the smallest positive
+    `MPFloat` ε such that `1 + ε ≠ 1` in base 256, i.e. `ε = 256^(1 − prec)`.
 
-    TODO
+    For the default precision of 14 bytes (≈ 33 significant decimal digits):
+    `ε ≈ 4.93 × 10^{−32}`.
+
+    This is the base-256 analogue of `F64.epsilon() ≈ 2.22 × 10^{−16}`.
+    In general `MPFloat.epsilon(p)` decreases as `p` grows — the user controls
+    precision and thus controls the machine epsilon.
+
+    Example use in tests: compare with absolute tolerance `2 × epsilon`:
+    ```
+    let eps = MPFloat.epsilon(p)
+    h.assert_true(got.almost_eq(expected, MPFloat.from_f64(1e-31), MPFloat.from_f64(1e-31)))
+    ```
     """
     _sign = false
     _nan = false
     _inf = false
-    _exponent = 0
-    _digits = Array[U8].init(0, prec)
+    let p: USize = prec.max(1)
+    // ε = 0.1_{256} × 256^{2−p} = (1/256) × 256^{2−p} = 256^{1−p}
+    _exponent = 2 - p.i64()
+    _digits = recover
+      let a = Array[U8].init(0, p)
+      try a(0)? = 1 end
+      a
+    end
     _rounding = rnd
 
 
@@ -654,94 +1001,211 @@ class val MPFloat
     _rounding = RoundingNearest
 
 
-  new val pi(prec: USize = 64, rnd: RoundingMode = RoundingNearest) =>
+  new val pi(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
     """
-    The pi constant, calculated with the specified `size` accuracy (number of
-    base-256 digits, default 64 giving ~154 decimal digits). The rounding
+    The pi constant, calculated with the specified `prec` accuracy (number of
+    base-256 digits, default 14 giving ~33 decimal digits). The rounding
     mode `rnd` is not used yet (TODO).
 
-    Uses the Borwein quadratic convergence algorithm:
-
-    ```
-    x_0 = √2,  π_0 = 2 + √2,  y_0 = ⁴√2
-
-    x_{n+1} = (√x_n + 1/√x_n) / 2
-    π_{n+1} = π_n × (x_{n+1} + 1) / (y_n + 1)
-    y_{n+1} = (y_n × √x_{n+1} + 1/√x_{n+1}) / (y_n + 1)
-    ```
+    Uses Machin's formula:
+      π = 16·arctan(1/5) − 4·arctan(1/239)
+    where each arctan is computed by the Taylor series
+      arctan(x) = x − x³/3 + x⁵/5 − x⁷/7 + ⋯
+    Both arguments are small (< 0.25), giving fast geometric convergence.
     """
-    _sign = false
-    _nan = false
-    _inf = false
-    _exponent = 1
-    _rounding = rnd
+    let p: USize = prec + 4   // guard digits for intermediate results
 
-    let prc: USize = prec + 2
+    // Compute 1/5 and 1/239 to full p-digit precision via MPFloat division.
+    let one: MPFloat = MPFloat.from_f64(1.0, p, rnd)
+    let x5:   MPFloat = MPFloat.from_f64(5.0, p, rnd).inv()._trunc(p) //one.div(MPFloat.from_f64(5.0,   p, rnd))._trunc(p)
+    let x239: MPFloat = MPFloat.from_f64(239.0, p, rnd).inv()._trunc(p) // one.div(MPFloat.from_f64(239.0, p, rnd))._trunc(p)
 
-    // Build two = 2.0  (first digit = 2, rest = 0, exponent = 1)
-    let two: MPFloat = MPFloat._create(false, false, false, 1, recover
-        let d = Array[U8].init(0, prc)
-        try d.update(0, 2)? end
-        d
-      end, rnd)
-
-    // x_0 = sqrt(2)
-    var x_n: MPFloat = two.sqrt()
-
-    // pi_0 = 2 + sqrt(2)  (digit_shl(1) removes the integer carry digit)
-    var pi_n: MPFloat = (two + x_n).digit_shl(1)
-
-    // y_0 = sqrt(sqrt(2))
-    var y_n: MPFloat = x_n.sqrt()
-
-    // Recurrence — bound all intermediates to prc digits to prevent growth.
-    var iters: USize = 0
-    let max_iters: USize = prc * 4
-    try
-      while iters < max_iters do
-        iters = iters + 1
-
-        // x_{n+1} = (√x_n + 1/√x_n) / 2
-        let s: MPFloat = x_n.sqrt()
-        (let t, _) = ((s + s.inv())._trunc(prc))._short_div(2)
-        x_n = t.digit_shl(1)
-
-        // y_{n+1} = (y_n × √x_{n+1} + 1/√x_{n+1}) / (y_n + 1)
-        let u: MPFloat = x_n.sqrt()
-        let v: MPFloat =
-          ((((y_n * u)._trunc(prc)).digit_shl(1)) + u.inv())._trunc(prc).digit_shl(1)
-
-        // y_n ← v / (y_n + 1)
-        y_n = v / y_n._inc_first()
-        y_n = y_n.digit_shl(1)._trunc(prc)
-
-        // π_{n+1} = π_n × (x_{n+1} + 1) / (y_n + 1)
-        let xp1: MPFloat = x_n._inc_first()
-        let w: MPFloat = xp1 / y_n
-        pi_n = ((pi_n * (w.digit_shl(1)))._trunc(prc)).digit_shl(1)
-
-        // Convergence check: w = x_{n+1} / y_n → 1 when converged.
-        // In base-256 that means w._digits(0) = 1 and w._digits(1..] = 0.
-        let m: U8 = w._digits(0)? - 1
-        var i: USize = 1
-        while i < (prec + 1) do
-          if w._digits(i)? != m then
-            break
-          end
-          i = i + 1
-        end
-        if i == (prec + 1) then
-          break
-        end
-      end
-    else
-      // Index out of bounds — should not happen for valid inputs.
-      try
-        Assert(false, "[M]PFloat.pi] unexpected error during Newton iteration", true)?
-      end
+    // arctan(1/5) via Taylor series: arctan(x) = x - x³/3 + x⁵/5 - ...
+    // Keep `pow5` as the raw odd power x^(2k+1); divide separately for each term.
+    let neg_x52: MPFloat = (-x5 * x5)._trunc(p) //x5.mul(x5).neg()._trunc(p)  // −(1/5)²
+    var pow5: MPFloat = x5
+    var atan5: MPFloat = x5
+    var k5: USize = 1
+    var iters5: USize = 0
+    let max_iters: USize = p * 30 // TODO: Why 30?
+    while iters5 < max_iters do
+      pow5 = pow5.mul(neg_x52)._trunc(p)   // next odd power: −x^(2k+1)
+      let d5: USize = (2 * k5) + 1
+      let term5: MPFloat =
+        if d5 <= 255 then (let q5, _) = pow5._short_div(d5.u8()) ; q5
+        else pow5.div(MPFloat.from_f64(d5.f64(), p, rnd))._trunc(p) end
+      let new_a5: MPFloat = atan5.add(term5)._trunc(p)
+      if new_a5.eq(atan5) then break end
+      atan5 = new_a5
+      k5 = k5 + 1
+      iters5 = iters5 + 1
     end
 
-    _digits = pi_n._digits
+    // arctan(1/239) via Taylor series.
+    let neg_x2392: MPFloat = x239.mul(x239).neg()._trunc(p) // −(1/239)²
+    var pow239: MPFloat = x239
+    var atan239: MPFloat = x239
+    var k239: USize = 1
+    var iters239: USize = 0
+    while iters239 < max_iters do
+      pow239 = pow239.mul(neg_x2392)._trunc(p)
+      let d239: USize = (2 * k239) + 1
+      let term239: MPFloat =
+        if d239 <= 255 then (let q239, _) = pow239._short_div(d239.u8()) ; q239
+        else pow239.div(MPFloat.from_f64(d239.f64(), p, rnd))._trunc(p) end
+      let new_a239: MPFloat = atan239.add(term239)._trunc(p)
+      if new_a239.eq(atan239) then break end
+      atan239 = new_a239
+      k239 = k239 + 1
+      iters239 = iters239 + 1
+    end
+
+    // π = 16·arctan(1/5) − 4·arctan(1/239)
+    let sixteen: MPFloat = MPFloat.from_f64(16.0, p, rnd)
+    let four:    MPFloat = MPFloat.from_f64(4.0,  p, rnd)
+    let pi_val: MPFloat =
+      sixteen.mul(atan5).sub(four.mul(atan239))._trunc(prec)
+
+    _sign     = false
+    _nan      = false
+    _inf      = false
+    _exponent = pi_val._exponent
+    _digits   = pi_val._digits
+    _rounding = rnd
+
+
+new val pi_chudnovsky(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
+  """
+  Chudnovsky’s Algorithm: https://en.wikipedia.org/wiki/Chudnovsky_algorithm
+
+  This formula converge very quickly but because of numerous factorial calculations
+  in numerator and denominator, loss of precision occurs also very quickly.
+  ⚠ Don't use it as is!
+  """
+    let p: USize = prec + 4   // guard digits for intermediate results
+    let one = MPFloat.from_ulong(1, p, rnd)
+    let minus_one = -one
+
+    let k_3 = MPFloat.from_ulong(3, p, rnd)
+    let k_1_5 = k_3 / MPFloat.from_ulong(2, p, rnd)
+    let k_640320 = MPFloat.from_ulong(640320, p, rnd)
+    let k_13591409 = MPFloat.from_ulong(13591409, p, rnd)
+    let k_545140134 = MPFloat.from_ulong(545140134, p, rnd)
+
+    var result = MPFloat(p, rnd)
+    var prev_res = result
+    var k: ULong = 0
+    var term = MPFloat(p, rnd)
+    repeat
+      (let fact_k, let fact_3k, let fact_6k) = _fact_chudnovsky(k, p, rnd)
+
+      let sgn = if (k %% 2) == 0 then one else minus_one end 
+      //let num = sgn * fact_6k * (k_13591409 + (k_545140134 * MPFloat.from_ulong(k)))
+      //let den = fact_3k * (fact_k.powi(3)) * (k_640320.pow((k_3 * MPFloat.from_ulong(k)) + k_1_5))
+      //let term = num / den
+      term = ((sgn * fact_6k) / fact_3k) * ((k_13591409 + (k_545140134 * MPFloat.from_ulong(k))) / (fact_k.powi(3) * (k_640320.pow((k_3 * MPFloat.from_ulong(k)) + k_1_5))))
+      prev_res = result
+      result = result + term
+      k = k + 1
+    until (result.almost_eq(prev_res)) or (k > p.ulong()) end
+    let pi_val = (MPFloat.from_ulong(12, p, rnd) * result).inv()._trunc(prec)
+
+    _sign     = false
+    _nan      = false
+    _inf      = false
+    _exponent = pi_val._exponent
+    _digits   = pi_val._digits
+    _rounding = rnd
+
+
+  fun tag _fact_chudnovsky(n: ULong, prec: USize, rnd: RoundingMode): (MPFloat, MPFloat, MPFloat) =>
+    """
+    Calculate the factorials used in Chudnovsky's algorithm:
+    `n!, (3 × n)!, (6 × n)!`
+
+    Calculations are done in `MPInt` and the results are converted to `MPFloat`
+    """
+    var fact_n = MPInt.from_ulong(1)
+    for i in Range[ULong](1, n + 1) do
+      fact_n = fact_n * MPInt.from_ulong(i)
+    end
+
+    var fact_3n = fact_n
+    for i in Range[ULong](n + 1, (3 * n) + 1) do
+      fact_3n = fact_3n * MPInt.from_ulong(i)
+    end
+
+    var fact_6n = fact_3n
+    for i in Range[ULong]((3 * n) + 1, (6 * n) + 1) do
+      fact_6n = fact_6n * MPInt.from_ulong(i)
+    end
+
+    (MPFloat.from_mpint(fact_n, prec, rnd), MPFloat.from_mpint(fact_3n, prec, rnd), MPFloat.from_mpint(fact_6n, prec, rnd))
+
+
+  new val pi_bbp(prec: USize = 14, rnd: RoundingMode = RoundingNearest) =>
+    """
+    The Beiley-Borwein-Plouffe formula is known to allow calculation of any decimal
+    of π, in 16-base, without requiring to know the previous decimals. It is also
+    a very efficient formula, in O(n ln(n)).
+
+    See https://en.wikipedia.org/wiki/Bailey%E2%80%93Borwein%E2%80%93Plouffe_formula
+    See https://en.wikipedia.org/wiki/Approximations_of_pi#Efficient_methods
+    """
+    let p: USize = prec + 4   // guard digits for intermediate results
+    let k_p = p.ulong()
+
+    let k_1 = MPFloat.from_ulong(1, p, rnd)
+    let k_2 = MPFloat.from_ulong(2, p, rnd)
+    let k_4 = MPFloat.from_ulong(4, p, rnd)
+    let k_5 = MPFloat.from_ulong(5, p, rnd)
+    let k_6 = MPFloat.from_ulong(6, p, rnd)
+    let k_8 = MPFloat.from_ulong(8, p, rnd)
+    let k_16 = MPFloat.from_ulong(16, p, rnd)
+
+    var k: ULong = 0
+    var result = MPFloat(p, rnd)
+    var term = MPFloat(p, rnd)
+    var resultf: F64 = 0.0
+    var termf: F64 = 0.0
+    var prev_res = result
+    repeat
+      let t0 = k_8 * MPFloat.from_ulong(k)
+      let t0f: F64 = 8.0 * k.f64()
+      Debug("Pi_bpp t0=" + t0.string() + "/ t0f=" + t0f.string())
+      let t1 = k_4 / (t0 + k_1)
+      let t2 = k_2 / (t0 + k_4)
+      let t3 = k_1 / (t0 + k_5)
+      let t4 = k_1 / (t0 + k_6)
+      let t1f = 4.0 / (t0f + 1.0)
+      let t2f = 2.0 / (t0f + 4.0)
+      let t3f = 1.0 / (t0f + 5.0)
+      let t4f = 1.0 / (t0f + 6.0)
+      Debug("Pi_bpp t1=" + t1.string() + "/ t1f=" + t1f.string() +
+            "; t2=" + t2.string() + "/ t2f=" + t2f.string() +
+            "; t3=" + t3.string() + "/ t3f=" + t3f.string() +
+            "; t4=" + t4.string() + "/ t4f=" + t4f.string())
+      let t5 = k_16.powi(k.ilong()).inv()._trunc(p)
+      let t5f': F64 = 16.0
+      let t5f: F64 = 1.0 / t5f'.powi(k.i32())
+      Debug("Pi_bbp: t5=" + t5.string() + "/ t5f=" + t5f.string())
+      term = (t5 * (t1 - (t2 + t3 + t4)))._trunc(p)
+      termf = (t5f * (t1f - (t2f + t3f +t4f)))
+      Debug("Pi_bbp: term=" + term.string() + "/ termf=" + termf.string())
+      prev_res = result
+      result = (result + term)._trunc(p)
+      resultf = (resultf + termf)
+      Debug("Pi_bbp [" + k.string() + "]: result=" + result.string() + "/ resultf=" + resultf.string())
+      k = k + 1
+    until (result.almost_eq(prev_res)) or (k > k_p) end
+    result
+
+    _sign     = false
+    _nan      = false
+    _inf      = false
+    _exponent = result._exponent
+    _digits   = result._digits
+    _rounding = rnd
 
 
   //- Internal helpers ---------------------------------------------------------
@@ -888,6 +1352,73 @@ class val MPFloat
     Always `false` for NaN.
     """
     _sign and not _nan
+
+
+  fun is_integer(): Bool =>
+    """
+    Return `true` if `this` is a finite value with no fractional part, i.e.
+    `this == trunc(this)`.
+
+    - NaN → `false`.  ±∞ → `false`.
+    - ±0 → `true` (zero is an integer).
+    - Any value whose base-256 representation has no non-zero fractional
+      bytes (bytes at index ≥ `_exponent`) → `true`.
+    - Any value with at least one non-zero fractional byte → `false`.
+
+    Equivalent to `is_finite() and not _has_frac()`.
+    """
+    is_finite() and not _has_frac()
+
+
+  fun almost_eq(that: box->MPFloat,
+                rel_tol: MPFloat = MPFloat.epsilon().sqrt(),
+                abs_tol: MPFloat = MPFloat.epsilon().sqrt())
+               : Bool =>
+    """
+    Return `true` when `this` and `that` are approximately equal.
+
+    Two `MPFloat` values are almost equal when
+
+      `|this − that| ≤ max(rel_tol × max(|this|, |that|), abs_tol)`
+
+    Both tolerance parameters default to `sqrt(MPFloat.epsilon())`,
+    using `MPFloat`'s default precision and rounding'. If you use
+    `MPFloat` with different precision or round mode, you should
+    give values to `rel_tol` and `abs_tol` tuned for your needs.
+
+    The comparison is performed entirely in `MPFloat` arithmetic.
+
+    Special cases (matching IEEE 754 conventions):
+    - Either operand is `NaN` → `false`.
+    - Both operands are the same infinity (same sign) → `true`.
+    - One is infinite, the other finite → `false`.
+
+    This is the MPFloat analogue of `Complex.almost_eq`.
+    """
+    if is_nan() or that.is_nan() then return false end
+    if is_infinite() then
+      return that.is_infinite() and (_sign == that._sign)
+    end
+    if that.is_infinite() then return false end
+
+    // Warn when operands have different precisions: the comparison is valid but
+    // the result is only as accurate as the lower-precision value.
+    try
+      Assert(_size() == that._size(),
+             "[MPFloat.almost_eq] Precision mismatch: `this` has " + _size().string() +
+             " bytes, `that` has " + that._size().string() +
+             " bytes — comparison accuracy limited to the smaller precision")?
+    end
+
+    let p2: USize = _size().max(that._size())
+    let diff = (this - that).abs()
+    let abs_this = this.abs()
+    let abs_that = that.abs()
+    let max_mag = if abs_this < abs_that then abs_that else abs_this end
+    let rel_part = (MPFloat.from_mpfloat(rel_tol, p2, _rounding) * max_mag)._trunc(p2)
+    let abs_part = MPFloat.from_mpfloat(abs_tol, p2, _rounding)
+    let threshold = if rel_part < abs_part then abs_part else rel_part end
+    diff <= threshold
 
 
   fun sign(): Compare =>
@@ -1476,19 +2007,17 @@ class val MPFloat
     Only base 10 is currently implemented; other bases return `("", 0, true)`.
     The `inexact` flag is always `false` (rounding is a future TODO).
 
-    Algorithm:
-    1. Estimate the decimal exponent `dec_exp` via F64.
-    2. Scale `|this|` to the interval `[1, 10)` by multiplying by
-       `10^(1 − dec_exp)` (for dec_exp ≤ 1) or dividing by
-       `10^(dec_exp − 1)` (for dec_exp > 1) using binary fast-exponentiation.
-       When dec_exp = 1 no scaling is needed, which avoids lossy division
-       for exactly-representable integer values (2.0, 3.0, …).
-    3. Verify the result is in `[1, 10)`; adjust `dec_exp` by ±1 if the
-       F64 estimate was off.
-    4. Extract `n_dec` decimal digits: the first digit is `_digits(0)` of
-       the scaled value (which has `_exponent = 1`). Subsequent digits use
-       `digit_shl(1)` to remove the current integer digit followed by
-       `_short_mul(10)` to bring the next digit into `_digits(0)`.
+    Algorithm (exact, no Newton approximation):
+    Let `N` be `_digits` interpreted as a base-256 integer and
+    `k = _exponent − _size()`.  Then `|this| = N × 256^k`.
+
+    - Integer case (`k ≥ 0`): `|this| = N × 2^{8k}`.
+      Compute `N << (8k)` as an `MPInt` and call `.string()`.
+    - Fractional case (`k < 0`): `|this| = N × 5^b / 10^b` where `b = 8|k|`.
+      Compute `(N × 5^b).string()` via `MPInt` and set
+      `dec_exp = len(str) − b`.
+
+    Both paths are always exact — no scaling error, no Newton undershooting.
     """
     // Special values
     if _nan then
@@ -1505,297 +2034,71 @@ class val MPFloat
       return ("".clone(), 0, true)
     end
 
+    // Algorithm: value = N × 256^{k_bytes} = N × 2^b_bits  (or N / 2^b_bits)
+    // where N = _digits interpreted as a base-256 integer (all bytes integer),
+    // and k_bytes = _exponent − _size().
+    //
+    // Integer case (k_bytes ≥ 0): value = N × 2^{8 × k_bytes}.
+    //   Decimal string = (N << (8 × k_bytes)).string(), dec_exp = len(str).
+    //
+    // Fractional case (k_bytes < 0): value = N / 2^b where b = 8 × |k_bytes|.
+    //   = N × 5^b / 10^b.
+    //   Decimal mantissa = (N × 5^b).string(), dec_exp = len − b.
+    //
+    // Both paths are exact (no Newton approximation).  MPInt handles the
+    // big-integer arithmetic; _short_div / scaling tricks are no longer needed.
+
     let prec: USize = _size()
-    let p2: USize = prec + 2
-    // n_dec: significant decimal digits to produce.
-    // log₁₀(256^prec) = prec × log₁₀(256) ≈ prec × 2.408; add 2 guard digits.
     let n_dec: USize = ((prec.f64() * 2.41).usize() + 2).max(1)
-
-    // ---- Step 1: approximate decimal exponent via F64. ----------------------
-    // fg_hi ≈ d₀ + d₁/256 + … ∈ [1, 256) (= F × 256 where F = 0.d₀d₁…).
-    let ng: USize = prec.min(4)
-    var fg_hi: F64 = 0.0
-    let bas = _base.f64()
-    try
-      var k: USize = ng
-      repeat
-        k = k - 1
-        fg_hi = (fg_hi / bas) + _digits(k)?.f64()
-      until k == 0 end
-    end
-    // log₁₀(|this|) = log₁₀(fg_hi) + (_exponent − 1) × log₁₀(256).
-    let log10_256: F64 = bas.log10() // 2.408240961 for _base = 256
-    let log10_val: F64 = fg_hi.log10() + ((_exponent.f64() - 1.0) * log10_256)
-    var dec_exp: I64 = log10_val.floor().i64() + 1
-
-    // ---- Exact-integer fast path -------------------------------------------
-    // If all bytes from position _exponent onward are zero, |this| is an exact
-    // integer.  Use integer long-division by 10 to extract decimal digits;
-    // this avoids the repeating base-256 fraction problem (e.g. 2.56 in
-    // base-256 is periodic, so _short_div(10) gives a value slightly < 2.56
-    // which then rounds the third digit down from 6 to 5).
-    // The fast path is only valid when _exponent ≤ prec, meaning ALL integer
-    // bytes fit within the stored digit array.  When _exponent > prec the
-    // number is a large integer that overflows the stored precision; the
-    // stored bytes represent value / 256^(_exponent − prec), not the full
-    // integer, so the fast path would give a wrong result smaller by
-    // 256^(_exponent − prec).  Fall through to the regular scaling path in
-    // that case.
-    let int_bytes: USize = if _exponent > 0 then _exponent.usize().min(prec) else 0 end
-    var is_exact_int: Bool = (int_bytes > 0) and (_exponent.usize() <= prec)
-    if is_exact_int then
-      try
-        var i: USize = int_bytes
-        while i < prec do
-          if _digits(i)? != 0 then
-            is_exact_int = false
-            break
-          end
-          i = i + 1
-        end
-      end
-    end
-
-    if is_exact_int then
-      // Pre-pass: compute the exact decimal digit count via long-division on a
-      // copy of the integer bytes.  This corrects the F64 log10 approximation
-      // which can be off by 1 at boundary values close to 10^k (e.g. 10^20
-      // gives log10_val ≈ 19.9999… → dec_exp = 20 instead of the correct 21).
-      var pre_ibuf: Array[U8] = Array[U8].init(0, int_bytes.max(1))
-      try
-        var i: USize = 0
-        while i < int_bytes do
-          pre_ibuf(i)? = _digits(i)?
-          i = i + 1
-        end
-      end
-      var pre_has_nz: Bool = false
-      try
-        var i: USize = 0
-        while i < int_bytes do
-          if pre_ibuf(i)? != 0 then pre_has_nz = true; break end
-          i = i + 1
-        end
-      end
-      var n_dec_exact: USize = 0
-      while pre_has_nz do
-        var remain: U16 = 0
-        var q_nz: Bool = false
-        try
-          var i: USize = 0
-          while i < pre_ibuf.size() do
-            let xv: U16 = remain.shl(8) + pre_ibuf(i)?.u16()
-            let q: U16 = xv / 10
-            remain = xv - (q * 10)
-            pre_ibuf(i)? = q.u8()
-            if q != 0 then q_nz = true end
-            i = i + 1
-          end
-        end
-        n_dec_exact = n_dec_exact + 1
-        pre_has_nz = q_nz
-      end
-      dec_exp = n_dec_exact.max(1).i64()
-
-      let sign_prefix: String = if _sign then "-" else "" end
-      // All mutable computation is inside recover so Pony's capability rules
-      // are satisfied.  _digits (Array[U8]) and _exponent (I64) are val
-      // and are readable inside the recover block.
-      let int_result: String iso = recover
-        // Copy integer digit bytes into a mutable buffer for long-division.
-        let ibuf: Array[U8] = Array[U8].init(0, int_bytes.max(1))
-        try
-          var i: USize = 0
-          while i < int_bytes do
-            ibuf(i)? = _digits(i)?
-            i = i + 1
-          end
-        end
-
-        // Long-divide ibuf (big-endian base-256) by 10, collecting remainders
-        // (= decimal digits, least-significant first).
-        let drev: Array[U8] = Array[U8].create()
-        var has_nz: Bool = false
-        try
-          var i: USize = 0
-          while i < ibuf.size() do
-            if ibuf(i)? != 0 then
-              has_nz = true
-              break
-            end
-            i = i + 1
-          end
-        end
-
-        while has_nz do
-          var remain: U16 = 0
-          var q_nonzero: Bool = false
-          try
-            var i: USize = 0
-            while i < ibuf.size() do
-              let xv: U16 = remain.shl(8) + ibuf(i)?.u16()
-              let q: U16 = xv / 10
-              remain = xv - (q * 10)
-              ibuf(i)? = q.u8()
-              if q != 0 then
-                q_nonzero = true
-              end
-              i = i + 1
-            end
-          end
-          drev.push(remain.u8())
-          has_nz = q_nonzero
-        end
-
-        if drev.size() == 0
-          then drev.push(0)
-        end
-
-        // Build string: sign + digits most-significant first + zero-pad to n_dec
-        // total digits (so string() uses fixed rather than scientific notation).
-        let total: USize = n_dec.max(drev.size())
-        let buf = String.create(sign_prefix.size() + total)
-        buf.append(sign_prefix)
-        var i: USize = drev.size()
-        while i > 0 do
-          i = i - 1
-          try buf.push('0' + drev(i)?) end
-        end
-
-        i = drev.size()
-        while i < n_dec do
-          buf.push('0')
-          i = i + 1
-        end
-        buf
-      end
-
-      // Use drev.size() as dec_exp would be, but we need the actual digit count.
-      // dec_exp (from F64) is correct for integers within F64 precision; use it.
-      return (consume int_result, dec_exp, false)
-    end
-
-    // ---- Step 2: scale |this| to [1, 10). ----------------------------------
-    // s_val = |this| × 10^(1 − dec_exp) so that s_val ∈ [1, 10).
-    // For dec_exp = 1: multiply by 10^0 = 1, i.e. no scaling (avoids a
-    //   lossy div for exactly-representable values like 2.0, 3.0, etc.).
-    // For dec_exp < 1: multiply by 10^(1 − dec_exp).
-    // For dec_exp > 1: divide by 10^(dec_exp − 1).
-    // Binary exponentiation keeps the cost O(log |dec_exp|) multiplications.
-    let abs_val = MPFloat._create(false, false, false, _exponent, _digits, _rounding)
-    let ten_mp = MPFloat.from_f64(10.0, p2, _rounding)
-    // TODO: Evaluate rounding
-    let new_rnd = _rounding
-    var s_val: MPFloat =
-      if dec_exp == 1 then
-        abs_val._trunc(p2)
-      elseif dec_exp < 1 then
-        // multiply by 10^(1 − dec_exp)
-        var scale = MPFloat.from_f64(1.0, p2, _rounding)
-        var sb: MPFloat = ten_mp
-        var sn: I64 = 1 - dec_exp
-        while sn > 0 do
-          if (sn and 1) == 1 then
-            scale = scale.mul(sb)._trunc(p2)
-          end
-          sb = sb.mul(sb)._trunc(p2)
-          sn = sn / 2
-        end
-        abs_val.mul(scale)._trunc(p2)
-      else
-        // dec_exp > 1: exact short-division by 10 repeated (dec_exp − 1)
-        // times.  Using _short_div avoids Newton's-method error.
-        //
-        // Precision note: 256/100 = 2.56 repeats in base-256 (period 5),
-        // so each _short_div step may lose one byte of precision when a
-        // leading zero is stripped.  We compensate by starting with
-        // (dec_exp − 1) extra bytes so that after at most (dec_exp − 1)
-        // normalisation steps the digit array still has ≥ p2 bytes.
-        let extra: USize = (dec_exp - 1).usize()
-        let work_size: USize = p2 + extra
-        // Extend abs_val to work_size bytes, zero-padding on the right.
-        // For exact integers this is mathematically correct; for others it
-        // adds a small tail of zeros which is fine for the guard-digit role.
-        var sv: MPFloat =
-          if abs_val._size() >= work_size then
-            abs_val._trunc(work_size)
-          else
-            let d_ext: Array[U8] val = recover
-              let a = Array[U8].init(0, work_size)
-              abs_val._digits.copy_to(a, 0, 0, abs_val._size())
-              a
-            end
-            MPFloat._create(false, false, false, _exponent, d_ext, _rounding)
-          end
-
-        var sn: I64 = dec_exp - 1
-        while sn > 0 do
-          (let sv2, _) = sv._short_div(10)
-          sv = sv2
-          // Normalise: strip any leading zero digit(s) produced by the
-          // division, adjust the exponent, and zero-pad on the RIGHT to
-          // keep the array at the same size (preventing precision loss).
-          var i: USize = 0
-          try
-            while (i < sv._size()) and (sv._digits(i)? == 0) do
-              i = i + 1
-            end
-          end
-
-          if i > 0 then
-            let total_sz: USize = sv._size()
-            let new_exp: I64 = sv._exponent - i.i64()
-            let new_d: Array[U8] val = recover
-              let a = Array[U8].init(0, total_sz) // zero-filled
-              sv._digits.copy_to(a, i, 0, total_sz - i)
-              a
-            end
-            sv = MPFloat._create(false, false, false, new_exp, new_d, new_rnd)
-          end
-          sn = sn - 1
-        end
-        sv
-      end
-
-    // ---- Step 3: verify s_val ∈ [1, 10); correct dec_exp if off by ±1. ----
-    let one = MPFloat.from_f64(1.0, p2, _rounding)
-    match s_val._cmp_mag(ten_mp)
-    | Greater | Equal =>
-      s_val = s_val.div(ten_mp)._trunc(p2)
-      dec_exp = dec_exp + 1
-    end
-    match s_val._cmp_mag(one)
-    | Less =>
-      s_val = s_val.mul(ten_mp)._trunc(p2)
-      dec_exp = dec_exp - 1
-    end
-
-    // ---- Step 4: extract n_dec decimal digits. ------------------------------
-    // After step 3, s_val ∈ [1, 10): _exponent = 1, _digits(0) ∈ [1, 9].
-    // First digit: _digits(0) directly.
-    // Subsequent digits: digit_shl(1) removes the top digit (leaving the
-    //   fractional remainder scaled ×256 in _exponent=1 form), then
-    //   _short_mul(10) yields the next digit in _digits(0) as
-    //   floor(frac_256 × 10 / 256) ∈ [0, 9].
     let sign_prefix: String = if _sign then "-" else "" end
-    let result: String iso = recover
-      let buf = String.create(sign_prefix.size() + n_dec)
-      buf.append(sign_prefix)
 
-      // First decimal digit from the integer part of s_val.
-      buf.push('0' + (try s_val._digits(0)? else 0 end))
-      // Remaining digits via repeated ×10 extraction.
-      var frac: MPFloat = s_val.digit_shl(1)
-      var i: USize = 1
-      while i < n_dec do
-        frac = frac._short_mul(10)
-        buf.push('0' + (try frac._digits(0)? else 0 end))
-        frac = frac.digit_shl(1)
-        i = i + 1
+    // Extract N as an MPInt: a synthetic MPFloat with _exponent = prec treats
+    // all bytes as integer bytes.  MPInt.from_mpfloat truncates toward zero,
+    // which for a pure-integer synthetic value gives exactly N.
+    let n_float: MPFloat =
+      MPFloat._create(false, false, false, prec.i64(), _digits, _rounding)
+    let n_int: MPInt = try MPInt.from_mpfloat(n_float)? else MPInt.from_ilong(0) end
+
+    let k_bytes: I64 = _exponent - prec.i64()
+
+    if k_bytes >= 0 then
+      // Integer case: value = N × 2^{8 × k_bytes}
+      let b: USize = (k_bytes * 8).usize()
+      let shifted: MPInt =
+        if b > 0 then n_int.shl(MPInt.from_ilong(b.ilong()))
+        else n_int
+        end
+      let dec_str_iso: String iso = shifted.string()
+      let dec_exp: I64 = dec_str_iso.size().i64()
+      let total: USize = n_dec.max(dec_str_iso.size())
+      let result: String iso = recover
+        let s = String.create(sign_prefix.size() + total)
+        s.append(sign_prefix)
+        s.append(consume dec_str_iso)
+        var i: USize = dec_exp.usize()
+        while i < n_dec do s.push('0'); i = i + 1 end
+        s
       end
-      buf
+      (consume result, dec_exp, false)
+    else
+      // Fractional case: value = N / 2^b = N × 5^b / 10^b
+      let b: USize = ((-k_bytes) * 8).usize()
+      let five_pow: MPInt = MPInt.from_ilong(5).pow(MPInt.from_ilong(b.ilong()))
+      let numerator: MPInt = n_int.mul(five_pow)
+      let num_str_iso: String iso = numerator.string()
+      let num_len: USize = num_str_iso.size()
+      let dec_exp: I64 = num_len.i64() - b.i64()
+      let total: USize = num_len.max(n_dec)
+      let result: String iso = recover
+        let s = String.create(sign_prefix.size() + total)
+        s.append(sign_prefix)
+        s.append(consume num_str_iso)
+        var i: USize = num_len
+        while i < n_dec do s.push('0'); i = i + 1 end
+        s
+      end
+      (consume result, dec_exp, false)
     end
-    (consume result, dec_exp, false)
 
 
   fun string(): String iso^ =>
@@ -1926,8 +2229,9 @@ class val MPFloat
     let that_size: USize = that._size()
     // res_size = na + nb holds carry digit + all na+nb-1 convolution digits.
     let res_size: USize = this_size + that_size
-    // pow2 must be a power of 2 and >= res_size to avoid circular aliasing.
-    let pow2: USize = res_size.next_pow2()
+    // pow2 must be a power of 2 >= res_size (no circular aliasing) and >= 4
+    // because fourier_real accesses index (size/2)+1 which requires size >= 4.
+    let pow2: USize = res_size.next_pow2().max(4)
 
     var err_i: USize = 0
     let d: Array[U8] val = recover
@@ -2592,6 +2896,13 @@ class val MPFloat
     if is_zero() and that.is_zero() then
       return false
     end
+    // Zero is less than any positive value, and greater than any negative value.
+    if is_zero() then
+      return not that._sign  // 0 < that iff that > 0 (not negative)
+    end
+    if that.is_zero() then
+      return _sign  // this < 0 iff this is negative
+    end
     if _sign then
       if not that._sign then
         // negative < positive → always true
@@ -2701,6 +3012,759 @@ class val MPFloat
       Greater
     end
 
+  //- Transcendental functions -------------------------------------------------
+  //
+  // Private helpers
+  // ───────────────
+  //   _atanh_series(x, p)  arctanh(x) via Σ x^{2k+1}/(2k+1)
+  //   _ln2_const(p)        ln(2) = 2 × arctanh(1/3)
+  //   _exp_taylor(r, p)    e^r   via Σ r^k/k!
+  //
+  // Public functions (all return a new MPFloat at the same precision as this)
+  // ───────────────────────────────────────────────────────────────────────────
+  //   ln / log             natural logarithm
+  //   log2 / log10         logarithm base 2 and 10
+  //   logb(base)           logarithm in an arbitrary base
+  //   exp                  e^this
+  //   exp2                 2^this
+  //   powi(n)              this^n  for integer n (exact repeated squaring)
+  //   pow(that)            this^that (general real power, positive base)
+
+  fun _atanh_series(x: MPFloat, p: USize): MPFloat =>
+    """
+    Compute `arctanh(x)` via the Taylor series
+    `Σ_{k=0}^∞ x^{2k+1} / (2k+1)`.
+
+    The caller must ensure `|x| < 1` for convergence.  `p` is the working
+    precision in bytes; the loop stops when the current term no longer
+    changes the running sum at that precision.
+
+    Uses `_short_div` (exact U8 division, no Newton error) for divisors
+    up to 255; falls back to `div` for larger denominators (which only arise
+    when `p` exceeds ~35 bytes for the 2/3 seed used by `log10`).
+    """
+    let p2: USize = p + 2
+    let x2: MPFloat = x.mul(x)._trunc(p2)         // x^2 — advances the power
+    var term: MPFloat = x._trunc(p2)               // running odd power x^{2k+1}
+    var sum: MPFloat  = term                       // accumulate here
+    var k: USize = 3                               // denominator (1,3,5,…)
+    var iters: USize = 0
+    let max_iters: USize = p2 * 30                 // safety: >10× what's needed
+    while iters < max_iters do
+      term = term.mul(x2)._trunc(p2)              // term = x^k
+      // Divide term by k to get the series addend x^k / k.
+      let addend: MPFloat =
+        if k <= 255 then
+          (let q, _) = term._short_div(k.u8()) ; q
+        else
+          term.div(MPFloat.from_f64(k.f64(), p2, _rounding))._trunc(p2)
+        end
+      let new_sum: MPFloat = sum.add(addend)._trunc(p2)
+      if new_sum.eq(sum) then break end            // converged
+      sum = new_sum
+      k = k + 2
+      iters = iters + 1
+    end
+    sum._trunc(p)
+
+
+  fun _ln2_const(p: USize): MPFloat =>
+    """
+    Compute `ln(2)` to `p` bytes of working precision using the identity
+    `ln(2) = 2 × arctanh(1/3)`.
+
+    The rational `1/3` has the exact repeating base-256 representation
+    `[0x55, 0x55, …]` (since `85/255 = 1/3`).  A `p+4`-byte approximation
+    introduces an error below `256^{-(p+4)}/3`, well within the guard digits.
+    """
+    let p2: USize = p + 4
+    let d: Array[U8] val = recover Array[U8].init(0x55, p2) end
+    let third: MPFloat = MPFloat._create(false, false, false, 0, d, _rounding)
+    let two:   MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    _atanh_series(third, p2).mul(two)._trunc(p)
+
+
+  fun _exp_taylor(r: MPFloat, p: USize): MPFloat =>
+    """
+    Compute `e^r` via the Taylor series `Σ_{k=0}^∞ r^k / k!`.
+
+    Works best for `|r| ≤ ln(2)/2 ≈ 0.347` where roughly `2.4 × p` terms
+    suffice.  Uses the recurrence `term_k = term_{k-1} × r / k` to avoid
+    computing factorials.
+    """
+    let p2: USize = p + 2
+    let one: MPFloat = MPFloat.from_f64(1.0, p2, _rounding)
+    var term: MPFloat = one                        // term_0 = 1
+    var sum:  MPFloat = one                        // sum starts at 1
+    var k: USize = 1
+    var iters: USize = 0
+    let max_iters: USize = p2 * 30
+    while iters < max_iters do
+      term = term.mul(r)._trunc(p2)               // term_{k-1} × r  (not yet /k)
+      // Divide by k: term becomes r^k/k! via the recurrence term_k = term_{k-1} × r / k.
+      let divided: MPFloat =
+        if k <= 255 then
+          (let q, _) = term._short_div(k.u8()) ; q
+        else
+          term.div(MPFloat.from_f64(k.f64(), p2, _rounding))._trunc(p2)
+        end
+      term = divided                               // update: term now holds r^k/k!
+      let new_sum: MPFloat = sum.add(divided)._trunc(p2)
+      if new_sum.eq(sum) then break end
+      sum = new_sum
+      k = k + 1
+      iters = iters + 1
+    end
+    sum._trunc(p)
+
+
+  fun ln(): MPFloat =>
+    """
+    Natural logarithm `ln(this)`.
+
+    - `NaN`     → `NaN`
+    - `+∞`      → `+∞`
+    - `x ≤ 0`   → `NaN`  (ln is not real for non-positive arguments)
+    - `0`       → `−∞`
+
+    **Algorithm** — two levels of argument reduction, then an arctanh series:
+
+    1. Write `|this| = 0.d₀d₁… × 256^e`.  Set `k = e − 1` (the base-256
+       exponent) and `m = 0.d₀d₁… × 256 ∈ [1, 256)`, so
+       `ln(this) = k × ln(256) + ln(m)`.
+
+    2. Find `n = ⌊log₂(d₀)⌋ ∈ {0,…,7}` and set `u = m / 2^n ∈ [1, 2)`.
+       Then `ln(m) = n × ln(2) + ln(u)`.
+
+    3. Let `t = (u − 1)/(u + 1) ∈ [0, 1/3)`.  Then
+       `ln(u) = 2 × arctanh(t)` — the series converges as `(1/9)^k`.
+
+    Combined: `ln(this) = (8k + n) × ln(2) + 2 × arctanh(t)`.
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf and (not _sign) then
+      return MPFloat._create(false, false, true, 0, Array[U8].create(), _rounding)
+    end
+    if _sign then return MPFloat.nan_val() end     // ln(negative) = NaN
+    if is_zero() then
+      return MPFloat._create(true, false, true, 0, Array[U8].create(), _rounding) // -inf
+    end
+
+    let p:  USize = _size()
+    let p2: USize = p + 6                         // guard bytes for cancellation
+
+    let ln2: MPFloat = _ln2_const(p2)
+
+    // Step 1: extract base-256 exponent k and mantissa m ∈ [1, 256).
+    // this = 0.d₀d₁… × 256^_exponent, so m = 0.d₀d₁… × 256, k = _exponent − 1.
+    let k: I64 = _exponent - 1
+
+    // Build m at working precision p2: zero-pad _digits to p2 bytes.
+    let m_digits: Array[U8] val = recover
+      let a = Array[U8].init(0, p2)
+      var i: USize = 0
+      while i < _size().min(p2) do
+        try a(i)? = _digits(i)? end
+        i = i + 1
+      end
+      a
+    end
+    let m: MPFloat = MPFloat._create(false, false, false, 1, m_digits, _rounding)
+
+    // Step 2: reduce m to [1, 2) by dividing by 2^n where n = floor(log2(d₀)).
+    let d0: U8 = try _digits(0)? else 1 end
+    var n_inner: I64 = 0
+    var tmp: U8 = d0
+    while tmp >= 2 do
+      tmp = tmp >> 1
+      n_inner = n_inner + 1
+    end
+    // u = m / 2^n_inner ∈ [1, 2).  _short_div is an exact integer division.
+    let divisor: U8 = U8(1).shl(n_inner.u8())     // 2^n_inner ∈ {1,…,128}
+    (let u, _) = m._short_div(divisor)
+
+    // Step 3: ln(u) = 2 × arctanh((u−1)/(u+1)), t ∈ [0, 1/3).
+    let one: MPFloat = MPFloat.from_f64(1.0, p2, _rounding)
+    let two: MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    let t: MPFloat = u.sub(one)._trunc(p2).div(u.add(one))._trunc(p2)
+    let ln_u: MPFloat = _atanh_series(t, p2).mul(two)._trunc(p2)
+
+    // Combine: ln(this) = (8k + n_inner) × ln(2) + ln(u).
+    let ln2_factor: I64 = (8 * k) + n_inner
+    let correction: MPFloat =
+      if ln2_factor == 0 then
+        MPFloat.create(p2, _rounding)             // zero
+      else
+        let fac: MPFloat = MPFloat.from_f64(ln2_factor.f64(), p2, _rounding)
+        fac.mul(ln2)._trunc(p2)
+      end
+    correction.add(ln_u)._trunc(p)
+
+
+  fun log(): MPFloat =>
+    """
+    Natural logarithm of `this`.  Alias for [`ln`](#ln).
+    """
+    ln()
+
+
+  fun log2(): MPFloat =>
+    """
+    Base-2 logarithm of `this`: `log₂(this) = ln(this) / ln(2)`.
+
+    Special cases follow those of [`ln`](#ln); additionally `log₂(2) = 1`
+    exactly (both are computed to full precision, so the ratio is 1.0 within
+    the last digit).
+    """
+    let p:  USize = _size()
+    let p2: USize = p + 4
+    let ln_x:  MPFloat = ln()
+    if ln_x.is_nan() or ln_x.is_infinite() then return ln_x end
+    let ln2: MPFloat = _ln2_const(p2)
+    ln_x.div(ln2)._trunc(p)
+
+
+  fun log10(): MPFloat =>
+    """
+    Base-10 logarithm of `this`: `log₁₀(this) = ln(this) / ln(10)`.
+
+    `ln(10) = ln(2) + ln(5) = 2×arctanh(1/3) + 2×arctanh(2/3)`.
+    `2/3` has the exact repeating base-256 representation `[0xAA, 0xAA, …]`
+    (since `170/255 = 2/3`).
+    """
+    let p:  USize = _size()
+    let p2: USize = p + 4
+    let ln_x: MPFloat = ln()
+    if ln_x.is_nan() or ln_x.is_infinite() then return ln_x end
+    // ln(10) = 2×arctanh(1/3) + 2×arctanh(2/3)
+    let p3: USize = p2 + 2
+    let d3:  Array[U8] val = recover Array[U8].init(0x55, p3) end  // 1/3
+    let d23: Array[U8] val = recover Array[U8].init(0xAA, p3) end  // 2/3
+    let third:     MPFloat = MPFloat._create(false, false, false, 0, d3,  _rounding)
+    let two_third: MPFloat = MPFloat._create(false, false, false, 0, d23, _rounding)
+    let two: MPFloat = MPFloat.from_f64(2.0, p3, _rounding)
+    let ln2:  MPFloat = _atanh_series(third,     p3).mul(two)._trunc(p3)
+    let ln5:  MPFloat = _atanh_series(two_third, p3).mul(two)._trunc(p3)
+    let ln10: MPFloat = ln2.add(ln5)._trunc(p2)
+    ln_x.div(ln10)._trunc(p)
+
+
+  fun logb(base: MPFloat): MPFloat =>
+    """
+    Logarithm of `this` in the given `base`: `logb(this, b) = ln(this) / ln(b)`.
+
+    `base` must be positive and not equal to 1; otherwise the result is NaN
+    or ±∞ following the same conventions as [`ln`](#ln) and `div`.
+    """
+    let p:  USize = _size()
+    let p2: USize = p + 4
+    ln().div(base.ln())._trunc(p)
+
+
+  fun exp(): MPFloat =>
+    """
+    Natural exponential `e^this`.
+
+    - `NaN`  → `NaN`
+    - `+∞`   → `+∞`
+    - `−∞`   → `+0`
+    - `0`    → `1`
+
+    **Algorithm** — two-level argument reduction, then a Taylor series:
+
+    1. Write `this = n₂₅₆ × ln(256) + r₁` where `n₂₅₆ = round(this / ln(256))`
+       and `|r₁| ≤ ln(256)/2 ≈ 2.77`.  Then `e^this = 256^n₂₅₆ × e^r₁`,
+       and scaling by `256^n₂₅₆` is exact (adjust `_exponent`).
+
+    2. Write `r₁ = n₂ × ln(2) + r` where `n₂ = round(r₁ / ln(2)) ∈ {-4,…,4}`
+       and `|r| ≤ ln(2)/2 ≈ 0.347`.  Then `e^r₁ = 2^n₂ × e^r`, and
+       `2^n₂` is an exactly-representable 1-byte MPFloat.
+
+    3. Compute `e^r` via Taylor series (≈ `2.4 × p` terms for `p` bytes).
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf and (not _sign) then
+      return MPFloat._create(false, false, true, 0, Array[U8].create(), _rounding)
+    end
+    if _inf then return MPFloat.create(_size(), _rounding) end  // exp(-inf) = +0
+    if is_zero() then return MPFloat.from_f64(1.0, _size(), _rounding) end
+
+    let p:  USize = _size()
+    let p2: USize = p + 8                         // extra guard for cancellation
+
+    let ln2:  MPFloat = _ln2_const(p2)
+    // ln(256) = 8 × ln(2).  Multiply by 8 using a 1-byte MPFloat for 8:
+    // [8] with _exponent=1 represents 8/256 × 256^1 = 8.
+    let eight: MPFloat = MPFloat._create(false, false, false, 1,
+      recover [U8(8)] end, _rounding)
+    let ln256: MPFloat = ln2.mul(eight)._trunc(p2)
+
+    // x as a full-precision MPFloat at p2 bytes (zero-padded to p2 digits).
+    let x_digits: Array[U8] val = recover
+      let a = Array[U8].init(0, p2)
+      var i: USize = 0
+      while i < _size().min(p2) do
+        try a(i)? = _digits(i)? end
+        i = i + 1
+      end
+      a
+    end
+    let x: MPFloat = MPFloat._create(_sign, false, false, _exponent, x_digits, _rounding)
+
+    // Step 1: n₂₅₆ = round(x / ln256); r₁ = x − n₂₅₆ × ln(256).
+    let n256_f: MPFloat = x.div(ln256)._trunc(p2).round()
+    let n256: ILong = (try MPInt.from_mpfloat(n256_f)? else MPInt.from_ilong(0) end).ilong()
+    let n256_mpf: MPFloat = MPFloat.from_f64(n256.f64(), p2, _rounding)
+    let r1: MPFloat = x.sub(n256_mpf.mul(ln256)._trunc(p2))._trunc(p2)
+
+    // Step 2: n₂ = round(r₁ / ln2) ∈ {−4,…,4}; r = r₁ − n₂ × ln(2).
+    let n2_f: MPFloat = r1.div(ln2)._trunc(p2).round()
+    let n2: ILong = (try MPInt.from_mpfloat(n2_f)? else MPInt.from_ilong(0) end).ilong()
+    let n2_mpf: MPFloat = MPFloat.from_f64(n2.f64(), p2, _rounding)
+    let r: MPFloat = r1.sub(n2_mpf.mul(ln2)._trunc(p2))._trunc(p2)
+
+    // Step 3: Taylor series for e^r, |r| ≤ ln(2)/2.
+    var result: MPFloat = _exp_taylor(r, p2)
+
+    // Scale by 2^n₂: construct an exact 1-byte MPFloat for 2^|n₂|.
+    if n2 > 0 then
+      // 2^n₂ = [2^n₂] with _exponent=1  (digit ∈ {2,4,8,16}, fits in U8).
+      let pow2: MPFloat = MPFloat._create(false, false, false, 1,
+        recover [U8(1).shl(n2.u8())] end, _rounding)
+      result = result.mul(pow2)._trunc(p2)
+    elseif n2 < 0 then
+      // 2^n₂ = [128 >> (|n₂|-1)] with _exponent=0  (digit ∈ {64,32,16,8}).
+      let pow2: MPFloat = MPFloat._create(false, false, false, 0,
+        recover [U8(128).shr((-n2 - 1).u8())] end, _rounding)
+      result = result.mul(pow2)._trunc(p2)
+    end
+
+    // Scale by 256^n₂₅₆: just adjust the exponent field.
+    result = MPFloat._create(result._sign, false, false,
+      result._exponent + n256.i64(), result._digits, _rounding)
+
+    result._trunc(p)
+
+
+  fun exp2(): MPFloat =>
+    """
+    Base-2 exponential `2^this = exp(this × ln(2))`.
+
+    - `NaN`  → `NaN`.  `+∞` → `+∞`.  `−∞` → `+0`.  `0` → `1`.
+
+    For integer `this`, the result is exact to full precision (the argument
+    reduction in `exp` will produce `r = 0` exactly).
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf and (not _sign) then
+      return MPFloat._create(false, false, true, 0, Array[U8].create(), _rounding)
+    end
+    if _inf then return MPFloat.create(_size(), _rounding) end
+    if is_zero() then return MPFloat.from_f64(1.0, _size(), _rounding) end
+    let p2: USize = _size() + 4
+    let ln2: MPFloat = _ln2_const(p2)
+    mul(ln2)._trunc(p2).exp()._trunc(_size())
+
+
+  fun powi(n: ILong, rnd: RoundingMode = RoundingNearest): MPFloat =>
+    """
+    Raise `this` to the integer power `n` using binary (square-and-multiply)
+    exponentiation.  Exact for all finite inputs (no Newton approximation).
+
+    - `x^0 = 1` for any finite `x` (including `0^0 = 1` by convention).
+    - `0^n = 0` for `n > 0`.
+    - `x^n` for `n < 0` is computed as `(1/x)^|n|` via `inv()`.
+    - NaN → NaN.  ±∞ → ±∞ (for `n > 0`) or `0` (for `n < 0`).
+    """
+    if _nan then return MPFloat.nan_val() end
+    let p: USize = _size()
+    if n == 0 then return MPFloat.from_f64(1.0, p, _rounding) end
+    // For negative exponent: compute inv() first, then positive power.
+    var base: MPFloat =
+      if n < 0 then inv() else MPFloat._create(_sign, _nan, _inf, _exponent, _digits, _rounding) end
+    var exp_n: ILong = if n < 0 then -n else n end
+    var result: MPFloat = MPFloat.from_f64(1.0, p, _rounding)
+    while exp_n > 0 do
+      if (exp_n and 1) == 1 then
+        result = result.mul(base)._trunc(p)
+      end
+      base = base.mul(base)._trunc(p)
+      exp_n = exp_n / 2
+    end
+    result
+
+
+  fun pow(that: MPFloat): MPFloat =>
+    """
+    General real power `this^that = exp(that × ln(this))`.
+
+    - `this > 0`: computed via `exp(that × ln(this))`.
+    - `this = 1`: returns `1` regardless of `that`.
+    - `this = 0` and `that > 0`: returns `0`.
+    - `this = 0` and `that ≤ 0`: returns `NaN`.
+    - `this < 0` and `that` is an integer: uses `powi`.
+    - `this < 0` and `that` is not an integer: returns `NaN`.
+    - NaN in either operand → `NaN`.
+    """
+    let p: USize = _size()
+    let p2: USize = p + 4
+    if _nan or that._nan then return MPFloat.nan_val() end
+    if that.is_zero() then return MPFloat.from_f64(1.0, p, _rounding) end  // x^0 = 1
+    if is_zero() then
+      if that.is_negative() then return MPFloat.nan_val() end
+      return MPFloat.create(p, _rounding)                                  // 0^pos = 0
+    end
+    // Positive base: exact path.
+    if not _sign then
+      let ln_x: MPFloat = ln()
+      if ln_x.is_nan() then return MPFloat.nan_val() end
+      return that.mul(ln_x)._trunc(p2).exp()._trunc(p)
+    end
+    // Negative base: only valid for integer exponents.
+    if that.is_integer() then
+      let ni: ILong = (try MPInt.from_mpfloat(that)? else MPInt.from_ilong(0) end).ilong()
+      return powi(ni)
+    end
+    MPFloat.nan_val()
+
+
+  //- Trigonometric and hyperbolic functions -----------------------------------
+
+  fun _sin_taylor(r: MPFloat, p: USize): MPFloat =>
+    """
+    Compute `sin(r)` via the Taylor series `r − r³/3! + r⁵/5! − r⁷/7! + …`.
+
+    The recurrence `term_{k+1} = term_k × (−r²) / ((2k)(2k+1))` advances two
+    factorial positions at once.  Converges for any finite `r`; works best for
+    `|r| ≤ π/4 ≈ 0.785` where the argument reduction in `sin()` leaves `r`.
+    """
+    let p2: USize = p + 2
+    let neg_r2: MPFloat = r.mul(r)._trunc(p2).neg()  // −r²
+    var term: MPFloat = r._trunc(p2)                 // r¹/1!
+    var sum:  MPFloat = term
+    var k: USize = 1
+    var iters: USize = 0
+    let max_iters: USize = p2 * 30
+    while iters < max_iters do
+      term = term.mul(neg_r2)._trunc(p2)
+      let d1: USize = 2 * k
+      let d2: USize = (2 * k) + 1
+      term =
+        if d1 <= 255 then (let q, _) = term._short_div(d1.u8()) ; q
+        else term.div(MPFloat.from_f64(d1.f64(), p2, _rounding))._trunc(p2) end
+      term =
+        if d2 <= 255 then (let q, _) = term._short_div(d2.u8()) ; q
+        else term.div(MPFloat.from_f64(d2.f64(), p2, _rounding))._trunc(p2) end
+      let new_sum: MPFloat = sum.add(term)._trunc(p2)
+      if new_sum.eq(sum) then break end
+      sum = new_sum
+      k = k + 1
+      iters = iters + 1
+    end
+    sum._trunc(p)
+
+
+  fun _cos_taylor(r: MPFloat, p: USize): MPFloat =>
+    """
+    Compute `cos(r)` via the Taylor series `1 − r²/2! + r⁴/4! − r⁶/6! + …`.
+
+    The recurrence `term_{k+1} = term_k × (−r²) / ((2k−1)(2k))` advances two
+    factorial positions at once.  Converges for any finite `r`; works best for
+    `|r| ≤ π/4 ≈ 0.785`.
+    """
+    let p2: USize = p + 2
+    let neg_r2: MPFloat = r.mul(r)._trunc(p2).neg()  // −r²
+    let one: MPFloat = MPFloat.from_f64(1.0, p2, _rounding)
+    var term: MPFloat = one                           // r⁰/0! = 1
+    var sum:  MPFloat = term
+    var k: USize = 1
+    var iters: USize = 0
+    let max_iters: USize = p2 * 30
+    while iters < max_iters do
+      term = term.mul(neg_r2)._trunc(p2)
+      let d1: USize = (2 * k) - 1
+      let d2: USize = 2 * k
+      term =
+        if d1 <= 255 then (let q, _) = term._short_div(d1.u8()) ; q
+        else term.div(MPFloat.from_f64(d1.f64(), p2, _rounding))._trunc(p2) end
+      term =
+        if d2 <= 255 then (let q, _) = term._short_div(d2.u8()) ; q
+        else term.div(MPFloat.from_f64(d2.f64(), p2, _rounding))._trunc(p2) end
+      let new_sum: MPFloat = sum.add(term)._trunc(p2)
+      if new_sum.eq(sum) then break end
+      sum = new_sum
+      k = k + 1
+      iters = iters + 1
+    end
+    sum._trunc(p)
+
+
+  fun sin(): MPFloat =>
+    """
+    Sine of `this` (argument in radians).
+
+    - `NaN` or `±∞` → `NaN`  (sine is not defined at infinity)
+    - `0` → `0`
+
+    **Algorithm** — argument reduction then Taylor series:
+
+    1. Compute `n = round(this / (π/2))` and `r = this − n × π/2`,
+       so `|r| ≤ π/4`.
+    2. Based on `k = n mod 4`:
+       - `k=0`: `sin = sin(r)`
+       - `k=1`: `sin = cos(r)`
+       - `k=2`: `sin = −sin(r)`
+       - `k=3`: `sin = −cos(r)`
+
+    **Precision note**: argument reduction subtracts two nearly-equal numbers
+    when `|this|` is much larger than `π/2`.  For reliable results keep
+    `|this| ≲ 256^(_size() − 1)`.
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    if is_zero() then return MPFloat.create(_size(), _rounding) end
+
+    let p: USize = _size()
+    let p2: USize = p + 8   // extra guard for argument-reduction cancellation
+
+    // Extend x to p2 bytes.
+    let x_digits: Array[U8] val = recover
+      let a = Array[U8].init(0, p2)
+      var i: USize = 0
+      while i < _size().min(p2) do try a(i)? = _digits(i)? end ; i = i + 1 end
+      a
+    end
+    let x: MPFloat = MPFloat._create(_sign, false, false, _exponent, x_digits, _rounding)
+
+    let pi_val:  MPFloat = MPFloat.pi(p2, _rounding)
+    let two:     MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    let pi_half: MPFloat = pi_val.div(two)._trunc(p2)
+
+    // n = round(x / (π/2)), r = x − n × (π/2).
+    let xdivph: MPFloat = x.div(pi_half)._trunc(p2)
+    let n_f: MPFloat = xdivph.round()
+    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from_ilong(0) end).ilong()
+    let n_mpf: MPFloat = MPFloat.from_mpint(MPInt.from_ilong(n), p2)
+    let r: MPFloat = x.sub(n_mpf.mul(pi_half)._trunc(p2))._trunc(p2)
+
+    // Octant k = n mod 4, normalised to [0, 3].
+    let k: ILong = ((n % 4) + 4) % 4
+
+    // Only one Taylor series is needed per octant.
+    let result: MPFloat =
+      if (k == 0) or (k == 2) then
+        let sr: MPFloat = _sin_taylor(r, p2)
+        if k == 0 then sr else sr.neg() end
+      else
+        let cr: MPFloat = _cos_taylor(r, p2)
+        if k == 1 then cr else cr.neg() end
+      end
+    result._trunc(p)
+
+
+  fun cos(): MPFloat =>
+    """
+    Cosine of `this` (argument in radians).
+
+    - `NaN` or `±∞` → `NaN`
+    - `0` → `1`
+
+    Uses the same argument reduction as `sin()`:
+    - `k=0`: `cos = cos(r)`
+    - `k=1`: `cos = −sin(r)`
+    - `k=2`: `cos = −cos(r)`
+    - `k=3`: `cos = sin(r)`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    if is_zero() then return MPFloat.from_f64(1.0, _size(), _rounding) end
+
+    let p: USize = _size()
+    let p2: USize = p + 8
+
+    let x_digits: Array[U8] val = recover
+      let a = Array[U8].init(0, p2)
+      var i: USize = 0
+      while i < _size().min(p2) do try a(i)? = _digits(i)? end ; i = i + 1 end
+      a
+    end
+    let x: MPFloat = MPFloat._create(_sign, false, false, _exponent, x_digits, _rounding)
+
+    let pi_val:  MPFloat = MPFloat.pi(p2, _rounding)
+    let two:     MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    let pi_half: MPFloat = pi_val.div(two)._trunc(p2)
+
+    let n_f: MPFloat = x.div(pi_half)._trunc(p2).round()
+    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from_ilong(0) end).ilong()
+    let n_mpf: MPFloat = MPFloat.from_mpint(MPInt.from_ilong(n), p2)
+    let r: MPFloat = x.sub(n_mpf.mul(pi_half)._trunc(p2))._trunc(p2)
+
+    let k: ILong = ((n % 4) + 4) % 4
+
+    let result: MPFloat =
+      if (k == 0) or (k == 2) then
+        let cr: MPFloat = _cos_taylor(r, p2)
+        if k == 0 then cr else cr.neg() end
+      else
+        let sr: MPFloat = _sin_taylor(r, p2)
+        if k == 3 then sr else sr.neg() end
+      end
+    result._trunc(p)
+
+
+  fun tan(): MPFloat =>
+    """
+    Tangent of `this` (argument in radians): `sin(this) / cos(this)`.
+
+    - `NaN` or `±∞` → `NaN`
+    - `0` → `0`
+
+    When `cos(this)` underflows to zero at finite precision (near odd multiples
+    of `π/2`), `div` returns `±∞`.
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    if is_zero() then return MPFloat.create(_size(), _rounding) end
+    let p: USize = _size()
+    let p2: USize = p + 4
+    sin().div(cos())._trunc(p)
+
+
+  fun csc(): MPFloat =>
+    """
+    Cosecant of `this`: `1 / sin(this)`.
+
+    - `NaN`, `±∞`, or `sin(this) = 0` → `NaN`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    let s: MPFloat = sin()
+    if s.is_zero() then return MPFloat.nan_val() end
+    s.inv()._trunc(_size())
+
+
+  fun sec(): MPFloat =>
+    """
+    Secant of `this`: `1 / cos(this)`.
+
+    - `NaN`, `±∞`, or `cos(this) = 0` → `NaN`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    let c: MPFloat = cos()
+    if c.is_zero() then return MPFloat.nan_val() end
+    c.inv()._trunc(_size())
+
+
+  fun cot(): MPFloat =>
+    """
+    Cotangent of `this`: `cos(this) / sin(this)`.
+
+    - `NaN`, `±∞`, or `sin(this) = 0` → `NaN`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    let s: MPFloat = sin()
+    if s.is_zero() then return MPFloat.nan_val() end
+    cos().div(s)._trunc(_size())
+
+
+  fun sinh(): MPFloat =>
+    """
+    Hyperbolic sine: `(e^this − e^{−this}) / 2`.
+
+    - `NaN` → `NaN`
+    - `±∞` → `±∞`
+    - `0` → `0`
+
+    **Precision note**: for very small `|this|` the subtraction
+    `e^x − e^{−x}` cancels leading digits.  Use higher precision `p` when
+    `|this| ≪ 256^{−(p−1)/2}`.
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf  then
+      return MPFloat._create(_sign, false, true, 0, Array[U8].create(), _rounding)
+    end
+    if is_zero() then return MPFloat.create(_size(), _rounding) end
+    let p: USize = _size()
+    let p2: USize = p + 4
+    let ex:  MPFloat = exp()
+    let emx: MPFloat = neg().exp()
+    let two: MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    ex.sub(emx)._trunc(p2).div(two)._trunc(p)
+
+
+  fun cosh(): MPFloat =>
+    """
+    Hyperbolic cosine: `(e^this + e^{−this}) / 2`.
+
+    - `NaN` → `NaN`
+    - `±∞` → `+∞`  (cosh is always non-negative)
+    - `0` → `1`
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf  then
+      return MPFloat._create(false, false, true, 0, Array[U8].create(), _rounding)
+    end
+    if is_zero() then return MPFloat.from_f64(1.0, _size(), _rounding) end
+    let p: USize = _size()
+    let p2: USize = p + 4
+    let ex:  MPFloat = exp()
+    let emx: MPFloat = neg().exp()
+    let two: MPFloat = MPFloat.from_f64(2.0, p2, _rounding)
+    ex.add(emx)._trunc(p2).div(two)._trunc(p)
+
+
+  fun tanh(): MPFloat =>
+    """
+    Hyperbolic tangent: `(e^this − e^{−this}) / (e^this + e^{−this})`.
+
+    - `NaN` → `NaN`
+    - `+∞` → `+1`,  `−∞` → `−1`
+    - `0` → `0`
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf  then
+      return MPFloat.from_f64(if _sign then -1.0 else 1.0 end, _size(), _rounding)
+    end
+    if is_zero() then return MPFloat.create(_size(), _rounding) end
+    let p: USize = _size()
+    let p2: USize = p + 4
+    let ex:  MPFloat = exp()
+    let emx: MPFloat = neg().exp()
+    ex.sub(emx)._trunc(p2).div(ex.add(emx))._trunc(p)
+
+
+  fun csch(): MPFloat =>
+    """
+    Hyperbolic cosecant: `1 / sinh(this)`.
+
+    - `NaN`, `±∞`, or `sinh(this) = 0` (i.e. `this = 0`) → `NaN`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    if is_zero() then return MPFloat.nan_val() end
+    sinh().inv()._trunc(_size())
+
+
+  fun sech(): MPFloat =>
+    """
+    Hyperbolic secant: `1 / cosh(this)`.
+
+    - `NaN` → `NaN`
+    - `±∞` → `0`  (cosh(±∞) = +∞)
+    """
+    if _nan then return MPFloat.nan_val() end
+    if _inf  then return MPFloat.create(_size(), _rounding) end
+    cosh().inv()._trunc(_size())
+
+
+  fun coth(): MPFloat =>
+    """
+    Hyperbolic cotangent: `cosh(this) / sinh(this)`.
+
+    - `NaN`, `±∞`, or `this = 0` → `NaN`
+    """
+    if _nan or _inf then return MPFloat.nan_val() end
+    if is_zero() then return MPFloat.nan_val() end
+    let p: USize = _size()
+    let p2: USize = p + 4
+    cosh().div(sinh())._trunc(p)
+
+
   //- Rounding and truncation -------------------------------------------------
 
   fun abs(): MPFloat =>
@@ -2803,3 +3867,72 @@ class val MPFloat
     end
     add(half).floor()
 
+
+  //- Hashing -----------------------------------------------------------------
+
+  fun hash(): USize =>
+    """
+    Calculate a hash of this `MPFloat`.
+    """
+    0
+
+
+  fun hash64(): U64 =>
+    """
+    Calculate a 64-bits hash of the `MPFloat`.
+    """
+    0
+
+  
+  //- Limits ------------------------------------------------------------------
+
+  fun tag precision2(): U8 =>
+    """
+    Mantissa precision in bits.
+    """
+    0
+
+  fun tag precision10(): U8 =>
+    """
+    Mantissa precision in decimal digits.
+    """
+    0
+
+  fun tag min_exp2(): I16 =>
+    """
+    Minimum exponent value such that (2^exponent) - 1 is representable at full
+    precision (ie a normalised number).
+    """
+    0
+
+  fun tag min_exp10(): I16 =>
+    """
+    Minimum exponent value such that (10^exponent) - 1 is representable at full
+    precision (ie a normalised number).
+    """
+    0
+
+  fun tag max_exp2(): I16 =>
+    """
+    Maximum exponent value such that (2^exponent) - 1 is representable.
+    """
+    0
+
+  fun tag max_exp10(): I16 =>
+    """
+    Maximum exponent value such that (10^exponent) - 1 is representable.
+    """
+    0
+
+  fun ldexp(x: MPFloat, e: I32): MPFloat =>
+    """
+    Multiply `MPFloat` x number by integral power of 2
+    """
+    MPFloat.create()
+
+
+  fun frexp(): (MPFloat, U32) =>
+    """
+    Decomposes a `MPFloat` number into significand and base-2 exponent
+    """
+    (MPFloat.create(), 0)

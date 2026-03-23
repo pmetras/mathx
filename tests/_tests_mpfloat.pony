@@ -41,6 +41,11 @@
 use "../mathx"
 use "../pony_testx"
 
+use "random"
+use "collections"
+use "format"
+use "debug"
+
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 
@@ -320,6 +325,73 @@ class iso _TestMPFloatNewSpecial is UnitTest
     h.assert_true(ni.is_negative(), "-inf_val() is negative")
 
 
+// ── from_f32 ─────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatFromF32 is UnitTest
+  """
+  `from_f32` preserves sign, special values, and approximate magnitude.
+  Digit values are verified indirectly through `string()`.
+  """
+  fun name(): String => "MPFloat/from_f32"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 3
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // NaN propagation: quiet NaN bit pattern
+    let fnan = MPFloat.from_f32(F32.from_bits(0x7FF8_0000))
+    h.assert_true(fnan.is_nan(), "from_f32(NaN) is NaN")
+
+    // See https://en.wikipedia.org/wiki/Single-precision_floating-point_format#Notable_single-precision_cases
+    // +infinity bit pattern
+    let finf = MPFloat.from_f32(F32.from_bits(0x7F80_0000))
+    h.assert_true(finf.is_infinite(), "from_f32(+inf) is inf")
+    h.assert_false(finf.is_negative(), "from_f32(+inf) is positive")
+
+    // -infinity bit pattern
+    let fninf = MPFloat.from_f32(F32.from_bits(0xFF80_0000))
+    h.assert_true(fninf.is_infinite(), "from_f32(-inf) is inf")
+    h.assert_true(fninf.is_negative(), "from_f32(-inf) is negative")
+
+    // +0
+    let fz = MPFloat.from_f32(0.0)
+    h.assert_true(fz.is_zero(), "from_f32(0.0) is zero")
+    h.assert_false(fz.is_negative(), "from_f32(0.0) is +0")
+
+    // -0 detected via sign bit
+    let fnz = MPFloat.from_f32(-0.0)
+    h.assert_true(fnz.is_zero(), "from_f32(-0.0) is zero")
+    h.assert_true(fnz.is_negative(), "from_f32(-0.0) is -0")
+
+    // Positive value: string() must start with "3."
+    let fpi = MPFloat.from_f32(3.14159, 8)
+    h.assert_false(fpi.is_zero(), "from_f32(3.14) is not zero")
+    h.assert_false(fpi.is_negative(), "from_f32(3.14) is positive")
+    h.assert_true(fpi.is_finite(), "from_f32(3.14) is finite")
+    h.assert_true(fpi.string().at("3."), "from_f32(3.14) string starts with \"3.\"")
+
+    // Negative value
+    let fneg = MPFloat.from_f32(-2.71828, 8)
+    h.assert_true(fneg.is_negative(), "from_f32(-2.71) is negative")
+    h.assert_true(fneg.string().at("-2."), "from_f32(-2.71) string starts with \"-2.\"")
+
+    // Random values
+    // Tests only on 5 decimals for string equality. Last decimals can be different without rounding.
+    let rand = Rand
+    for i in Range(0, 100) do
+      let f = rand.real().f32()
+      let mpf = MPFloat.from_f32(f, p)
+      (let mpfs, _) = mpf.string().chop(9)
+      let mpfsc: String val = consume mpfs
+      let fs = Format.float[F32](f, FormatFixLarge, PrefixDefault, 7)
+      let fsc: String val = consume fs
+      h.assert_eq[String](mpfsc, fsc, "Random floats [" + i.string() + "] from_f32(" + fsc + ") != " + mpf.string())
+    end
+
+
 // ── from_f64 ─────────────────────────────────────────────────────────────────
 
 class iso _TestMPFloatFromF64 is UnitTest
@@ -330,6 +402,13 @@ class iso _TestMPFloatFromF64 is UnitTest
   fun name(): String => "MPFloat/from_f64"
 
   fun apply(h: TestHelper) =>
+    let p: USize = 6
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // See https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
     // NaN propagation: quiet NaN bit pattern
     let fnan = MPFloat.from_f64(F64.from_bits(0x7FF8_0000_0000_0000))
     h.assert_true(fnan.is_nan(), "from_f64(NaN) is NaN")
@@ -365,6 +444,51 @@ class iso _TestMPFloatFromF64 is UnitTest
     let fneg = MPFloat.from_f64(-2.71828, 8)
     h.assert_true(fneg.is_negative(), "from_f64(-2.71) is negative")
     h.assert_true(fneg.string().at("-2."), "from_f64(-2.71) string starts with \"-2.\"")
+
+    // Random values
+    // String comparison on 15 decimals. Many errors without rounding.
+    let rand = Rand
+    for i in Range(0, 100) do
+      let f = rand.real()
+      let mpf = MPFloat.from_f64(f, p)
+      (let mpfs, _) = mpf.string().chop(17)
+      let mpfsc: String val = consume mpfs
+      let fs = Format.float[F64](f, FormatFixLarge, PrefixDefault, 15)
+      let fsc: String val = consume fs
+      h.assert_eq[String](mpfsc, fsc, "Random floats [" + i.string() + "] from_f64(" + fsc + ") != " + mpf.string())
+    end
+
+
+// ── from_ulong ─────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatFromULong is UnitTest
+  """
+  `from_ulong` preserves sign.
+  Digit values are verified indirectly through `string()`.
+  """
+  fun name(): String => "MPFloat/from_ulong"
+
+  fun apply(h: TestHelper) =>
+    // 0
+    let fz = MPFloat.from_ulong(0)
+    h.assert_true(fz.is_zero(), "from_ulong(0) is zero")
+    h.assert_true(fz == MPFloat.from_f32(0.0), "MPFloat.from_ulong(0) == MPFloat.from_f32(0.0)")
+    h.assert_eq[MPFloat](fz, MPFloat.from_f64(0.0), "MPFloat.from_ulong(0) == MPFloat.from_f64(0.0)")
+    h.assert_true(fz.is_integer(), "from_ulong(0) is integer")
+
+    // Random numbers
+    let rand = Rand
+    for i in Range(1, 100) do
+      let r: ULong = rand.ulong()
+      let fr = MPFloat.from_ulong(r)
+      h.assert_eq[String](fr.string().trim(0, try fr.string().find(".0")?.usize() else 0 end), r.string(), "Random from_ulong(" + r.string() + ")")
+      h.assert_true(fr.is_integer(), "Random from_ulong(" + fr.string() + ") is integer")
+    end
+
+    // Maximum value
+    let fpm = MPFloat.from_ulong(ULong.max_value())
+    h.assert_eq[String](fpm.string().trim(0, try fpm.string().find(".0")?.usize() else 0 end), ULong.max_value().string(), "Maximum ULong value")
+    h.assert_true(fpm.is_integer(), "from_ulong(ULong.max_value()) is integer")
 
 
 // ── from_string special values ───────────────────────────────────────────────
@@ -444,28 +568,34 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
   fun name(): String => "MPFloat/from_string/decimal"
 
   fun apply(h: TestHelper) =>
-    // Integer: "3" → finite, positive, string starts with "3."
-    let s3 = try MPFloat.from_string("3", 8)? else MPFloat.nan_val() end
+    let p: USize = 14
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Integer: "3"
+    let s3 = try MPFloat.from_string("3", p)? else MPFloat.nan_val() end
     h.assert_true(s3.is_finite(), "\"3\" is finite")
     h.assert_false(s3.is_negative(), "\"3\" is positive")
-    h.assert_true(s3.string().at("3."), "\"3\" string starts with \"3.\"")
+    ae(s3, MPFloat.from_f64(3.0, p), "\"3\" ≈ 3")
 
-    // Negative: "-2.5"
-    let sm = try MPFloat.from_string("-2.5", 8)? else MPFloat.nan_val() end
+    // Negative: "-2.5" (exact in base 256)
+    let sm = try MPFloat.from_string("-2.5", p)? else MPFloat.nan_val() end
     h.assert_true(sm.is_negative(), "\"-2.5\" is negative")
     h.assert_true(sm.is_finite(), "\"-2.5\" is finite")
-    h.assert_true(sm.string().at("-2."), "\"-2.5\" string starts with \"-2.\"")
+    ae(sm, MPFloat.from_f64(-2.5, p), "\"-2.5\" ≈ -2.5")
 
     // Exponent notation: "314e-2" = 3.14
-    let se = try MPFloat.from_string("314e-2", 8)? else MPFloat.nan_val() end
+    let se = try MPFloat.from_string("314e-2", p)? else MPFloat.nan_val() end
     h.assert_true(se.is_finite(), "\"314e-2\" is finite")
     h.assert_false(se.is_negative(), "\"314e-2\" is positive")
-    h.assert_true(se.string().at("3."), "\"314e-2\" string starts with \"3.\"")
+    ae(se, MPFloat.from_f64(3.14, p), "\"314e-2\" ≈ 3.14")
 
     // '@' as exponent separator (GMP/MPFR style for base ≤ 10).
-    let sat = try MPFloat.from_string("314@-2", 8)? else MPFloat.nan_val() end
+    let sat = try MPFloat.from_string("314@-2", p)? else MPFloat.nan_val() end
     h.assert_true(sat.is_finite(), "\"314@-2\" is finite")
-    h.assert_true(sat.string().at("3."), "\"314@-2\" string starts with \"3.\"")
+    ae(sat, MPFloat.from_f64(3.14, p), "\"314@-2\" ≈ 3.14")
 
     // Large exponent: "1E3" = 1000 → finite
     let s1k = try MPFloat.from_string("1E3", 8)? else MPFloat.nan_val() end
@@ -580,7 +710,11 @@ class iso _TestMPFloatAdd is UnitTest
   fun name(): String => "MPFloat/add"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 20
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Special values.
     h.assert_true(
@@ -600,34 +734,16 @@ class iso _TestMPFloatAdd is UnitTest
       "+inf + finite is positive inf")
 
     // Identity with zero.
-    h.assert_eq[String](
-      MPFloat.from_f64(3.0, p).add(MPFloat.create(p)).string(),
-      MPFloat.from_f64(3.0, p).string(),
-      "x + 0 = x")
-    h.assert_eq[String](
-      MPFloat.create(p).add(MPFloat.from_f64(3.0, p)).string(),
-      MPFloat.from_f64(3.0, p).string(),
-      "0 + x = x")
+    ae(MPFloat.from_f64(3.0, p).add(MPFloat.create(p)), MPFloat.from_f64(3.0, p), "x + 0 = x")
+    ae(MPFloat.create(p).add(MPFloat.from_f64(3.0, p)), MPFloat.from_f64(3.0, p), "0 + x = x")
 
     // Same-sign addition.
-    h.assert_eq[String](
-      MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(2.0, p)).string(),
-      MPFloat.from_f64(5.0, p).string(),
-      "3 + 2 = 5")
-    h.assert_eq[String](
-      MPFloat.from_f64(-3.0, p).add(MPFloat.from_f64(-2.0, p)).string(),
-      MPFloat.from_f64(-5.0, p).string(),
-      "-3 + -2 = -5")
+    ae(MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(5.0, p), "3 + 2 = 5")
+    ae(MPFloat.from_f64(-3.0, p).add(MPFloat.from_f64(-2.0, p)), MPFloat.from_f64(-5.0, p), "-3 + -2 = -5")
 
     // Opposite-sign addition (subtraction of magnitudes).
-    h.assert_eq[String](
-      MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(-2.0, p)).string(),
-      MPFloat.from_f64(1.0, p).string(),
-      "3 + (-2) = 1")
-    h.assert_eq[String](
-      MPFloat.from_f64(2.0, p).add(MPFloat.from_f64(-3.0, p)).string(),
-      MPFloat.from_f64(-1.0, p).string(),
-      "2 + (-3) = -1")
+    ae(MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(-2.0, p)), MPFloat.from_f64(1.0, p), "3 + (-2) = 1")
+    ae(MPFloat.from_f64(2.0, p).add(MPFloat.from_f64(-3.0, p)), MPFloat.from_f64(-1.0, p), "2 + (-3) = -1")
 
     // Exact cancellation → zero.
     h.assert_true(
@@ -635,20 +751,12 @@ class iso _TestMPFloatAdd is UnitTest
       "3 + (-3) = 0")
 
     // Carry across digit boundary: 255/256 + 1/256 = 1.
-    // The carry expands the result by one digit; compare with prec=3.
-    let a = MPFloat.from_f64(255.0 / 256.0, 2)
-    let b = MPFloat.from_f64(1.0 / 256.0, 2)
-    h.assert_eq[String](
-      a.add(b).string(),
-      MPFloat.from_f64(1.0, 3).string(),
-      "255/256 + 1/256 = 1")
+    ae(MPFloat.from_f64(255.0 / 256.0, p).add(MPFloat.from_f64(1.0 / 256.0, p)),
+      MPFloat.from_f64(1.0, p), "255/256 + 1/256 = 1")
 
     // Exponent alignment: 256 + 1 = 257.
-    // Alignment (shift=1) grows the result by one digit; compare with prec=9.
-    h.assert_eq[String](
-      MPFloat.from_f64(256.0, p).add(MPFloat.from_f64(1.0, p)).string(),
-      MPFloat.from_f64(257.0, 9).string(),
-      "256 + 1 = 257")
+    ae(MPFloat.from_f64(256.0, p).add(MPFloat.from_f64(1.0, p)),
+      MPFloat.from_f64(257.0, p), "256 + 1 = 257")
 
 
 class iso _TestMPFloatSub is UnitTest
@@ -659,23 +767,18 @@ class iso _TestMPFloatSub is UnitTest
   fun name(): String => "MPFloat/sub"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 17
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
-    h.assert_eq[String](
-      MPFloat.from_f64(5.0, p).sub(MPFloat.from_f64(2.0, p)).string(),
-      MPFloat.from_f64(3.0, p).string(),
-      "5 - 2 = 3")
-    h.assert_eq[String](
-      MPFloat.from_f64(2.0, p).sub(MPFloat.from_f64(5.0, p)).string(),
-      MPFloat.from_f64(-3.0, p).string(),
-      "2 - 5 = -3")
+    ae(MPFloat.from_f64(5.0, p).sub(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(3.0, p), "5 - 2 = 3")
+    ae(MPFloat.from_f64(2.0, p).sub(MPFloat.from_f64(5.0, p)), MPFloat.from_f64(-3.0, p), "2 - 5 = -3")
     h.assert_true(
       MPFloat.from_f64(5.0, p).sub(MPFloat.from_f64(5.0, p)).is_zero(),
       "5 - 5 = 0")
-    h.assert_eq[String](
-      MPFloat.from_f64(-5.0, p).sub(MPFloat.from_f64(2.0, p)).string(),
-      MPFloat.from_f64(-7.0, p).string(),
-      "-5 - 2 = -7")
+    ae(MPFloat.from_f64(-5.0, p).sub(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(-7.0, p), "-5 - 2 = -7")
     h.assert_true(
       MPFloat.from_f64(1.0, p).sub(MPFloat.nan_val()).is_nan(),
       "x - NaN = NaN")
@@ -691,7 +794,11 @@ class iso _TestMPFloatMul is UnitTest
   fun name(): String => "MPFloat/mul"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 18
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Special values.
     h.assert_true(
@@ -738,21 +845,42 @@ class iso _TestMPFloatMul is UnitTest
       MPFloat.from_f64(-3.0, p).mul(MPFloat.from_f64(-2.0, p)).is_negative(),
       "(-3) × (-2) is positive")
 
-    // Exact value: 3 × 2 = 6.
-    h.assert_true(
-      MPFloat.from_f64(3.0, p).mul(MPFloat.from_f64(2.0, p)).string().at("6."),
-      "3 × 2 starts with '6.'")
-
-    // Exact value: 10 × 10 = 100.
-    h.assert_true(
-      MPFloat.from_f64(10.0, p).mul(MPFloat.from_f64(10.0, p)).string().at("100."),
-      "10 × 10 starts with '100.'")
-
+    // Exact values.
+    ae(MPFloat.from_f64(3.0, p).mul(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(6.0, p), "3 × 2 = 6")
+    ae(MPFloat.from_f64(10.0, p).mul(MPFloat.from_f64(10.0, p)), MPFloat.from_f64(100.0, p), "10 × 10 = 100")
     // Exponent propagation: (1/256) × 256 = 1.
-    h.assert_true(
-      MPFloat.from_f64(1.0 / 256.0, p).mul(MPFloat.from_f64(256.0, p))
-        .string().at("1."),
-      "(1/256) × 256 starts with '1.'")
+    ae(MPFloat.from_f64(1.0 / 256.0, p).mul(MPFloat.from_f64(256.0, p)),
+      MPFloat.from_f64(1.0, p), "(1/256) × 256 = 1")
+
+    // Random numbers
+    let rand = Rand
+    for i in Range(0, 100) do
+      let f1 = rand.real()
+      let f2 = rand.real()
+      ae(MPFloat.from_f64(f1, p) * MPFloat.from_f64(f2, p), MPFloat.from_f64(f1 * f2),
+        "Random mul from F64 " + f1.string() + " × " + f2.string())
+
+      let l1 = rand.ulong()
+      let l2 = rand.ulong()
+      ae(MPFloat.from_ulong(l1, p) * MPFloat.from_ulong(l2, p), MPFloat.from_mpint(MPInt.from_ulong(l1) * MPInt.from_ulong(l2)),
+        "Random mul from ULong " + l1.string() + " × " + l2.string())
+    end
+
+    // Large random integers multiplications
+    var mp1 = MPInt.from_ulong(rand.ulong())
+    var mp2 = MPInt.from_ulong(rand.ulong())
+    for i in Range(0, 30) do
+      mp1 = mp1 * MPInt.from_ulong(rand.ulong())
+      mp2 = mp2 * MPInt.from_ulong(rand.ulong())
+      ae(MPFloat.from_mpint(mp1, p) * MPFloat.from_mpint(mp2, p), MPFloat.from_mpint(mp1 * mp2), "Random large integers mul " + mp1.string() + " × " + mp2.string())
+
+      let f1 = rand.real()
+      let f2 = rand.real()
+      let mf1 = MPFloat.from_mpint(mp1, p) * MPFloat.from_f64(f1, p)
+      let mf2 = MPFloat.from_mpint(mp2, p) * MPFloat.from_f64(f2, p)
+      ae(mf1 * mf2, MPFloat.from_mpint(mp1, p) * MPFloat.from_mpint(mp2, p) * MPFloat.from_f64(f1 * f2),
+        "Random large floats mul " + mf1.string() + " × " + mf2.string())
+    end
 
 
 // ── Inversion ──────────────────────────────────────────────────────────────
@@ -764,7 +892,11 @@ class iso _TestMPFloatInv is UnitTest
   fun name(): String => "MPFloat/inv"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 10
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Special values.
     h.assert_true(MPFloat.nan_val().inv().is_nan(), "1/NaN = NaN")
@@ -782,28 +914,15 @@ class iso _TestMPFloatInv is UnitTest
     h.assert_true(
       MPFloat.from_f64(-2.0, p).inv().is_negative(), "1/(−2) is negative")
 
-    // 1/1 = 1.
-    h.assert_true(
-      MPFloat.from_f64(1.0, p).inv().string().at("1."), "1/1 starts with '1.'")
-
-    // 1/2 = 0.5 → string starts with "0.".
-    h.assert_true(
-      MPFloat.from_f64(2.0, p).inv().string().at("0."), "1/2 starts with '0.'")
-
-    // Round-trip exact for powers of 2: (1/2) × 2 = 1.
+    // Numeric values.
+    ae(MPFloat.from_f64(1.0, p).inv(), MPFloat.from_f64(1.0, p), "1/1 = 1")
+    ae(MPFloat.from_f64(2.0, p).inv(), MPFloat.from_f64(0.5, p), "1/2 = 0.5")
+    // Round-trip: (1/2) × 2 = 1.
     let x = MPFloat.from_f64(2.0, p)
-    h.assert_true(
-      x.inv().mul(x).string().at("1."), "(1/2) × 2 = 1")
-
-    // Exponent: 1/256 = 256^{-1} → exponent should be 0.
-    let inv256 = MPFloat.from_f64(256.0, p).inv()
-    h.assert_true(inv256.string().at("0."), "1/256 starts with '0.'")
-
-    // 1/(1/256) = 256.
-    let inv_inv256: String val = MPFloat.from_f64(1.0 / 256.0, p).inv().string()
-    h.assert_true(
-      inv_inv256.at("256."),
-      "1/(1/256) starts with '256.'")
+    ae(x.inv().mul(x), MPFloat.from_f64(1.0, p), "(1/2) × 2 = 1")
+    // 1/256 and 1/(1/256) = 256.
+    ae(MPFloat.from_f64(256.0, p).inv(), MPFloat.from_f64(1.0 / 256.0, p), "1/256")
+    ae(MPFloat.from_f64(1.0 / 256.0, p).inv(), MPFloat.from_f64(256.0, p), "1/(1/256) = 256")
 
 
 // ── Division ───────────────────────────────────────────────────────────────
@@ -815,7 +934,11 @@ class iso _TestMPFloatDiv is UnitTest
   fun name(): String => "MPFloat/div"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 13
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Special values.
     h.assert_true(MPFloat.nan_val().div(MPFloat.from_f64(2.0, p)).is_nan(),
@@ -851,18 +974,12 @@ class iso _TestMPFloatDiv is UnitTest
       "(−6) / (−2) is positive")
 
     // Exact values.
-    h.assert_true(
-      MPFloat.from_f64(6.0, p).div(MPFloat.from_f64(2.0, p)).string().at("3."),
-      "6 / 2 starts with '3.'")
-    h.assert_true(
-      MPFloat.from_f64(1.0, p).div(MPFloat.from_f64(4.0, p)).string().at("0."),
-      "1 / 4 starts with '0.'")
-
-    // Round-trip exact for powers of 2: (6 / 2) × 2 = 6.
+    ae(MPFloat.from_f64(6.0, p).div(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(3.0, p), "6 / 2 = 3")
+    ae(MPFloat.from_f64(1.0, p).div(MPFloat.from_f64(4.0, p)), MPFloat.from_f64(0.25, p), "1 / 4 = 0.25")
+    // Round-trip: (6 / 2) × 2 = 6.
     let xrt = MPFloat.from_f64(6.0, p)
     let yrt = MPFloat.from_f64(2.0, p)
-    h.assert_true(
-      xrt.div(yrt).mul(yrt).string().at("6."), "(6/2) × 2 = 6")
+    ae(xrt.div(yrt).mul(yrt), xrt, "(6/2) × 2 = 6")
 
 
 class iso _TestMPFloatSqrt is UnitTest
@@ -873,7 +990,11 @@ class iso _TestMPFloatSqrt is UnitTest
   fun name(): String => "MPFloat/sqrt"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 12
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Special values.
     h.assert_true(MPFloat.nan_val().sqrt().is_nan(), "sqrt(NaN) = NaN")
@@ -889,32 +1010,17 @@ class iso _TestMPFloatSqrt is UnitTest
     h.assert_true(MPFloat.from_f64(-1.0, p).sqrt().is_nan(), "sqrt(−1) = NaN")
     h.assert_true(MPFloat.from_f64(-4.0, p).sqrt().is_nan(), "sqrt(−4) = NaN")
 
-    // Exact perfect squares that are powers of 2 (Newton gives exact result).
-    // sqrt(4) = 2, sqrt(16) = 4, sqrt(64) = 8 — all exact in base-256.
-    h.assert_true(
-      MPFloat.from_f64(4.0, p).sqrt().string().at("2."),
-      "sqrt(4) starts with '2.'")
-    h.assert_true(
-      MPFloat.from_f64(16.0, p).sqrt().string().at("4."),
-      "sqrt(16) starts with '4.'")
-    h.assert_true(
-      MPFloat.from_f64(64.0, p).sqrt().string().at("8."),
-      "sqrt(64) starts with '8.'")
-
-    // Value with even exponent (exp=0 for 0.25 ∈ [1/256, 1)).
-    h.assert_true(
-      MPFloat.from_f64(0.25, p).sqrt().string().at("0."),
-      "sqrt(0.25) starts with '0.' (= 0.5)")
-
-    // Irrational: √2 ≈ 1.41421…
-    h.assert_true(
-      MPFloat.from_f64(2.0, p).sqrt().string().at("1."),
-      "sqrt(2) starts with '1.'")
-
-    // Round-trip exact for perfect square: sqrt(4)² = 4.
-    h.assert_true(
-      MPFloat.from_f64(4.0, p).sqrt().mul(MPFloat.from_f64(4.0, p).sqrt()).string().at("4."),
-      "sqrt(4) × sqrt(4) = 4")
+    // Exact values.
+    ae(MPFloat.from_f64(4.0, p).sqrt(), MPFloat.from_f64(2.0, p), "sqrt(4) = 2")
+    ae(MPFloat.from_f64(16.0, p).sqrt(), MPFloat.from_f64(4.0, p), "sqrt(16) = 4")
+    ae(MPFloat.from_f64(64.0, p).sqrt(), MPFloat.from_f64(8.0, p), "sqrt(64) = 8")
+    // √0.25 = 0.5 (even exponent, exact in base 256).
+    ae(MPFloat.from_f64(0.25, p).sqrt(), MPFloat.from_f64(0.5, p), "sqrt(0.25) = 0.5")
+    // √2 ≈ 1.41421… (irrational).
+    ae(MPFloat.from_f64(2.0, p).sqrt(), MPFloat.from_f64(F64(2.0).sqrt(), p), "sqrt(2) ≈ 1.41421…")
+    // Round-trip: sqrt(4)² = 4.
+    let s4 = MPFloat.from_f64(4.0, p).sqrt()
+    ae(s4.mul(s4), MPFloat.from_f64(4.0, p), "sqrt(4)² = 4")
 
 
 // ── Comparisons ──────────────────────────────────────────────────────────────
@@ -935,7 +1041,7 @@ class iso _TestMPFloatCmp is UnitTest
   fun name(): String => "MPFloat/cmp"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 15
     let nan  = MPFloat.nan_val()
     let pinf = MPFloat.inf_val(true)
     let ninf = MPFloat.inf_val(false)
@@ -1053,7 +1159,11 @@ class iso _TestMPFloatFromMPInt is UnitTest
   fun name(): String => "MPFloat/from_mpint"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 24
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Zero: always +0.
     let z = MPFloat.from_mpint(MPInt.from_ilong(0), p)
@@ -1062,34 +1172,30 @@ class iso _TestMPFloatFromMPInt is UnitTest
     h.assert_false(z.is_nan(),     "from_mpint(0) is not NaN")
     h.assert_true(z.is_finite(),   "from_mpint(0) is finite")
 
-    // Positive small integer: 1 → "1."
+    // Positive small integer: 1.
     let one = MPFloat.from_mpint(MPInt.from_ilong(1), p)
     h.assert_false(one.is_negative(), "from_mpint(1) is positive")
     h.assert_true(one.is_finite(),    "from_mpint(1) is finite")
-    h.assert_true(one.string().at("1."), "from_mpint(1) string starts with \"1.\"")
+    ae(one, MPFloat.from_f64(1.0, p), "from_mpint(1) ≈ 1")
 
-    // Negative integer: -3 → "-3."
+    // Negative integer: -3.
     let neg3 = MPFloat.from_mpint(MPInt.from_ilong(-3), p)
-    h.assert_true(neg3.is_negative(),     "from_mpint(-3) is negative")
-    h.assert_true(neg3.string().at("-3."), "from_mpint(-3) string starts with \"-3.\"")
+    h.assert_true(neg3.is_negative(), "from_mpint(-3) is negative")
+    ae(neg3, MPFloat.from_f64(-3.0, p), "from_mpint(-3) ≈ -3")
 
-    // Larger integer: 1000 → "1000."
+    // Larger integer: 1000.
     let thou = MPFloat.from_mpint(MPInt.from_ilong(1000), p)
-    h.assert_false(thou.is_negative(),        "from_mpint(1000) is positive")
-    h.assert_true(thou.string().at("1000."),  "from_mpint(1000) string starts with \"1000.\"")
+    h.assert_false(thou.is_negative(), "from_mpint(1000) is positive")
+    ae(thou, MPFloat.from_f64(1000.0, p), "from_mpint(1000) ≈ 1000")
 
-    // Power-of-2: 256 → "256."
-    let i256 = MPFloat.from_mpint(MPInt.from_ilong(256), p)
-    h.assert_true(i256.string().at("256."), "from_mpint(256) string starts with \"256.\"")
+    // Power-of-2: 256 and 65536.
+    ae(MPFloat.from_mpint(MPInt.from_ilong(256), p), MPFloat.from_f64(256.0, p), "from_mpint(256) = 256")
+    ae(MPFloat.from_mpint(MPInt.from_ilong(65536), p), MPFloat.from_f64(65536.0, p), "from_mpint(65536) = 65536")
 
-    // Power-of-2: 65536 → "65536."
-    let i65536 = MPFloat.from_mpint(MPInt.from_ilong(65536), p)
-    h.assert_true(i65536.string().at("65536."), "from_mpint(65536) string starts with \"65536.\"")
-
-    // Negative large: -65536 → "-65536."
+    // Negative large: -65536.
     let ni65536 = MPFloat.from_mpint(MPInt.from_ilong(-65536), p)
-    h.assert_true(ni65536.is_negative(),          "from_mpint(-65536) is negative")
-    h.assert_true(ni65536.string().at("-65536."), "from_mpint(-65536) string starts with \"-65536.\"")
+    h.assert_true(ni65536.is_negative(), "from_mpint(-65536) is negative")
+    ae(ni65536, MPFloat.from_f64(-65536.0, p), "from_mpint(-65536) ≈ -65536")
 
     // Round-trip sign: from_mpint(n).is_negative() == n.is_negative()
     let npos = MPInt.from_ilong(42)
@@ -1097,11 +1203,11 @@ class iso _TestMPFloatFromMPInt is UnitTest
     h.assert_false(MPFloat.from_mpint(npos, p).is_negative(), "positive MPInt → positive MPFloat")
     h.assert_true( MPFloat.from_mpint(nneg, p).is_negative(), "negative MPInt → negative MPFloat")
 
-    // Precision parameter is honoured: value must be finite.
+    // Precision parameter is honoured: value must be finite and positive.
     let big = MPFloat.from_mpint(MPInt.from_ilong(1000000), 4)
-    h.assert_true(big.is_finite(),            "from_mpint(1e6, prec=4) is finite")
-    h.assert_false(big.is_negative(),         "from_mpint(1e6, prec=4) is positive")
-    h.assert_true(big.string().at("1000000"), "from_mpint(1e6, prec=4) string starts with \"1000000\"")
+    h.assert_true(big.is_finite(),  "from_mpint(1e6, prec=4) is finite")
+    h.assert_false(big.is_negative(), "from_mpint(1e6, prec=4) is positive")
+    ae(big, MPFloat.from_f64(1000000.0, 4), "from_mpint(1e6, prec=4) ≈ 1e6")
 
     // ── Large MPInt (beyond I64 / F64 range) ─────────────────────────────────
 
@@ -1185,7 +1291,11 @@ class iso _TestMPFloatDivRem is UnitTest
     "MPFloat/divrem"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 30
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
     // Helpers: build MPFloat from a decimal string.
     let f = {(s: String): MPFloat =>
@@ -1196,26 +1306,26 @@ class iso _TestMPFloatDivRem is UnitTest
 
     // 7 / 2 = 3 rem 1
     (let q7_2, let r7_2) = f("7").divrem(f("2"))
-    h.assert_true(q7_2.string().at("3."),  "divrem(7,2) q = 3")
-    h.assert_true(r7_2.string().at("1."),  "divrem(7,2) r = 1")
-    h.assert_false(r7_2.is_negative(),     "divrem(7,2) r ≥ 0")
+    ae(q7_2, f("3"), "divrem(7,2) q = 3")
+    ae(r7_2, f("1"), "divrem(7,2) r = 1")
+    h.assert_false(r7_2.is_negative(), "divrem(7,2) r ≥ 0")
 
     // -7 / 2 = -3 rem -1  (truncation toward zero)
     (let qn7_2, let rn7_2) = f("-7").divrem(f("2"))
-    h.assert_true(qn7_2.string().at("-3."), "divrem(-7,2) q = -3")
-    h.assert_true(rn7_2.string().at("-1."), "divrem(-7,2) r = -1")
-    h.assert_true(rn7_2.is_negative(),      "divrem(-7,2) r ≤ 0")
+    ae(qn7_2, f("-3"), "divrem(-7,2) q = -3")
+    ae(rn7_2, f("-1"), "divrem(-7,2) r = -1")
+    h.assert_true(rn7_2.is_negative(), "divrem(-7,2) r ≤ 0")
 
     // 7 / -2 = -3 rem 1  (truncation toward zero)
     (let q7_n2, let r7_n2) = f("7").divrem(f("-2"))
-    h.assert_true(q7_n2.string().at("-3."), "divrem(7,-2) q = -3")
-    h.assert_true(r7_n2.string().at("1."),  "divrem(7,-2) r = 1")
-    h.assert_false(r7_n2.is_negative(),     "divrem(7,-2) r ≥ 0")
+    ae(q7_n2, f("-3"), "divrem(7,-2) q = -3")
+    ae(r7_n2, f("1"),  "divrem(7,-2) r = 1")
+    h.assert_false(r7_n2.is_negative(), "divrem(7,-2) r ≥ 0")
 
     // -7 / -2 = 3 rem -1
     (let qn7_n2, let rn7_n2) = f("-7").divrem(f("-2"))
-    h.assert_true(qn7_n2.string().at("3."),  "divrem(-7,-2) q = 3")
-    h.assert_true(rn7_n2.string().at("-1."), "divrem(-7,-2) r = -1")
+    ae(qn7_n2, f("3"),  "divrem(-7,-2) q = 3")
+    ae(rn7_n2, f("-1"), "divrem(-7,-2) r = -1")
 
     // divrem invariant: this = q * that + r, and |r| < |that|
     let check_inv = {(h2: TestHelper, a: String, b: String) =>
@@ -1242,8 +1352,8 @@ class iso _TestMPFloatDivRem is UnitTest
 
     // Exact integer divisibility (exercises the post-correction step).
     (let q10_5, let r10_5) = f("10").divrem(f("5"))
-    h.assert_true(q10_5.string().at("2."), "divrem(10,5) q = 2")
-    h.assert_true(r10_5.is_zero(),          "divrem(10,5) r = 0")
+    ae(q10_5, f("2"), "divrem(10,5) q = 2")
+    h.assert_true(r10_5.is_zero(), "divrem(10,5) r = 0")
 
     // ── rem ───────────────────────────────────────────────────────────────────
 
@@ -1256,19 +1366,19 @@ class iso _TestMPFloatDivRem is UnitTest
     // ── fld ──────────────────────────────────────────────────────────────────
 
     // Same-sign operands: fld = trunc
-    h.assert_true(f("7").fld(f("2")).string().at("3."),    "fld(7,2) = 3")
-    h.assert_true(f("-7").fld(f("-2")).string().at("3."),  "fld(-7,-2) = 3")
+    ae(f("7").fld(f("2")),   f("3"),  "fld(7,2) = 3")
+    ae(f("-7").fld(f("-2")), f("3"),  "fld(-7,-2) = 3")
 
     // Opposite-sign: fld = trunc - 1
-    h.assert_true(f("-7").fld(f("2")).string().at("-4."),  "fld(-7,2) = -4")
-    h.assert_true(f("7").fld(f("-2")).string().at("-4."),  "fld(7,-2) = -4")
+    ae(f("-7").fld(f("2")),  f("-4"), "fld(-7,2) = -4")
+    ae(f("7").fld(f("-2")),  f("-4"), "fld(7,-2) = -4")
 
-    // Exact division: no adjustment needed
-    h.assert_true(f("6").fld(f("2")).string().at("3."),    "fld(6,2) = 3")
-    h.assert_true(f("-6").fld(f("2")).string().at("-3."),  "fld(-6,2) = -3")
+    // Exact division: no adjustment needed.
+    ae(f("6").fld(f("2")),   f("3"),  "fld(6,2) = 3")
+    ae(f("-6").fld(f("2")),  f("-3"), "fld(-6,2) = -3")
     // Non-dyadic exact division (10/5 = 2; exercises post-correction via divrem).
-    h.assert_true(f("10").fld(f("5")).string().at("2."),   "fld(10,5) = 2")
-    h.assert_true(f("10").mod(f("5")).is_zero(),            "mod(10,5) = 0")
+    ae(f("10").fld(f("5")),  f("2"),  "fld(10,5) = 2")
+    h.assert_true(f("10").mod(f("5")).is_zero(), "mod(10,5) = 0")
 
     // ── mod ──────────────────────────────────────────────────────────────────
 
@@ -1279,8 +1389,8 @@ class iso _TestMPFloatDivRem is UnitTest
     h.assert_true( f("-7").mod(f("-2")).is_negative(), "mod(-7,-2) ≤ 0")
 
     // mod values: mod(-7, 2) = 1,  mod(7, -2) = -1
-    h.assert_true(f("-7").mod(f("2")).string().at("1."),  "mod(-7,2) = 1")
-    h.assert_true(f("7").mod(f("-2")).string().at("-1."), "mod(7,-2) = -1")
+    ae(f("-7").mod(f("2")),  f("1"),  "mod(-7,2) = 1")
+    ae(f("7").mod(f("-2")),  f("-1"), "mod(7,-2) = -1")
 
     // fld / mod invariant: this = fld(this,that) * that + mod(this,that)
     let check_fld_inv = {(h2: TestHelper, a: String, b: String) =>
@@ -1324,13 +1434,13 @@ class iso _TestMPFloatDivRem is UnitTest
     // ── Unsafe variants (same results on finite inputs) ───────────────────────
 
     (let qu, let ru) = f("7").divrem_unsafe(f("2"))
-    h.assert_true(qu.string().at("3."), "divrem_unsafe(7,2) q = 3")
-    h.assert_true(ru.string().at("1."), "divrem_unsafe(7,2) r = 1")
+    ae(qu, f("3"), "divrem_unsafe(7,2) q = 3")
+    ae(ru, f("1"), "divrem_unsafe(7,2) r = 1")
 
-    h.assert_true(f("7").rem_unsafe(f("2")).string().at("1."),     "rem_unsafe(7,2) = 1")
-    h.assert_true(f("-7").rem_unsafe(f("2")).string().at("-1."),   "rem_unsafe(-7,2) = -1")
-    h.assert_true(f("-7").fld_unsafe(f("2")).string().at("-4."),   "fld_unsafe(-7,2) = -4")
-    h.assert_true(f("-7").mod_unsafe(f("2")).string().at("1."),    "mod_unsafe(-7,2) = 1")
+    ae(f("7").rem_unsafe(f("2")),   f("1"),  "rem_unsafe(7,2) = 1")
+    ae(f("-7").rem_unsafe(f("2")),  f("-1"), "rem_unsafe(-7,2) = -1")
+    ae(f("-7").fld_unsafe(f("2")),  f("-4"), "fld_unsafe(-7,2) = -4")
+    ae(f("-7").mod_unsafe(f("2")),  f("1"),  "mod_unsafe(-7,2) = 1")
 
 
 // ── trunc / floor / ceil / round ─────────────────────────────────────────────
@@ -1347,34 +1457,28 @@ class iso _TestMPFloatRounding is UnitTest
     "MPFloat/rounding"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 8
+    let p: USize = 9
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
 
-    // from_string converts via Horner + ÷10 scaling, which is not exact in
-    // base 256.  Use it only for cases where the truncation direction is
-    // unambiguous regardless of small rounding error (e.g. f("2.7") is close
-    // enough to 2.7 that trunc still gives 2).  For exact integers and exact
-    // half-integers use from_f64 or from_mpint, which are exact for
-    // binary fractions.
+    // from_string uses exact MPInt arithmetic for exact binary fractions (e.g.
+    // "2.0", "0.5", "0.25") and best-rounded approximation for others ("0.1").
     let f = {(s: String): MPFloat =>
       try MPFloat.from_string(s, p)? else MPFloat.create(p) end
     }
-    let ff = {(x: F64): MPFloat => MPFloat.from_f64(x, p) }
-    let fi = {(n: ILong): MPFloat => MPFloat.from_mpint(MPInt.from_ilong(n), p) }
+    let fi = {(n: F64): MPFloat => MPFloat.from_f64(n, p) }
 
     // ── trunc ────────────────────────────────────────────────────────────────
 
-    // Positive fractional: from_string approximation still truncates correctly.
-    h.assert_true(f("2.7").trunc().string().at("2."),   "trunc(2.7) = 2")
-    h.assert_true(f("0.9").trunc().string().at("0."),   "trunc(0.9) = 0")
-
-    // Exact integer via from_f64 (exact for binary fractions).
-    h.assert_true(ff(2.0).trunc().string().at("2."),    "trunc(2.0) = 2")
-    h.assert_true(ff(256.0).trunc().string().at("256."), "trunc(256.0) = 256")
-
-    // Negative fractional.
-    h.assert_true(f("-2.7").trunc().string().at("-2."),  "trunc(-2.7) = -2")
-    h.assert_true(f("-0.9").trunc().string().at("0."),   "trunc(-0.9) = 0")
-    h.assert_true(ff(-2.0).trunc().string().at("-2."),   "trunc(-2.0) = -2")
+    ae(f("2.7").trunc(),   fi(2.0),   "trunc(2.7) = 2")
+    ae(f("0.9").trunc(),   fi(0.0),   "trunc(0.9) = 0")
+    ae(f("2.0").trunc(),   fi(2.0),   "trunc(2.0) = 2")
+    ae(f("256.0").trunc(), fi(256.0), "trunc(256.0) = 256")
+    ae(f("-2.7").trunc(),  fi(-2.0),  "trunc(-2.7) = -2")
+    h.assert_true(f("-0.9").trunc().is_zero(), "trunc(-0.9) = 0")
+    ae(f("-2.0").trunc(),  fi(-2.0),  "trunc(-2.0) = -2")
 
     // Special values pass through.
     h.assert_true(MPFloat.nan_val().trunc().is_nan(),        "trunc(NaN) = NaN")
@@ -1383,60 +1487,729 @@ class iso _TestMPFloatRounding is UnitTest
 
     // ── floor ────────────────────────────────────────────────────────────────
 
-    // Positive: same as trunc.
-    h.assert_true(f("2.7").floor().string().at("2."),    "floor(2.7) = 2")
-    h.assert_true(ff(2.0).floor().string().at("2."),     "floor(2.0) = 2")
-    h.assert_true(f("0.9").floor().string().at("0."),    "floor(0.9) = 0")
+    ae(f("2.7").floor(),   fi(2.0),  "floor(2.7) = 2")
+    ae(f("2.0").floor(),   fi(2.0),  "floor(2.0) = 2")
+    ae(f("0.9").floor(),   fi(0.0),  "floor(0.9) = 0")
+    ae(f("-2.7").floor(),  fi(-3.0), "floor(-2.7) = -3")
+    ae(f("-2.0").floor(),  fi(-2.0), "floor(-2.0) = -2")
+    ae(f("-0.1").floor(),  fi(-1.0), "floor(-0.1) = -1")
 
-    // Negative: one below trunc when fractional part is non-zero.
-    h.assert_true(f("-2.7").floor().string().at("-3."),  "floor(-2.7) = -3")
-    h.assert_true(ff(-2.0).floor().string().at("-2."),   "floor(-2.0) = -2")
-    h.assert_true(f("-0.1").floor().string().at("-1."),  "floor(-0.1) = -1")
-
-    h.assert_true(MPFloat.nan_val().floor().is_nan(),        "floor(NaN) = NaN")
-    h.assert_true(MPFloat.inf_val().floor().is_infinite(),   "floor(+inf) = +inf")
+    h.assert_true(MPFloat.nan_val().floor().is_nan(),            "floor(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().floor().is_infinite(),       "floor(+inf) = +inf")
     h.assert_true(MPFloat.inf_val().neg().floor().is_infinite(), "floor(-inf) = -inf")
 
     // ── ceil ─────────────────────────────────────────────────────────────────
 
-    // Positive: one above trunc when fractional part is non-zero.
-    h.assert_true(f("2.1").ceil().string().at("3."),     "ceil(2.1) = 3")
-    h.assert_true(ff(2.0).ceil().string().at("2."),      "ceil(2.0) = 2")
-    h.assert_true(f("0.1").ceil().string().at("1."),     "ceil(0.1) = 1")
+    ae(f("2.1").ceil(),   fi(3.0),  "ceil(2.1) = 3")
+    ae(f("2.0").ceil(),   fi(2.0),  "ceil(2.0) = 2")
+    ae(f("0.1").ceil(),   fi(1.0),  "ceil(0.1) = 1")
+    ae(f("-2.7").ceil(),  fi(-2.0), "ceil(-2.7) = -2")
+    ae(f("-2.0").ceil(),  fi(-2.0), "ceil(-2.0) = -2")
+    h.assert_true(f("-0.9").ceil().is_zero(), "ceil(-0.9) = 0")
 
-    // Negative: same as trunc.
-    h.assert_true(f("-2.7").ceil().string().at("-2."),   "ceil(-2.7) = -2")
-    h.assert_true(ff(-2.0).ceil().string().at("-2."),    "ceil(-2.0) = -2")
-    h.assert_true(f("-0.9").ceil().string().at("0."),    "ceil(-0.9) = 0")
-
-    h.assert_true(MPFloat.nan_val().ceil().is_nan(),        "ceil(NaN) = NaN")
-    h.assert_true(MPFloat.inf_val().ceil().is_infinite(),   "ceil(+inf) = +inf")
+    h.assert_true(MPFloat.nan_val().ceil().is_nan(),       "ceil(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().ceil().is_infinite(),  "ceil(+inf) = +inf")
 
     // ── round (half away from zero) ───────────────────────────────────────────
 
-    // Half-integers are exact in base 256 (0.5 = 128/256, 2.5 = 2 + 128/256).
-    // Use from_f64 for these to avoid the from_string base-256 rounding issue.
+    ae(f("2.4").round(),  fi(2.0),  "round(2.4) = 2")
+    ae(f("2.6").round(),  fi(3.0),  "round(2.6) = 3")
+    ae(f("0.4").round(),  fi(0.0),  "round(0.4) = 0")
+    ae(f("0.5").round(),  fi(1.0),  "round(0.5) = 1  (half away)")
+    ae(f("2.5").round(),  fi(3.0),  "round(2.5) = 3  (half away)")
+    ae(f("-2.4").round(), fi(-2.0), "round(-2.4) = -2")
+    ae(f("-2.6").round(), fi(-3.0), "round(-2.6) = -3")
+    ae(f("-0.4").round(), fi(0.0),  "round(-0.4) = 0")
+    ae(f("-0.5").round(), fi(-1.0), "round(-0.5) = -1  (half away)")
+    ae(f("-2.5").round(), fi(-3.0), "round(-2.5) = -3  (half away)")
+    ae(f("3").round(),    fi(3.0),  "round(3) = 3")
+    ae(f("-3").round(),   fi(-3.0), "round(-3) = -3")
 
-    // Positive: from_string approximation is sufficient for non-half cases.
-    h.assert_true(f("2.4").round().string().at("2."),    "round(2.4) = 2")
-    h.assert_true(f("2.6").round().string().at("3."),    "round(2.6) = 3")
-    h.assert_true(f("0.4").round().string().at("0."),    "round(0.4) = 0")
+    h.assert_true(MPFloat.nan_val().round().is_nan(),       "round(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().round().is_infinite(),  "round(+inf) = +inf")
 
-    // Half-integer ties: exact via from_f64.
-    h.assert_true(ff(0.5).round().string().at("1."),     "round(0.5) = 1  (half away)")
-    h.assert_true(ff(2.5).round().string().at("3."),     "round(2.5) = 3  (half away)")
 
-    // Negative.
-    h.assert_true(f("-2.4").round().string().at("-2."),  "round(-2.4) = -2")
-    h.assert_true(f("-2.6").round().string().at("-3."),  "round(-2.6) = -3")
-    h.assert_true(f("-0.4").round().string().at("0."),   "round(-0.4) = 0")
-    h.assert_true(ff(-0.5).round().string().at("-1."),   "round(-0.5) = -1  (half away)")
-    h.assert_true(ff(-2.5).round().string().at("-3."),   "round(-2.5) = -3  (half away)")
+// ── is_integer ────────────────────────────────────────────────────────────────
 
-    // Exact integers: trunc = floor = ceil = round.
-    h.assert_true(fi(3).round().string().at("3."),       "round(3) = 3")
-    h.assert_true(fi(-3).round().string().at("-3."),     "round(-3) = -3")
+class iso _TestMPFloatIsInteger is UnitTest
+  """
+  `is_integer()` returns true iff the value is finite and has no non-zero
+  fractional base-256 bytes.
+  """
 
-    h.assert_true(MPFloat.nan_val().round().is_nan(),        "round(NaN) = NaN")
-    h.assert_true(MPFloat.inf_val().round().is_infinite(),   "round(+inf) = +inf")
+  fun name(): String => "MPFloat/is_integer"
 
+  fun apply(h: TestHelper) =>
+    let p: USize = 21
+
+    // Finite exact integers.
+    h.assert_true(MPFloat.from_f64(0.0,   p).is_integer(), "0 is integer")
+    h.assert_true(MPFloat.from_f64(1.0,   p).is_integer(), "1 is integer")
+    h.assert_true(MPFloat.from_f64(-3.0,  p).is_integer(), "-3 is integer")
+    h.assert_true(MPFloat.from_f64(256.0, p).is_integer(), "256 is integer")
+    h.assert_true(MPFloat.from_f64(1024.0, p).is_integer(), "1024 is integer")
+
+    // Finite values with a fractional part.
+    h.assert_false(MPFloat.from_f64(0.5,  p).is_integer(), "0.5 not integer")
+    h.assert_false(MPFloat.from_f64(1.5,  p).is_integer(), "1.5 not integer")
+    h.assert_false(MPFloat.from_f64(-2.25, p).is_integer(), "-2.25 not integer")
+
+    // Special values.
+    h.assert_false(MPFloat.nan_val().is_integer(),  "NaN not integer")
+    h.assert_false(MPFloat.inf_val().is_integer(),  "+inf not integer")
+    h.assert_false(MPFloat.inf_val().neg().is_integer(), "-inf not integer")
+
+
+// ── ln ────────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatLn is UnitTest
+  """
+  Natural logarithm `ln(x)`:
+  - Special-case propagation (NaN, ±∞, non-positive).
+  - Known values compared with `almost_eq` (rel_tol = 1e-14).
+  - Round-trip: exp(ln(x)) ≈ x within tolerance.
+  """
+
+  fun name(): String => "MPFloat/ln"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 20
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    // Helper: almost-equal assertion.
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Special cases.
+    h.assert_true(MPFloat.nan_val().ln().is_nan(),          "ln(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().ln().is_infinite(),     "ln(+inf) = +inf")
+    h.assert_false(MPFloat.inf_val().ln().is_negative(),    "ln(+inf) > 0")
+    h.assert_true(MPFloat.from_f64(-1.0, p).ln().is_nan(), "ln(-1) = NaN")
+    h.assert_true(MPFloat.create(p).ln().is_infinite(),     "ln(0) = -inf")
+    h.assert_true(MPFloat.create(p).ln().is_negative(),     "ln(0) is -inf (negative)")
+
+    // ln(1) = 0 (exact).
+    h.assert_true(MPFloat.from_f64(1.0, p).ln().is_zero(), "ln(1) = 0")
+
+    // ln(2) ≈ 0.6931471805599453.
+    ae(MPFloat.from_f64(2.0, p).ln(),
+       MPFloat.from_f64(0.6931471805599453, p),
+       "ln(2) ≈ 0.6931471805599453")
+
+    // ln(8) = 3 × ln(2) ≈ 2.0794415416798357.
+    ae(MPFloat.from_f64(8.0, p).ln(),
+       MPFloat.from_f64(2.0794415416798357, p),
+       "ln(8) ≈ 2.079441541679836")
+
+    // Round-trip: exp(ln(x)) ≈ x for x = 2, 7.
+    let x2: MPFloat = MPFloat.from_f64(2.0, p)
+    ae(x2.ln().exp(), x2, "exp(ln(2)) ≈ 2")
+
+    let x7: MPFloat = MPFloat.from_f64(7.0, p)
+    ae(x7.ln().exp(), x7, "exp(ln(7)) ≈ 7")
+
+
+// ── exp ───────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatExp is UnitTest
+  """
+  Natural exponential `e^x`:
+  - Special-case propagation.
+  - Known values compared with `almost_eq` (rel_tol = 1e-14).
+  - Round-trip: ln(exp(x)) ≈ x within tolerance.
+  """
+
+  fun name(): String => "MPFloat/exp"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 14
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Special cases.
+    h.assert_true(MPFloat.nan_val().exp().is_nan(),         "exp(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().exp().is_infinite(),    "exp(+inf) = +inf")
+    h.assert_false(MPFloat.inf_val().exp().is_negative(),   "exp(+inf) > 0")
+    h.assert_true(MPFloat.inf_val().neg().exp().is_zero(),  "exp(-inf) = 0")
+
+    // exp(0) = 1 (exact).
+    h.assert_true(MPFloat.create(p).exp().almost_eq(
+      MPFloat.from_f64(1.0, p), tol, tol), "exp(0) = 1")
+
+    // exp(1) ≈ 2.718281828459045235.
+    ae(MPFloat.from_f64(1.0, p).exp(),
+       MPFloat.from_f64(2.718281828459045, p),
+       "exp(1) ≈ 2.718281828459045")
+
+    // exp(-1) ≈ 0.36787944117144233.
+    ae(MPFloat.from_f64(-1.0, p).exp(),
+       MPFloat.from_f64(0.36787944117144233, p),
+       "exp(-1) ≈ 0.36787944117144233")
+
+    // exp(5) ≈ 148.4131591025766.
+    ae(MPFloat.from_f64(5.0, p).exp(),
+       MPFloat.from_f64(148.4131591025766, p),
+       "exp(5) ≈ 148.4131591025766")
+
+    // Round-trip: ln(exp(x)) ≈ x for x = 3.
+    let x3: MPFloat = MPFloat.from_f64(3.0, p)
+    ae(x3.exp().ln(), x3, "ln(exp(3)) ≈ 3")
+
+
+// ── log2 ──────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatLog2 is UnitTest
+  """
+  Base-2 logarithm `log₂(x)`:
+  - Special cases from ln.
+  - Values compared with `almost_eq` (rel_tol = 1e-14).
+  """
+
+  fun name(): String => "MPFloat/log2"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 18
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Special cases.
+    h.assert_true(MPFloat.nan_val().log2().is_nan(),          "log2(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().log2().is_infinite(),     "log2(+inf) = +inf")
+    h.assert_true(MPFloat.from_f64(-1.0, p).log2().is_nan(), "log2(-1) = NaN")
+    h.assert_true(MPFloat.create(p).log2().is_infinite(),     "log2(0) = -inf")
+    h.assert_true(MPFloat.create(p).log2().is_negative(),     "log2(0) negative")
+
+    // log2(1) = 0 (exact).
+    h.assert_true(MPFloat.from_f64(1.0, p).log2().is_zero(), "log2(1) = 0")
+
+    // log2(2) ≈ 1.
+    ae(MPFloat.from_f64(2.0, p).log2(),
+       MPFloat.from_f64(1.0, p),
+       "log2(2) ≈ 1")
+
+    // log2(8) ≈ 3.
+    ae(MPFloat.from_f64(8.0, p).log2(),
+       MPFloat.from_f64(3.0, p),
+       "log2(8) ≈ 3")
+
+    // log2(0.5) ≈ -1.
+    ae(MPFloat.from_f64(0.5, p).log2(),
+       MPFloat.from_f64(-1.0, p),
+       "log2(0.5) ≈ -1")
+
+
+// ── log10 ─────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatLog10 is UnitTest
+  """
+  Base-10 logarithm `log₁₀(x)`:
+  - Special cases.
+  - Values compared with `almost_eq` (rel_tol = 1e-14).
+  """
+
+  fun name(): String => "MPFloat/log10"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 25
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Special cases.
+    h.assert_true(MPFloat.nan_val().log10().is_nan(),          "log10(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().log10().is_infinite(),     "log10(+inf) = +inf")
+    h.assert_true(MPFloat.from_f64(-1.0, p).log10().is_nan(), "log10(-1) = NaN")
+    h.assert_true(MPFloat.create(p).log10().is_infinite(),     "log10(0) = -inf")
+    h.assert_true(MPFloat.create(p).log10().is_negative(),     "log10(0) negative")
+
+    // log10(1) = 0 (exact).
+    h.assert_true(MPFloat.from_f64(1.0, p).log10().is_zero(), "log10(1) = 0")
+
+    // log10(10) ≈ 1.
+    ae(MPFloat.from_f64(10.0,   p).log10(), MPFloat.from_f64(1.0, p), "log10(10) ≈ 1")
+
+    // log10(100) ≈ 2.
+    ae(MPFloat.from_f64(100.0,  p).log10(), MPFloat.from_f64(2.0, p), "log10(100) ≈ 2")
+
+    // log10(1000) ≈ 3.
+    ae(MPFloat.from_f64(1000.0, p).log10(), MPFloat.from_f64(3.0, p), "log10(1000) ≈ 3")
+
+    // log10(0.1) ≈ -1.  Note: from_f64(0.1) is the nearest F64 to 1/10.
+    ae(MPFloat.from_f64(0.1, p).log10(), MPFloat.from_f64(-1.0, p), "log10(0.1) ≈ -1")
+
+
+// ── exp2 ──────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatExp2 is UnitTest
+  """
+  Base-2 exponential `2^x`:
+  - Special cases.
+  - Values compared with `almost_eq` (rel_tol = 1e-14).
+  """
+
+  fun name(): String => "MPFloat/exp2"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 20
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    // Special cases.
+    h.assert_true(MPFloat.nan_val().exp2().is_nan(),          "exp2(NaN) = NaN")
+    h.assert_true(MPFloat.inf_val().exp2().is_infinite(),     "exp2(+inf) = +inf")
+    h.assert_true(MPFloat.inf_val().neg().exp2().is_zero(),   "exp2(-inf) = 0")
+
+    // exp2(0) = 1 (exact).
+    ae(MPFloat.create(p).exp2(),            MPFloat.from_f64(1.0,    p), "exp2(0) = 1")
+
+    // exp2(1) = 2.
+    ae(MPFloat.from_f64(1.0,  p).exp2(),   MPFloat.from_f64(2.0,    p), "exp2(1) = 2")
+
+    // exp2(3) = 8.
+    ae(MPFloat.from_f64(3.0,  p).exp2(),   MPFloat.from_f64(8.0,    p), "exp2(3) = 8")
+
+    // exp2(-1) = 0.5 (exact in base 256).
+    ae(MPFloat.from_f64(-1.0, p).exp2(),   MPFloat.from_f64(0.5,    p), "exp2(-1) = 0.5")
+
+    // exp2(10) = 1024.
+    ae(MPFloat.from_f64(10.0, p).exp2(),   MPFloat.from_f64(1024.0, p), "exp2(10) = 1024")
+
+
+// ── powi ──────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatPowi is UnitTest
+  """
+  Integer power `x^n` via binary exponentiation:
+  - x^0 = 1 for any finite x.
+  - Results compared with `almost_eq` (rel_tol = 1e-14).
+  - Negative exponents via inv().
+  - NaN and ±∞ propagation.
+  """
+
+  fun name(): String => "MPFloat/powi"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 19
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let two   = MPFloat.from_f64(2.0,  p)
+    let three = MPFloat.from_f64(3.0,  p)
+
+    // x^0 = 1.
+    ae(two.powi(0),   MPFloat.from_f64(1.0,    p), "2^0 = 1")
+    ae(three.powi(0), MPFloat.from_f64(1.0,    p), "3^0 = 1")
+
+    // Positive powers.
+    ae(two.powi(1),   MPFloat.from_f64(2.0,    p), "2^1 = 2")
+    ae(two.powi(3),   MPFloat.from_f64(8.0,    p), "2^3 = 8")
+    ae(two.powi(10),  MPFloat.from_f64(1024.0, p), "2^10 = 1024")
+    ae(three.powi(3), MPFloat.from_f64(27.0,   p), "3^3 = 27")
+
+    // Negative powers (computed via inv() which uses Newton iteration).
+    ae(two.powi(-1),  MPFloat.from_f64(0.5,    p), "2^(-1) = 0.5")
+    ae(two.powi(-2),  MPFloat.from_f64(0.25,   p), "2^(-2) = 0.25")
+
+    // NaN and ±∞.
+    h.assert_true(MPFloat.nan_val().powi(2).is_nan(),       "NaN^2 = NaN")
+    h.assert_true(MPFloat.inf_val().powi(2).is_infinite(),  "+inf^2 = +inf")
+
+
+// ── pow ───────────────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatPow is UnitTest
+  """
+  General real power `x^y = exp(y × ln(x))`:
+  - x > 0: computed via exp/ln; results compared with `almost_eq`.
+  - x = 0: 0^pos = 0, 0^neg = NaN.
+  - x < 0 with integer y: delegates to powi (exact).
+  - x < 0 with non-integer y: NaN.
+  - x^0 = 1 for any finite x.
+  """
+
+  fun name(): String => "MPFloat/pow"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 17
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let two     = MPFloat.from_f64(2.0,  p)
+    let three   = MPFloat.from_f64(3.0,  p)
+    let four    = MPFloat.from_f64(4.0,  p)
+    let zero    = MPFloat.create(p)
+    let half    = MPFloat.from_f64(0.5,  p)
+    let neg_one = MPFloat.from_f64(-1.0, p)
+    let neg_two = MPFloat.from_f64(-2.0, p)
+
+    // x^0 = 1.
+    ae(two.pow(zero),  MPFloat.from_f64(1.0, p), "2^0 = 1")
+    ae(zero.pow(zero), MPFloat.from_f64(1.0, p), "0^0 = 1 (convention)")
+
+    // Positive base, integer exponents: exp(n×ln(x)).
+    ae(two.pow(three),   MPFloat.from_f64(8.0, p), "2^3 = 8")
+    ae(three.pow(two),   MPFloat.from_f64(9.0, p), "3^2 = 9")
+
+    // Positive base, fractional exponent: 4^0.5 = sqrt(4) = 2.
+    ae(four.pow(half),   MPFloat.from_f64(2.0, p), "4^0.5 = 2")
+
+    // 0^positive = 0.
+    h.assert_true(zero.pow(two).is_zero(), "0^2 = 0")
+
+    // 0^negative = NaN.
+    h.assert_true(zero.pow(neg_one).is_nan(), "0^(-1) = NaN")
+
+    // Negative base, integer exponent (delegates to powi — exact).
+    ae(neg_two.pow(three), MPFloat.from_f64(-8.0, p), "(-2)^3 = -8")
+    ae(neg_two.pow(two),   MPFloat.from_f64(4.0,  p), "(-2)^2 = 4")
+
+    // Negative base, non-integer exponent = NaN.
+    h.assert_true(neg_two.pow(half).is_nan(), "(-2)^0.5 = NaN")
+
+    // NaN propagation.
+    h.assert_true(MPFloat.nan_val().pow(two).is_nan(), "NaN^2 = NaN")
+    h.assert_true(two.pow(MPFloat.nan_val()).is_nan(),  "2^NaN = NaN")
+
+
+// ── High-precision ────────────────────────────────────────────────────────────
+
+class iso _TestMPFloatHighPrec is UnitTest
+  """
+  Arithmetic and transcendental functions at 100-byte (~240-digit) precision.
+
+  Tests both |x| > 1 (large values) and |x| < 1 (small / fractional values).
+  The tolerance 1e-100 checks at least 100 decimal digits of accuracy,
+  which is far less than the theoretical maximum (~240 digits) but exercises
+  convergence of all Newton / Taylor series at high precision.
+  """
+
+  fun name(): String => "MPFloat/high_precision"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 100
+    // 100-byte precision → ~240 decimal digits.  We demand 100-digit accuracy.
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let one  = MPFloat.from_f64(1.0,  p)
+    let two  = MPFloat.from_f64(2.0,  p)
+    let four = MPFloat.from_f64(4.0,  p)
+    let half = MPFloat.from_f64(0.5,  p)
+    let qtr  = MPFloat.from_f64(0.25, p)
+
+    // ── Basic arithmetic — large values (|x| > 1) ─────────────────────────
+
+    // 2 × 0.5 = 1  (exact)
+    ae(two.mul(half), one, "2 × 0.5 = 1 at p=100")
+    // 1 / 2 = 0.5  (exact)
+    ae(two.inv(), half, "1/2 = 0.5 at p=100")
+    // 4 / 2 = 2    (exact)
+    ae(four.div(two), two, "4/2 = 2 at p=100")
+    // 2^50 (exact power of 2 — binary representation is exact in base 256)
+    ae(two.powi(50), MPFloat.from_f64(F64.from[U64](1125899906842624), p), "2^50 at p=100")
+
+    // ── Basic arithmetic — small values (|x| < 1) ─────────────────────────
+
+    // 0.5 × 0.5 = 0.25  (exact)
+    ae(half.mul(half), qtr, "0.5 × 0.5 = 0.25 at p=100")
+    // 1 / 0.5 = 2       (exact)
+    ae(half.inv(), two, "1/0.5 = 2 at p=100")
+    // 0.25 / 0.5 = 0.5  (exact)
+    ae(qtr.div(half), half, "0.25/0.5 = 0.5 at p=100")
+    // (0.5)^10 = 2^{-10} = 1/1024  (exact power of 2)
+    ae(half.powi(10), MPFloat.from_f64(1.0 / 1024.0, p), "0.5^10 = 1/1024 at p=100")
+
+    // ── sqrt — large and small ─────────────────────────────────────────────
+
+    ae(four.sqrt(), two, "sqrt(4) = 2 at p=100")
+    ae(qtr.sqrt(),  half, "sqrt(0.25) = 0.5 at p=100")
+    // sqrt(2) round-trip: sqrt(2)² ≈ 2
+    let sqrt2 = two.sqrt()
+    ae(sqrt2.mul(sqrt2), two, "sqrt(2)² ≈ 2 at p=100")
+    // sqrt(0.5) round-trip: sqrt(0.5)² ≈ 0.5
+    let sqrthalf = half.sqrt()
+    ae(sqrthalf.mul(sqrthalf), half, "sqrt(0.5)² ≈ 0.5 at p=100")
+
+    // ── ln / exp — large and small ─────────────────────────────────────────
+
+    // exp(0) = 1
+    ae(MPFloat.from_f64(0.0, p).exp(), one, "exp(0) = 1 at p=100")
+    // exp(ln(x)) ≈ x for x > 1
+    ae(two.ln().exp(), two, "exp(ln(2)) ≈ 2 at p=100")
+    ae(four.ln().exp(), four, "exp(ln(4)) ≈ 4 at p=100")
+    // exp(ln(x)) ≈ x for x < 1
+    ae(half.ln().exp(), half, "exp(ln(0.5)) ≈ 0.5 at p=100")
+    ae(qtr.ln().exp(),  qtr,  "exp(ln(0.25)) ≈ 0.25 at p=100")
+    // exp(-1) × exp(1) = 1
+    let e_val  = one.exp()
+    let em_val = MPFloat.from_f64(-1.0, p).exp()
+    ae(e_val.mul(em_val), one, "exp(1) × exp(-1) = 1 at p=100")
+    // ln(a × b) = ln(a) + ln(b)
+    ae(two.mul(four).ln(), two.ln().add(four.ln()), "ln(2×4) = ln(2)+ln(4) at p=100")
+
+    // ── log2 / exp2 ────────────────────────────────────────────────────────
+
+    // log2(2) = 1
+    ae(two.log2(), one, "log2(2) = 1 at p=100")
+    // exp2(log2(x)) ≈ x
+    ae(two.log2().exp2(),  two,  "exp2(log2(2)) ≈ 2 at p=100")
+    ae(half.log2().exp2(), half, "exp2(log2(0.5)) ≈ 0.5 at p=100")
+
+    // ── log10 ──────────────────────────────────────────────────────────────
+
+    // log10(10) = 1
+    let ten = MPFloat.from_f64(10.0, p)
+    ae(ten.log10(), one, "log10(10) = 1 at p=100")
+
+    // ── pow ────────────────────────────────────────────────────────────────
+
+    // 4^0.5 = 2  (via exp/ln)
+    ae(four.pow(half), two, "4^0.5 = 2 at p=100")
+    // 0.25^0.5 = 0.5
+    ae(qtr.pow(half), half, "0.25^0.5 = 0.5 at p=100")
+
+
+// ── Trigonometric functions ───────────────────────────────────────────────────
+
+class iso _TestMPFloatTrig is UnitTest
+  """
+  Tests for `sin`, `cos`, `tan`, `csc`, `sec`, `cot`.
+  All comparisons use `almost_eq` with matching precision.
+  """
+  fun name(): String => "MPFloat/trig"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 28
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let zero    = MPFloat.create(p)
+    let one     = MPFloat.from_f64(1.0, p)
+    let neg_one = MPFloat.from_f64(-1.0, p)
+    let half    = MPFloat.from_f64(0.5, p)
+    let two     = MPFloat.from_f64(2.0, p)
+
+    // ── sin(0) = 0, cos(0) = 1, tan(0) = 0 ──────────────────────────────────
+    ae(zero.sin(), zero, "sin(0) = 0")
+    ae(zero.cos(), one,  "cos(0) = 1")
+    ae(zero.tan(), zero, "tan(0) = 0")
+
+    // ── Values at standard angles (F64 arguments keep size = p throughout) ────
+    // Use F64.pi() so the argument MPFloat has exactly p bytes, ensuring the
+    // result of sin/cos also has p bytes, matching the expected values.
+    let pf: F64 = F64.pi()
+    let pi6 = MPFloat.from_f64(pf / 6.0, p)
+    let pi3 = MPFloat.from_f64(pf / 3.0, p)
+    let pi4 = MPFloat.from_f64(pf / 4.0, p)
+    let pi2 = MPFloat.from_f64(pf / 2.0, p)
+    let pi  = MPFloat.from_f64(pf, p)
+
+    ae(pi6.sin(), half,    "sin(π/6) = 0.5")
+    ae(pi3.cos(), half,    "cos(π/3) = 0.5")
+    ae(pi2.sin(), one,     "sin(π/2) = 1")
+    ae(pi2.cos(), zero,    "cos(π/2) ≈ 0")
+    ae(pi.cos(),  neg_one, "cos(π) = -1")
+    let sin_pi = pi.sin()
+    h.assert_true(sin_pi.almost_eq(zero, tol, tol),
+      "sin(π) ≈ 0: got=" + sin_pi.string())
+    ae(pi4.tan(), one,     "tan(π/4) = 1")
+
+    // ── Compare against F64 reference for generic values ─────────────────────
+    let v1: F64  = 1.0
+    let v25: F64 = 2.5
+    let x1 = MPFloat.from_f64(v1,  p)
+    let x2 = MPFloat.from_f64(v25, p)
+    ae(x1.sin(), MPFloat.from_f64(v1.sin(),  p), "sin(1) matches F64")
+    ae(x1.cos(), MPFloat.from_f64(v1.cos(),  p), "cos(1) matches F64")
+    let sin25 = x2.sin()
+    let exp25 = MPFloat.from_f64(v25.sin(), p)
+    h.assert_true(sin25.almost_eq(exp25, tol, tol),
+      "sin(2.5) matches F64: got=" + sin25.string() + " exp=" + exp25.string())
+    ae(x2.cos(), MPFloat.from_f64(v25.cos(), p), "cos(2.5) matches F64")
+
+    // ── Pythagorean identity: sin²(x) + cos²(x) = 1 ─────────────────────────
+    // Both sin and cos return p-byte results, so mul gives (2p-1)-byte
+    // results; compare their sum to one (p bytes) via almost_eq.
+    let s1 = x1.sin() ; let c1 = x1.cos()
+    ae(s1.mul(s1).add(c1.mul(c1)), one, "sin²(1) + cos²(1) = 1")
+
+    let s2 = x2.sin() ; let c2 = x2.cos()
+    let pyth25 = s2.mul(s2).add(c2.mul(c2))
+    h.assert_true(pyth25.almost_eq(one, tol, tol),
+      "sin²(2.5) + cos²(2.5) = 1: got=" + pyth25.string())
+
+    // ── Symmetry: sin(-x) = -sin(x), cos(-x) = cos(x) ───────────────────────
+    ae(x1.neg().sin(), s1.neg(), "sin(-1) = -sin(1)")
+    ae(x1.neg().cos(), c1,       "cos(-1) = cos(1)")
+
+    // ── Reciprocals: csc, sec, cot ────────────────────────────────────────────
+    ae(pi6.csc(), two, "csc(π/6) = 2")
+    ae(pi3.sec(), two, "sec(π/3) = 2")
+    ae(pi4.cot(), one, "cot(π/4) = 1")
+
+    // ── Special values: NaN and ±∞ propagate to NaN ──────────────────────────
+    let nan_val = MPFloat.nan_val()
+    let pinf    = MPFloat.inf_val()
+    let ninf    = MPFloat.inf_val(false)
+    h.assert_true(nan_val.sin().is_nan(),  "sin(NaN) is NaN")
+    h.assert_true(pinf.sin().is_nan(),     "sin(+∞) is NaN")
+    h.assert_true(ninf.sin().is_nan(),     "sin(-∞) is NaN")
+    h.assert_true(nan_val.cos().is_nan(),  "cos(NaN) is NaN")
+    h.assert_true(pinf.cos().is_nan(),     "cos(+∞) is NaN")
+    h.assert_true(nan_val.tan().is_nan(),  "tan(NaN) is NaN")
+    h.assert_true(pinf.tan().is_nan(),     "tan(+∞) is NaN")
+    h.assert_true(nan_val.csc().is_nan(),  "csc(NaN) is NaN")
+    h.assert_true(nan_val.sec().is_nan(),  "sec(NaN) is NaN")
+    h.assert_true(nan_val.cot().is_nan(),  "cot(NaN) is NaN")
+
+
+// ── Hyperbolic functions ──────────────────────────────────────────────────────
+
+class iso _TestMPFloatHyp is UnitTest
+  """
+  Tests for `sinh`, `cosh`, `tanh`, `csch`, `sech`, `coth`.
+  All comparisons use `almost_eq` with matching precision.
+  """
+  fun name(): String => "MPFloat/hyp"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 24
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let zero = MPFloat.create(p)
+    let one  = MPFloat.from_f64(1.0, p)
+
+    // ── sinh(0) = 0, cosh(0) = 1, tanh(0) = 0 ───────────────────────────────
+    ae(zero.sinh(), zero, "sinh(0) = 0")
+    ae(zero.cosh(), one,  "cosh(0) = 1")
+    ae(zero.tanh(), zero, "tanh(0) = 0")
+
+    // ── Hyperbolic identity: cosh²(x) − sinh²(x) = 1 ────────────────────────
+    let x1 = MPFloat.from_f64(1.0, p)
+    let sh1 = x1.sinh() ; let ch1 = x1.cosh()
+    ae(ch1.mul(ch1).sub(sh1.mul(sh1)), one,
+      "cosh²(1) − sinh²(1) = 1")
+
+    let x2 = MPFloat.from_f64(2.5, p)
+    let sh2 = x2.sinh() ; let ch2 = x2.cosh()
+    ae(ch2.mul(ch2).sub(sh2.mul(sh2)), one,
+      "cosh²(2.5) − sinh²(2.5) = 1")
+
+    // ── tanh(x) = sinh(x)/cosh(x) ────────────────────────────────────────────
+    ae(x1.tanh(), sh1.div(ch1), "tanh(1) = sinh(1)/cosh(1)")
+
+    // ── Known values from F64 ─────────────────────────────────────────────────
+    // sinh(1) ≈ 1.1752011936438014, cosh(1) ≈ 1.5430806348152437
+    ae(x1.sinh(), MPFloat.from_f64(F64(1.0).sinh(), p), "sinh(1) matches F64")
+    ae(x1.cosh(), MPFloat.from_f64(F64(1.0).cosh(), p), "cosh(1) matches F64")
+    ae(x1.tanh(), MPFloat.from_f64(F64(1.0).tanh(), p), "tanh(1) matches F64")
+
+    // ── Symmetry: sinh(-x) = -sinh(x), cosh(-x) = cosh(x) ───────────────────
+    ae(x1.neg().sinh(), sh1.neg(), "sinh(-1) = -sinh(1)")
+    ae(x1.neg().cosh(), ch1,       "cosh(-1) = cosh(1)")
+
+    // ── Reciprocals ───────────────────────────────────────────────────────────
+    ae(x1.csch(), sh1.inv(), "csch(1) = 1/sinh(1)")
+    ae(x1.sech(), ch1.inv(), "sech(1) = 1/cosh(1)")
+    ae(x1.coth(), ch1.div(sh1), "coth(1) = cosh(1)/sinh(1)")
+
+    // ── Special values ────────────────────────────────────────────────────────
+    let nan_val = MPFloat.nan_val()
+    let pinf    = MPFloat.inf_val()
+    let ninf    = MPFloat.inf_val(false)
+
+    h.assert_true(nan_val.sinh().is_nan(),     "sinh(NaN) is NaN")
+    h.assert_true(pinf.sinh().is_infinite(),   "sinh(+∞) is +∞")
+    h.assert_false(pinf.sinh().is_negative(),  "sinh(+∞) is positive")
+    h.assert_true(ninf.sinh().is_infinite(),   "sinh(-∞) is -∞")
+    h.assert_true(ninf.sinh().is_negative(),   "sinh(-∞) is negative")
+
+    h.assert_true(nan_val.cosh().is_nan(),     "cosh(NaN) is NaN")
+    h.assert_true(pinf.cosh().is_infinite(),   "cosh(+∞) is +∞")
+    h.assert_false(pinf.cosh().is_negative(),  "cosh(+∞) is positive")
+    h.assert_true(ninf.cosh().is_infinite(),   "cosh(-∞) is +∞")
+    h.assert_false(ninf.cosh().is_negative(),  "cosh(-∞) is positive")
+
+    h.assert_true(nan_val.tanh().is_nan(),     "tanh(NaN) is NaN")
+    // tanh(±∞) = ±1
+    ae(pinf.tanh(), one,      "tanh(+∞) = 1")
+    ae(ninf.tanh(), one.neg(), "tanh(-∞) = -1")
+
+    // sech(±∞) = 0
+    ae(pinf.sech(), zero, "sech(+∞) = 0")
+    ae(ninf.sech(), zero, "sech(-∞) = 0")
+
+    // csch(0) = NaN (1/0)
+    h.assert_true(zero.csch().is_nan(), "csch(0) is NaN")
+    // coth(0) = NaN (1/0)
+    h.assert_true(zero.coth().is_nan(), "coth(0) is NaN")
+
+
+class iso _TestMPFloatPi is UnitTest
+  """
+  Tests for π calculations.
+  Machin's formula agains Chudnovsky's.
+  All comparisons use `almost_eq` with matching precision.
+  """
+  fun name(): String => "MPFloat/pi"
+
+  fun apply(h: TestHelper) =>
+    var p: USize = 100
+    // 100-byte precision → ~240 decimal digits.  We demand 100-digit accuracy.
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+
+    let pi_machin = MPFloat.pi(p)
+    (let machin_m, let machin_e, let machin_i) = pi_machin.exact_string()
+    let mm: String val = consume machin_m
+    h.log("Pi Machin = " + pi_machin.string())
+
+    let pi_chudnovsky = MPFloat.pi_chudnovsky(p)
+    (let chudnovsky_m, let chudnovsky_e, let chudnovsky_i) = pi_chudnovsky.exact_string()
+    let cm: String val = consume chudnovsky_m
+    h.log("Pi Chudnovsky = " + pi_chudnovsky.string())
+
+    let diff = pi_chudnovsky - pi_machin
+    h.log("Difference = " + diff.string())
+    h.log("")
+
+    let pi_bbp = MPFloat.pi_bbp(p)
+    (let bbp_m, let bbp_e, let bbp_i) = pi_bbp.exact_string()
+    let bm: String val = consume bbp_m
+    h.log("Pi BBP = " + pi_bbp.string())
+
+    let diff2 = pi_bbp - pi_machin
+    h.log("Difference = " + diff2.string())
+    h.log("")
+
+    h.assert_eq[String](mm, cm, "Pi mantissas are different:\nMachin     = " +
+      mm + "\nChudnovsky = " + cm)
+    h.assert_eq[I64](machin_e, chudnovsky_e, "Pi exponents are different:\nMachin     = " +
+      machin_e.string() + "\nChudnovsky = " + chudnovsky_e.string())

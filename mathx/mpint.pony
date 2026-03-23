@@ -292,6 +292,24 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
 
+  new val from_ulong(n: ULong = 0) =>
+    """
+    Create a new arbitrary-precision integer with value `n` (default 0).
+    """
+    _negative = false
+    var q: ULong = n
+    let base: ULong = _base().ulong()
+    _digits = recover
+      let d: Array[U16] iso = Array[U16]
+      while q >= base do
+        (q, let r) = q.divrem(base)
+        d.push(r.u16())
+      end
+      d.push(q.u16())
+      consume d
+    end
+
+
   new val _from_array(negative: Bool, digits: Array[U16] val) =>
     """
     Create a new `MPInt` from its sign `negative` and its internal array
