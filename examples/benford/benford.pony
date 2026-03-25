@@ -114,7 +114,7 @@ actor Main
     
     try
       // Use high precision for the series (128 bytes ≈ 308 decimal digits)
-      let prec: USize = 128
+      let prec: ULong = 1024
       var x = MPFloat.from_string(x0_str, prec)?
       let collector = StatCollector(5)
       
@@ -162,7 +162,7 @@ class StatCollector
     let s: String = match n
     | let mi: MPInt =>
       // Convert to MPFloat for easy extraction of leading digits
-      MPFloat.from_mpint(mi, 10).string()
+      MPFloat.from_mpint(mi, 80).string()
     | let mf: MPFloat =>
       mf.string()
     end

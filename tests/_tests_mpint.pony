@@ -1331,7 +1331,7 @@ class iso _TestMPIntFromMPFloat is UnitTest
     // Positive integers: exact round-trip through MPFloat.from_mpint.
     let rt = {(h2: TestHelper, v: ILong) =>
       let n  = MPInt.from_ilong(v)
-      let f  = MPFloat.from_mpint(n, 8)
+      let f  = MPFloat.from_mpint(n, 64)
       let n2 = try MPInt.from_mpfloat(f)? else MPInt.from_ilong(-1) end
       h2.assert_true(n == n2, "round-trip " + v.string())
     }
@@ -1364,13 +1364,13 @@ class iso _TestMPIntFromMPFloat is UnitTest
       try MPInt.from_string("100000000000000000000")?
       else MPInt.from_ilong(0)
       end
-    let ie20 = try MPInt.from_mpfloat(MPFloat.from_mpint(e20, 12))? else MPInt.from_ilong(0) end
-    h.assert_true(ie20 == e20, "round-trip 10^20 with prec=12")
+    let ie20 = try MPInt.from_mpfloat(MPFloat.from_mpint(e20, 96))? else MPInt.from_ilong(0) end
+    h.assert_true(ie20 == e20, "round-trip 10^20 with prec=96")
 
     // 29-digit value: exact round-trip with sufficient precision.
     let d29: MPInt =
       try MPInt.from_string("12345678901234567890123456789")?
       else MPInt.from_ilong(0)
       end
-    let id29 = try MPInt.from_mpfloat(MPFloat.from_mpint(d29, 16))? else MPInt.from_ilong(0) end
-    h.assert_true(id29 == d29, "round-trip 29-digit integer with prec=16")
+    let id29 = try MPInt.from_mpfloat(MPFloat.from_mpint(d29, 128))? else MPInt.from_ilong(0) end
+    h.assert_true(id29 == d29, "round-trip 29-digit integer with prec=128")

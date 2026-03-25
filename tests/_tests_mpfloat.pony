@@ -77,8 +77,8 @@ class iso _DisabledTestMPFloatCreate is UnitTest
     h.assert_true(MPFloat(0).string() == "0.0", "MPFloat(0) is '0.0'")
 
     // Non-zero size but all bytes zero → integer part 0, all decimal digits 0
-    let z8 = MPFloat(8)
-    h.assert_true(z8.string().at("0."), "MPFloat(8) starts with '0.'")
+    let z8 = MPFloat(64)
+    h.assert_true(z8.string().at("0."), "MPFloat(64) starts with '0.'")
 
 
 // ── Pi constant ────────────────────────────────────────────────────────────
@@ -86,28 +86,27 @@ class iso _DisabledTestMPFloatCreate is UnitTest
 class iso _DisabledTestMPFloatPi is UnitTest
   """
   MPFloat.pi(n) should converge to π = 3.14159…
-  More bytes of precision → more decimal digits in the output.
+  More bits of precision → more decimal digits in the output.
   """
   fun name(): String => "MPFloat/pi"
 
   fun apply(h: TestHelper) =>
-    let pi4 = MPFloat.pi(4)
-    h.assert_true(pi4.string().at("3."), "pi(4) starts with '3.'")
+    let pi4 = MPFloat.pi(32)
+    h.assert_true(pi4.string().at("3."), "pi(32) starts with '3.'")
 
-    let pi8 = MPFloat.pi(8)
-    h.assert_true(pi8.string().at("3."), "pi(8) starts with '3.'")
+    let pi8 = MPFloat.pi(64)
+    h.assert_true(pi8.string().at("3."), "pi(64) starts with '3.'")
 
     // Higher precision yields more output characters
     h.assert_true(
       pi8.string().size() > pi4.string().size(),
-      "pi(8) has more characters than pi(4)")
+      "pi(64) has more characters than pi(32)")
 
     // First few digits of π (after stripping '_' separators)
-    // string() outputs one decimal digit per base-256 byte; 8 bytes → 8 digits
-    // Expected prefix: "3.14159265" (9 chars for "3." + 8 digit chars – but
-    // underscores are interleaved, so we strip first)
+    // string() outputs full decimal digits; 64 bits → ~19 digits
+    // Expected prefix: "3.1415926"
     let s = _MPFStr(pi8.string())
-    h.assert_true(s.at("3.1415926"), "pi(8) decimal prefix matches π")
+    h.assert_true(s.at("3.1415926"), "pi(64) decimal prefix matches π")
 
 
 // ── Addition ───────────────────────────────────────────────────────────────
@@ -126,7 +125,7 @@ class iso _DisabledTestMPFloatAdd is UnitTest
     h.assert_true(two_pi.string().at("6."), "π + π starts with '6.'")
 
     // 0 + π = π
-    let zero = MPFloat(8)
+    let zero = MPFloat(64)
     h.assert_true((zero + pi).string().at("3."), "0 + π starts with '3.'")
 
     // Commutativity: π + 0 = π
@@ -163,7 +162,7 @@ class iso _DisabledTestMPFloatMul is UnitTest
     h.assert_true(pi_sq.string().at("9."), "π² starts with '9.'")
 
     // π × 0 = 0
-    let zero = MPFloat(8)
+    let zero = MPFloat(64)
     h.assert_true((pi * zero).string().at("0."), "π × 0 starts with '0.'")
 
     // 0 × π = 0
@@ -255,16 +254,16 @@ class iso _DisabledTestMPFloatString is UnitTest
     // Zero of size 0: special-cased to "0.0"
     h.assert_true(MPFloat(0).string() == "0.0", "size-0 zero")
 
-    // All-zero digits → "0.0_000_000_0" for size 8
+    // All-zero digits → "0.0_000_000_0" for size 8 (64 bits)
     // string() returns String iso^; annotate as String val so it can be passed
     // as String box to _MPFStr.
-    let z: String = MPFloat(8).string()
-    h.assert_true(z.at("0."), "zero(8) starts with '0.'")
+    let z: String = MPFloat(64).string()
+    h.assert_true(z.at("0."), "zero(64) starts with '0.'")
     // All decimal digits should be '0'
     let zs = _MPFStr(z)   // remove '_'  (String box accepted)
-    h.assert_true(zs == "0.00000000", "zero(8) all decimal digits are 0")
+    h.assert_true(zs == "0.00000000", "zero(64) all decimal digits are 0")
 
-    // Underscore placement: for size=4 the format is "<d>.<f0>_<f1><f2><f3>_"
+    // Underscore placement: for size=4 (32 bits) the format is "<d>.<f0>_<f1><f2><f3>_"
     // i.e. underscore after fractional index 0 and 3
     let s4 = MPFloat.pi(4).string()
     // After the integer part and '.', position 1 is the first fractional char,
@@ -292,10 +291,10 @@ class iso _TestMPFloatNewCreate is UnitTest
     h.assert_false(z0.is_infinite(), "MPFloat() is not inf")
     h.assert_false(z0.is_negative(), "MPFloat() is not negative")
 
-    let z8 = MPFloat(8)
-    h.assert_true(z8.is_zero(), "MPFloat(8) is zero")
-    h.assert_true(z8.is_finite(), "MPFloat(8) is finite")
-    h.assert_false(z8.is_negative(), "MPFloat(8) is not negative")
+    let z64 = MPFloat(64)
+    h.assert_true(z64.is_zero(), "MPFloat(64) is zero")
+    h.assert_true(z64.is_finite(), "MPFloat(64) is finite")
+    h.assert_false(z64.is_negative(), "MPFloat(64) is not negative")
 
 
 class iso _TestMPFloatNewSpecial is UnitTest
@@ -335,7 +334,7 @@ class iso _TestMPFloatFromF32 is UnitTest
   fun name(): String => "MPFloat/from_f32"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 3
+    let p: ULong = 24
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -367,14 +366,14 @@ class iso _TestMPFloatFromF32 is UnitTest
     h.assert_true(fnz.is_negative(), "from_f32(-0.0) is -0")
 
     // Positive value: string() must start with "3."
-    let fpi = MPFloat.from_f32(3.14159, 8)
+    let fpi = MPFloat.from_f32(3.14159, 64)
     h.assert_false(fpi.is_zero(), "from_f32(3.14) is not zero")
     h.assert_false(fpi.is_negative(), "from_f32(3.14) is positive")
     h.assert_true(fpi.is_finite(), "from_f32(3.14) is finite")
     h.assert_true(fpi.string().at("3."), "from_f32(3.14) string starts with \"3.\"")
 
     // Negative value
-    let fneg = MPFloat.from_f32(-2.71828, 8)
+    let fneg = MPFloat.from_f32(-2.71828, 64)
     h.assert_true(fneg.is_negative(), "from_f32(-2.71) is negative")
     h.assert_true(fneg.string().at("-2."), "from_f32(-2.71) string starts with \"-2.\"")
 
@@ -402,7 +401,7 @@ class iso _TestMPFloatFromF64 is UnitTest
   fun name(): String => "MPFloat/from_f64"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 6
+    let p: ULong = 48
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -434,14 +433,14 @@ class iso _TestMPFloatFromF64 is UnitTest
     h.assert_true(fnz.is_negative(), "from_f64(-0.0) is -0")
 
     // Positive value: string() must start with "3."
-    let fpi = MPFloat.from_f64(3.14159, 8)
+    let fpi = MPFloat.from_f64(3.14159, 64)
     h.assert_false(fpi.is_zero(), "from_f64(3.14) is not zero")
     h.assert_false(fpi.is_negative(), "from_f64(3.14) is positive")
     h.assert_true(fpi.is_finite(), "from_f64(3.14) is finite")
     h.assert_true(fpi.string().at("3."), "from_f64(3.14) string starts with \"3.\"")
 
     // Negative value
-    let fneg = MPFloat.from_f64(-2.71828, 8)
+    let fneg = MPFloat.from_f64(-2.71828, 64)
     h.assert_true(fneg.is_negative(), "from_f64(-2.71) is negative")
     h.assert_true(fneg.string().at("-2."), "from_f64(-2.71) string starts with \"-2.\"")
 
@@ -562,13 +561,13 @@ class iso _TestMPFloatFromStringSpecial is UnitTest
 class iso _TestMPFloatFromStringDecimal is UnitTest
   """
   `from_string` parses decimal strings using full multi-precision arithmetic
-  (not via F64), so the entire `prec` bytes of precision are used regardless
+  (not via F64), so the entire `prec` bits of precision are used regardless
   of how many significant digits the string contains.
   """
   fun name(): String => "MPFloat/from_string/decimal"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 14
+    let p: ULong = 112
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -598,12 +597,12 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
     ae(sat, MPFloat.from_f64(3.14, p), "\"314@-2\" ≈ 3.14")
 
     // Large exponent: "1E3" = 1000 → finite
-    let s1k = try MPFloat.from_string("1E3", 8)? else MPFloat.nan_val() end
+    let s1k = try MPFloat.from_string("1E3", 64)? else MPFloat.nan_val() end
     h.assert_true(s1k.is_finite(), "\"1E3\" is finite")
     h.assert_false(s1k.is_negative(), "\"1E3\" is positive")
 
     // Large exponent: "-5.E3859045" → finite (large _exponent, prec digits).
-    let sle = try MPFloat.from_string("-5.E3859045", 8)? else MPFloat.nan_val() end
+    let sle = try MPFloat.from_string("-5.E3859045", 64)? else MPFloat.nan_val() end
     h.assert_true(sle.is_finite(), "\"-5.E3859045\" is finite")
     h.assert_true(sle.is_negative(), "\"-5.E3859045\" is negative")
 
@@ -611,7 +610,7 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
     // "10000000000000002" → the final '2' must survive into the MPFloat.
     // With F64 this would round to 10000000000000000.
     // Round-trip: from_string × from_f64 comparison via string prefix check.
-    let shp = try MPFloat.from_string("10000000000000002", 8)? else MPFloat.nan_val() end
+    let shp = try MPFloat.from_string("10000000000000002", 64)? else MPFloat.nan_val() end
     h.assert_true(shp.is_finite(), "17-digit string is finite")
     h.assert_false(shp.is_negative(), "17-digit string is positive")
     h.assert_true(
@@ -620,7 +619,7 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
 
     // Unsupported base errors.
     h.assert_false(
-      try MPFloat.from_string("ff", 8, 16)?; true else false end,
+      try MPFloat.from_string("ff", 64, 16)?; true else false end,
       "base 16 raises error")
 
 
@@ -641,25 +640,25 @@ class iso _TestMPFloatNewString is UnitTest
 
     // Zero: both size-0 and size-n zeros return "0.0"
     h.assert_true(MPFloat().string() == "0.0", "MPFloat() → \"0.0\"")
-    h.assert_true(MPFloat(8).string() == "0.0", "MPFloat(8) → \"0.0\"")
+    h.assert_true(MPFloat(64).string() == "0.0", "MPFloat(64) → \"0.0\"")
 
     // Positive value ≈ 3: string starts with "3."
-    let f3 = MPFloat.from_f64(3.0, 4)
-    h.assert_true(f3.string().at("3."), "from_f64(3.0, 4) starts with \"3.\"")
+    let f3 = MPFloat.from_f64(3.0, 32)
+    h.assert_true(f3.string().at("3."), "from_f64(3.0, 32) starts with \"3.\"")
 
     // Negative value ≈ -2: string starts with "-2."
-    let fneg = MPFloat.from_f64(-2.0, 4)
-    h.assert_true(fneg.string().at("-2."), "from_f64(-2.0, 4) starts with \"-2.\"")
+    let fneg = MPFloat.from_f64(-2.0, 32)
+    h.assert_true(fneg.string().at("-2."), "from_f64(-2.0, 32) starts with \"-2.\"")
 
     // Value in (0, 1): string starts with "0."
-    let fhalf = MPFloat.from_f64(0.5, 4)
-    h.assert_true(fhalf.string().at("0."), "from_f64(0.5, 4) starts with \"0.\"")
+    let fhalf = MPFloat.from_f64(0.5, 32)
+    h.assert_true(fhalf.string().at("0."), "from_f64(0.5, 32) starts with \"0.\"")
 
     // Verify decimal accuracy: 0.5 → first fractional digit is 5
     let shalf: String = fhalf.string()
     h.assert_true(
       try shalf(2)? == '5' else false end,
-      "from_f64(0.5, 4): first fractional digit is 5")
+      "from_f64(0.5, 32): first fractional digit is 5")
 
 
 // ── sign() predicate ──────────────────────────────────────────────────────────
@@ -688,12 +687,12 @@ class iso _TestMPFloatNeg is UnitTest
   fun name(): String => "MPFloat/neg"
 
   fun apply(h: TestHelper) =>
-    let fp = MPFloat.from_f64(3.14, 4)
+    let fp = MPFloat.from_f64(3.14, 32)
     h.assert_false(fp.is_negative(), "3.14 is positive")
     h.assert_true(fp.neg().is_negative(), "neg(3.14) is negative")
     h.assert_false(fp.neg().neg().is_negative(), "double neg restores positive")
 
-    let fn2 = MPFloat.from_f64(-2.0, 4)
+    let fn2 = MPFloat.from_f64(-2.0, 32)
     h.assert_true(fn2.is_negative(), "-2.0 is negative")
     h.assert_false(fn2.neg().is_negative(), "neg(-2.0) is positive")
     h.assert_true(fn2.neg().string().at("2."), "neg(-2.0) string starts with \"2.\"")
@@ -710,7 +709,7 @@ class iso _TestMPFloatAdd is UnitTest
   fun name(): String => "MPFloat/add"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 20
+    let p: ULong = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -767,7 +766,7 @@ class iso _TestMPFloatSub is UnitTest
   fun name(): String => "MPFloat/sub"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 17
+    let p: ULong = 136
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -794,7 +793,7 @@ class iso _TestMPFloatMul is UnitTest
   fun name(): String => "MPFloat/mul"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 18
+    let p: ULong = 144
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -892,7 +891,7 @@ class iso _TestMPFloatInv is UnitTest
   fun name(): String => "MPFloat/inv"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 10
+    let p: ULong = 80
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -934,7 +933,7 @@ class iso _TestMPFloatDiv is UnitTest
   fun name(): String => "MPFloat/div"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 13
+    let p: ULong = 104
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -990,7 +989,7 @@ class iso _TestMPFloatSqrt is UnitTest
   fun name(): String => "MPFloat/sqrt"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 12
+    let p: ULong = 96
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1041,7 +1040,7 @@ class iso _TestMPFloatCmp is UnitTest
   fun name(): String => "MPFloat/cmp"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 15
+    let p: ULong = 120
     let nan  = MPFloat.nan_val()
     let pinf = MPFloat.inf_val(true)
     let ninf = MPFloat.inf_val(false)
@@ -1159,7 +1158,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
   fun name(): String => "MPFloat/from_mpint"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 24
+    let p: ULong = 192
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1204,69 +1203,69 @@ class iso _TestMPFloatFromMPInt is UnitTest
     h.assert_true( MPFloat.from_mpint(nneg, p).is_negative(), "negative MPInt → negative MPFloat")
 
     // Precision parameter is honoured: value must be finite and positive.
-    let big = MPFloat.from_mpint(MPInt.from_ilong(1000000), 4)
-    h.assert_true(big.is_finite(),  "from_mpint(1e6, prec=4) is finite")
-    h.assert_false(big.is_negative(), "from_mpint(1e6, prec=4) is positive")
-    ae(big, MPFloat.from_f64(1000000.0, 4), "from_mpint(1e6, prec=4) ≈ 1e6")
+    let big = MPFloat.from_mpint(MPInt.from_ilong(1000000), 32)
+    h.assert_true(big.is_finite(),  "from_mpint(1e6, prec=32) is finite")
+    h.assert_false(big.is_negative(), "from_mpint(1e6, prec=32) is positive")
+    ae(big, MPFloat.from_f64(1000000.0, 32), "from_mpint(1e6, prec=32) ≈ 1e6")
 
     // ── Large MPInt (beyond I64 / F64 range) ─────────────────────────────────
 
     // 10^20 > U64.max (≈1.8×10^19): requires MPInt arithmetic to construct.
     //
-    // With p=8 (≈19.3 significant decimal digits), 10^20 (21 digits) cannot
+    // With p=64 bits (≈19.3 significant decimal digits), 10^20 (21 digits) cannot
     // be held exactly; the best 8-byte approximation is just below 10^20 and
     // its string representation starts with "9".  We only verify finiteness,
     // positiveness, and that the leading digit is "9" or "1" (order-of-
     // magnitude correct).
     let e20: MPInt = try MPInt.from_string("100000000000000000000")? else MPInt.from_ilong(0) end
     let fe20 = MPFloat.from_mpint(e20, p)
-    h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=8) is finite")
-    h.assert_false(fe20.is_negative(), "from_mpint(10^20, p=8) is positive")
+    h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=64 bits) is finite")
+    h.assert_false(fe20.is_negative(), "from_mpint(10^20, p=64 bits) is positive")
     h.assert_true(
       fe20.string().at("9") or fe20.string().at("1"),
-      "from_mpint(10^20, p=8) leading digit is 9 or 1")
+      "from_mpint(10^20, p=64 bits) leading digit is 9 or 1")
 
-    // With p=12 (≈29 significant decimal digits), 10^20 (21 digits) fits
+    // With p=96 bits (≈29 significant decimal digits), 10^20 (21 digits) fits
     // comfortably and the string should represent "1e+20".
-    let fe20p12 = MPFloat.from_mpint(e20, 12)
-    h.assert_true(fe20p12.is_finite(),    "from_mpint(10^20, p=12) is finite")
-    h.assert_false(fe20p12.is_negative(), "from_mpint(10^20, p=12) is positive")
+    let fe20p12 = MPFloat.from_mpint(e20, 96)
+    h.assert_true(fe20p12.is_finite(),    "from_mpint(10^20, p=96) is finite")
+    h.assert_false(fe20p12.is_negative(), "from_mpint(10^20, p=96) is positive")
     h.assert_true(
       fe20p12.string().at("1e+20") or fe20p12.string().at("100000000000000000000"),
-      "from_mpint(10^20, p=12) string represents 10^20")
+      "from_mpint(10^20, p=96) string represents 10^20")
 
-    // 29-digit positive: precision must be ≥ ceil(29 / log10(256)) ≈ 13 bytes
-    // to represent all digits. With p=16 bytes all 29 digits survive.
+    // 29-digit positive: precision must be ≥ ceil(29 / log10(2)) ≈ 96 bits
+    // to represent all digits. With p=128 bits all 29 digits survive.
     let d29: MPInt =
       try MPInt.from_string("12345678901234567890123456789")?
       else MPInt.from_ilong(0) end
-    let fd29 = MPFloat.from_mpint(d29, 16)
+    let fd29 = MPFloat.from_mpint(d29, 128)
     h.assert_true(fd29.is_finite(),    "from_mpint(29-digit) is finite")
     h.assert_false(fd29.is_negative(), "from_mpint(29-digit) is positive")
     h.assert_true(
       fd29.string().at("12345678901234567890"),
-      "from_mpint(29-digit) first 20 digits preserved with prec=16")
+      "from_mpint(29-digit) first 20 digits preserved with prec=128")
 
-    // Negative large: -10^20 with p=12 for sufficient precision.
+    // Negative large: -10^20 with p=96 for sufficient precision.
     let ne20: MPInt =
       try MPInt.from_string("-100000000000000000000")? else MPInt.from_ilong(0) end
-    let fne20 = MPFloat.from_mpint(ne20, 12)
+    let fne20 = MPFloat.from_mpint(ne20, 96)
     h.assert_true(fne20.is_finite(),    "from_mpint(-10^20) is finite")
     h.assert_true(fne20.is_negative(),  "from_mpint(-10^20) is negative")
     h.assert_true(
       fne20.string().at("-1e+20") or fne20.string().at("-100000000000000000000"),
-      "from_mpint(-10^20, p=12) string represents -10^20")
+      "from_mpint(-10^20, p=96) string represents -10^20")
 
-    // 39-digit positive with precision of 50 "digits"
+    // 39-digit positive with precision of 400 bits
     let d39: MPInt =
       try MPInt.from_string("123456789012345678901234567890123456789")?
       else MPInt.from_ilong(0) end
-    let fd39 = MPFloat.from_mpint(d39, 50)
+    let fd39 = MPFloat.from_mpint(d39, 400)
     h.assert_true(fd39.is_finite(),    "from_mpint(39-digit) is finite")
     h.assert_false(fd39.is_negative(), "from_mpint(39-digit) is positive")
     h.assert_true(
       fd39.string().at("12345678901234567890"),
-      "from_mpint(39-digit) first 20 digits preserved with prec=50")
+      "from_mpint(39-digit) first 20 digits preserved with prec=400")
     // Digits before decimal point are the same
     h.assert_eq[String](fd39.string().substring(0, try fd39.string().find(".")? else 0 end), d39.string(), "fd39 and d39 have same string representation")
 
@@ -1291,7 +1290,7 @@ class iso _TestMPFloatDivRem is UnitTest
     "MPFloat/divrem"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 30
+    let p: ULong = 240
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1457,7 +1456,7 @@ class iso _TestMPFloatRounding is UnitTest
     "MPFloat/rounding"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 9
+    let p: ULong = 72
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1540,7 +1539,7 @@ class iso _TestMPFloatIsInteger is UnitTest
   fun name(): String => "MPFloat/is_integer"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 21
+    let p: ULong = 168
 
     // Finite exact integers.
     h.assert_true(MPFloat.from_f64(0.0,   p).is_integer(), "0 is integer")
@@ -1573,7 +1572,7 @@ class iso _TestMPFloatLn is UnitTest
   fun name(): String => "MPFloat/ln"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 20
+    let p: ULong = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     // Helper: almost-equal assertion.
@@ -1623,7 +1622,7 @@ class iso _TestMPFloatExp is UnitTest
   fun name(): String => "MPFloat/exp"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 14
+    let p: ULong = 112
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1672,7 +1671,7 @@ class iso _TestMPFloatLog2 is UnitTest
   fun name(): String => "MPFloat/log2"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 18
+    let p: ULong = 144
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1717,7 +1716,7 @@ class iso _TestMPFloatLog10 is UnitTest
   fun name(): String => "MPFloat/log10"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 25
+    let p: ULong = 200
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1759,7 +1758,7 @@ class iso _TestMPFloatExp2 is UnitTest
   fun name(): String => "MPFloat/exp2"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 20
+    let p: ULong = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1801,7 +1800,7 @@ class iso _TestMPFloatPowi is UnitTest
   fun name(): String => "MPFloat/powi"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 19
+    let p: ULong = 152
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1845,7 +1844,7 @@ class iso _TestMPFloatPow is UnitTest
   fun name(): String => "MPFloat/pow"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 17
+    let p: ULong = 136
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1904,7 +1903,7 @@ class iso _TestMPFloatHighPrec is UnitTest
   fun name(): String => "MPFloat/high_precision"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 100
+    let p: ULong = 800
     // 100-byte precision → ~240 decimal digits.  We demand 100-digit accuracy.
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1999,7 +1998,7 @@ class iso _TestMPFloatTrig is UnitTest
   fun name(): String => "MPFloat/trig"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 28
+    let p: ULong = 224
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -2095,7 +2094,7 @@ class iso _TestMPFloatHyp is UnitTest
   fun name(): String => "MPFloat/hyp"
 
   fun apply(h: TestHelper) =>
-    let p: USize = 24
+    let p: ULong = 192
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -2179,7 +2178,7 @@ class iso _TestMPFloatPi is UnitTest
   fun name(): String => "MPFloat/pi"
 
   fun apply(h: TestHelper) =>
-    var p: USize = 100
+    var p: ULong = 800
     // 100-byte precision → ~240 decimal digits.  We demand 100-digit accuracy.
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
