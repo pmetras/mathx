@@ -334,7 +334,7 @@ class iso _TestMPFloatFromF32 is UnitTest
   fun name(): String => "MPFloat/from_f32"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 24
+    let p: ULong = 32
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -378,16 +378,37 @@ class iso _TestMPFloatFromF32 is UnitTest
     h.assert_true(fneg.string().at("-2."), "from_f32(-2.71) string starts with \"-2.\"")
 
     // Random values
-    // Tests only on 5 decimals for string equality. Last decimals can be different without rounding.
     let rand = Rand
     for i in Range(0, 100) do
-      let f = rand.real().f32()
+      let f = F32.from_bits(rand.u32())
       let mpf = MPFloat.from_f32(f, p)
-      (let mpfs, _) = mpf.string().chop(9)
-      let mpfsc: String val = consume mpfs
-      let fs = Format.float[F32](f, FormatFixLarge, PrefixDefault, 7)
-      let fsc: String val = consume fs
-      h.assert_eq[String](mpfsc, fsc, "Random floats [" + i.string() + "] from_f32(" + fsc + ") != " + mpf.string())
+      
+      // 1. Round-trip check
+      let rt_f = mpf.f32()
+      if f.nan() then
+        h.assert_true(rt_f.nan(), "Random floats [" + i.string() + "] NaN round-trip failed")
+      elseif f.infinite() then
+        h.assert_true(rt_f.infinite(), "Random floats [" + i.string() + "] Inf round-trip failed")
+        h.assert_eq[Bool](f < 0, rt_f < 0, "Random floats [" + i.string() + "] Inf sign mismatch")
+      else
+        // Bit-accurate round-trip check
+        h.assert_eq[F32](f, rt_f, "Random floats [" + i.string() + "] round-trip failed for " + f.string() + " got " + rt_f.string())
+      end
+      
+      // 2. Semantic string representation check (only for finite parseable numbers)
+      if f.finite() then
+        try
+          let s: String val = mpf.string()
+          let f_parsed = s.f32()?
+          let diff = (f - f_parsed).abs()
+          let max_abs = f.abs().max(f_parsed.abs()).max(1.0)
+          // Tighter tolerance: 2 ULPs for string parsing jitter
+          h.assert_true(diff <= (max_abs * f.epsilon() * 2), 
+            "Random floats [" + i.string() + "] string representation semantic mismatch: " + f.string() + " became " + s)
+        else
+          h.fail("Random floats [" + i.string() + "] MPFloat produced unparseable string")
+        end
+      end
     end
 
 
@@ -401,7 +422,7 @@ class iso _TestMPFloatFromF64 is UnitTest
   fun name(): String => "MPFloat/from_f64"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 48
+    let p: ULong = 64
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -445,16 +466,37 @@ class iso _TestMPFloatFromF64 is UnitTest
     h.assert_true(fneg.string().at("-2."), "from_f64(-2.71) string starts with \"-2.\"")
 
     // Random values
-    // String comparison on 15 decimals. Many errors without rounding.
     let rand = Rand
     for i in Range(0, 100) do
-      let f = rand.real()
+      let f = F64.from_bits(rand.u64())
       let mpf = MPFloat.from_f64(f, p)
-      (let mpfs, _) = mpf.string().chop(17)
-      let mpfsc: String val = consume mpfs
-      let fs = Format.float[F64](f, FormatFixLarge, PrefixDefault, 15)
-      let fsc: String val = consume fs
-      h.assert_eq[String](mpfsc, fsc, "Random floats [" + i.string() + "] from_f64(" + fsc + ") != " + mpf.string())
+      
+      // 1. Round-trip check
+      let rt_f = mpf.f64()
+      if f.nan() then
+        h.assert_true(rt_f.nan(), "Random floats [" + i.string() + "] NaN round-trip failed")
+      elseif f.infinite() then
+        h.assert_true(rt_f.infinite(), "Random floats [" + i.string() + "] Inf round-trip failed")
+        h.assert_eq[Bool](f < 0, rt_f < 0, "Random floats [" + i.string() + "] Inf sign mismatch")
+      else
+        // Bit-accurate round-trip check
+        h.assert_eq[F64](f, rt_f, "Random floats [" + i.string() + "] round-trip failed for " + f.string() + " got " + rt_f.string())
+      end
+      
+      // 2. Semantic string representation check (only for finite parseable numbers)
+      if f.finite() then
+        try
+          let s: String val = mpf.string()
+          let f_parsed = s.f64()?
+          let diff = (f - f_parsed).abs()
+          let max_abs = f.abs().max(f_parsed.abs()).max(1.0)
+          // Tighter tolerance: 2 ULPs for string parsing jitter
+          h.assert_true(diff <= (max_abs * f.epsilon() * 2), 
+            "Random floats [" + i.string() + "] string representation semantic mismatch: " + f.string() + " became " + s)
+        else
+          h.fail("Random floats [" + i.string() + "] MPFloat produced unparseable string")
+        end
+      end
     end
 
 
@@ -2212,3 +2254,104 @@ class iso _TestMPFloatPi is UnitTest
       mm + "\nChudnovsky = " + cm)
     h.assert_eq[I64](machin_e, chudnovsky_e, "Pi exponents are different:\nMachin     = " +
       machin_e.string() + "\nChudnovsky = " + chudnovsky_e.string())
+
+class iso _TestMPFloatConversions is UnitTest
+  """
+  Verify f64() and f32() conversion methods.
+  """
+  fun name(): String => "MPFloat/conversions"
+
+  fun apply(h: TestHelper) =>
+    // Specific values round-trip
+    let vals64: Array[F64] = [0.0; 1.0; -1.0; 0.5; -0.5; 0.25; 123.456; 1e10; 1e-10; F64.min_normalised(); F64.epsilon(); F64.min_value(); F64.max_value(); F64.pi(); F64.e()]
+    for v in vals64.values() do
+      let mpf = MPFloat.from_f64(v)
+      h.assert_eq[F64](v, mpf.f64(), "F64 round-trip failed for " + v.string())
+    end
+
+    let vals32: Array[F32] = [0.0; 1.0; -1.0; 0.5; -0.5; 0.25; 123.456; 1e5; 1e-5; F32.min_normalised(); F32.epsilon(); F32.min_value(); F32.max_value(); F32.pi(); F32.e()]
+    for v in vals32.values() do
+      let mpf = MPFloat.from_f32(v)
+      h.assert_eq[F32](v, mpf.f32(), "F32 round-trip failed for " + v.string())
+    end
+
+    // Special values
+    h.assert_true(MPFloat.nan_val().f64().nan(), "NaN round-trip F64")
+    h.assert_true(MPFloat.inf_val(true).f64().infinite(), "Inf round-trip F64")
+    h.assert_true(MPFloat.inf_val(true).f64() > 0, "Inf sign F64")
+    h.assert_true(MPFloat.inf_val(false).f64().infinite(), "-Inf round-trip F64")
+    h.assert_true(MPFloat.inf_val(false).f64() < 0, "-Inf sign F64")
+
+    h.assert_true(MPFloat.nan_val().f32().nan(), "NaN round-trip F32")
+    h.assert_true(MPFloat.inf_val(true).f32().infinite(), "Inf round-trip F32")
+    h.assert_true(MPFloat.inf_val(true).f32() > 0, "Inf sign F32")
+    h.assert_true(MPFloat.inf_val(false).f32().infinite(), "-Inf round-trip F32")
+    h.assert_true(MPFloat.inf_val(false).f32() < 0, "-Inf sign F32")
+
+    // Negative zero
+    let neg_zero_f64 = MPFloat.from_f64(-0.0)
+    h.assert_eq[F64](-0.0, neg_zero_f64.f64(), "-0.0 round-trip F64")
+    h.assert_true(neg_zero_f64.f64().bits() == 0x8000000000000000, "-0.0 sign bit F64")
+
+    let neg_zero_f32 = MPFloat.from_f32(-0.0)
+    h.assert_eq[F32](-0.0, neg_zero_f32.f32(), "-0.0 round-trip F32")
+    h.assert_true(neg_zero_f32.f32().bits() == 0x80000000, "-0.0 sign bit F32")
+
+    // Random values
+    let rand = Rand
+    for i in Range(0, 100) do
+      let f = F64.from_bits(rand.u64())
+      let rt_f = MPFloat.from_f64(f).f64()
+      if f.nan() then
+        h.assert_true(rt_f.nan(), "Random round-trip [" + i.string() + "] failed for F64=NaN")
+      elseif f.infinite() then
+        h.assert_true(rt_f.infinite(), "Random round-trip [" + i.string() + "] failed for F64=" + f.string())
+        h.assert_eq[Bool](f < 0, rt_f < 0, "Random round-trip [" + i.string() + "] sign mismatch for F64=" + f.string())
+      elseif f == 0.0 then
+        h.assert_eq[U64](f.bits(), rt_f.bits(), "Random round-trip [" + i.string() + "] sign mismatch for F64=0")
+      else
+        // Test on 16 ulp
+        h.assert_true((f - rt_f).abs() <= (f.abs().max(1.0) * f.epsilon() * 16), "Random round-trip [" + i.string() + "] failed for F64=" + f.string() + " got " + rt_f.string())
+      end
+    end
+    for i in Range(0, 100) do
+      let f = F32.from_bits(rand.u32())
+      let rt_f = MPFloat.from_f32(f).f32()
+      if f.nan() then
+        h.assert_true(rt_f.nan(), "Random round-trip [" + i.string() + "] failed for F32=NaN")
+      elseif f.infinite() then
+        h.assert_true(rt_f.infinite(), "Random round-trip [" + i.string() + "] failed for F32=" + f.string())
+        h.assert_eq[Bool](f < 0, rt_f < 0, "Random round-trip [" + i.string() + "] sign mismatch for F32=" + f.string())
+      elseif f == 0 then
+        h.assert_eq[U32](f.bits(), rt_f.bits(), "Random round-trip [" + i.string() + "] sign mismatch for F32=0")
+      else
+        // Test on 16 ulp
+        h.assert_true((f - rt_f).abs() <= (f.abs().max(1.0) * f.epsilon() * 16), "Random round-trip [" + i.string() + "] failed for F32=" + f.string() + " got " + rt_f.string())
+      end
+    end
+    for i in Range(0, 100) do
+      let mpf = MPFloat.from_f64(F64.from_bits(rand.u64()))
+      let rt_mpf = MPFloat.from_f64(mpf.f64())
+      if mpf.is_nan() then
+        h.assert_true(rt_mpf.is_nan(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f64=NaN")
+      elseif mpf.is_infinite() then
+        h.assert_true(rt_mpf.is_infinite(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f64=" + mpf.string())
+        h.assert_eq[Bool](mpf.is_negative(), rt_mpf.is_negative(), "Random round-trip [" + i.string() + "] sign mismatch for MPFloat.from_f64=" + mpf.string())
+      else
+        // Use almost_eq for finite numbers
+        h.assert_true(mpf.almost_eq(rt_mpf), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f64=" + mpf.string() + " got " + rt_mpf.string())
+      end
+    end
+    for i in Range(0, 100) do
+      let mpf = MPFloat.from_f32(F32.from_bits(rand.u32()))
+      let rt_mpf = MPFloat.from_f32(mpf.f32())
+      if mpf.is_nan() then
+        h.assert_true(rt_mpf.is_nan(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f32=NaN")
+      elseif mpf.is_infinite() then
+        h.assert_true(rt_mpf.is_infinite(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f32=" + mpf.string())
+        h.assert_eq[Bool](mpf.is_negative(), rt_mpf.is_negative(), "Random round-trip [" + i.string() + "] sign mismatch for MPFloat.from_f32=" + mpf.string())
+      else
+        h.assert_true(mpf.almost_eq(rt_mpf), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f32=" + mpf.string() + " got " + rt_mpf.string())
+      end
+    end
+

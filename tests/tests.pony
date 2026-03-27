@@ -251,4 +251,5 @@ actor Main is TestList
     test(_TestMPIntShiftAlias)
     test(_TestMPIntPowEdge)
     test(_TestMPIntFromMPFloat)
+    test(_TestMPFloatConversions)
 

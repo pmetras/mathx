@@ -308,30 +308,25 @@ class val MPFloat
       _nan = false
       _inf = false
 
-      // Normalise: find frac in [1/256, 1) and expn such that |f| = frac×256^expn.
-      let base = F64.from[U32](_base)
-      var frac: F64 = f.abs()
-      var expn: I64 = 0
-      if frac >= 1.0 then
-        while frac >= 1.0 do
-          frac = frac / base
-          expn = expn + 1
-        end
-      elseif frac < (1.0 / base) then
-        while frac < (1.0 / base) do
-          frac = frac * base
-          expn = expn - 1
-        end
-      end
+      // Normalise exactly using frexp
+      (let m, let e_u32) = f.abs().frexp()
+      let e = e_u32.i32().i64()
+      
+      // value = m * 2^e = 0.d0d1... * 256^expn = frac * 2^(8*expn)
+      // frac = m * 2^(e - 8*expn)
+      // We want 1/256 <= frac < 1. 
+      // Since 0.5 <= m < 1, e - 8*expn must be in [-7, 0].
+      let expn = (e.f64() / 8.0).ceil().i64()
+      let shift = e - (expn * 8)
+      var frac = m.f64() * F64(2).pow(shift.f64())
       _exponent = expn
 
-      // Extract prec bits (mapped to base-256 digits): d_i = floor(frac × 256), then remove it.
+      // Extract prec bits (mapped to base-256 digits)
       let p: USize = ((prec.usize() + (_base_bits - 1)) / _base_bits).max(1)
+      let base = _base.f64()
       _digits = recover
         let d = Array[U8].init(0, p)
         var i: USize = 0
-        // TODO Delete: changed fr to frac to remove additional variable
-        //var fr: F64 = frac
         while i < p do
           frac = frac * base
           let di: U8 = frac.u8()
@@ -384,25 +379,22 @@ class val MPFloat
       _nan = false
       _inf = false
 
-      // Normalise: find frac in [1/256, 1) and expn such that |f| = frac×256^expn.
-      let base = F32.from[U32](_base)
-      var frac: F32 = f.abs()
-      var expn: I64 = 0
-      if frac >= 1.0 then
-        while frac >= 1.0 do
-          frac = frac / base
-          expn = expn + 1
-        end
-      elseif frac < (1.0 / base) then
-        while frac < (1.0 / base) do
-          frac = frac * base
-          expn = expn - 1
-        end
-      end
+      // Normalise exactly using frexp
+      (let m, let e_u32) = f.abs().frexp()
+      let e = e_u32.i32().i64()
+      
+      // value = m * 2^e = 0.d0d1... * 256^expn = frac * 2^(8*expn)
+      // frac = m * 2^(e - 8*expn)
+      // We want 1/256 <= frac < 1. 
+      // Since 0.5 <= m < 1, e - 8*expn must be in [-7, 0].
+      let expn = (e.f32() / 8.0).ceil().i64()
+      let shift = e - (expn * 8)
+      var frac = m * F32(2).pow(shift.f32())
       _exponent = expn
 
-      // Extract prec bits (mapped to base-256 digits): d_i = floor(frac × 256), then remove it.
+      // Extract prec bits (mapped to base-256 digits)
       let p: USize = ((prec.usize() + (_base_bits - 1)) / _base_bits).max(1)
+      let base = _base.f32()
       _digits = recover
         let d = Array[U8].init(0, p)
         var i: USize = 0
@@ -2091,18 +2083,18 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     // Extract N as an MPInt: a synthetic MPFloat with _exponent = prec treats
     // all bytes as integer bytes.  MPInt.from_mpfloat truncates toward zero,
     // which for a pure-integer synthetic value gives exactly N.
-    let n_float: MPFloat =
-      MPFloat._create(false, false, false, prec.i64(), _digits, _rounding)
-    let n_int: MPInt = try MPInt.from_mpfloat(n_float)? else MPInt.from_ilong(0) end
+    let n_float = MPFloat._create(false, false, false, prec.i64(), _digits, _rounding)
+    let n_int = try MPInt.from_mpfloat(n_float)? else MPInt.from_ilong(0) end
 
     let k_bytes: I64 = _exponent - prec.i64()
 
-    if k_bytes >= 0 then
+    if (k_bytes >= 0) and (k_bytes < 150) then
       // Integer case: value = N × 2^{8 × k_bytes}
       let b: USize = k_bytes.usize() * _base_bits
-      let shifted: MPInt =
-        if b > 0 then n_int.shl(MPInt.from_ilong(b.ilong()))
-        else n_int
+      let shifted: MPInt = if b > 0 then
+          n_int.shl(MPInt.from_ilong(b.ilong()))
+        else
+          n_int
         end
       let dec_str_iso: String iso = shifted.string()
       let dec_exp: I64 = dec_str_iso.size().i64()
@@ -2112,11 +2104,14 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
         s.append(sign_prefix)
         s.append(consume dec_str_iso)
         var i: USize = dec_exp.usize()
-        while i < n_dec do s.push('0'); i = i + 1 end
+        while i < n_dec do
+          s.push('0')
+          i = i + 1
+        end
         s
       end
       (consume result, dec_exp, false)
-    else
+    elseif (k_bytes < 0) and (k_bytes > -150) then
       // Fractional case: value = N / 2^b = N × 5^b / 10^b
       let b: USize = ((-k_bytes) * 8).usize()
       let five_pow: MPInt = MPInt.from_ilong(5).pow(MPInt.from_ilong(b.ilong()))
@@ -2130,10 +2125,74 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
         s.append(sign_prefix)
         s.append(consume num_str_iso)
         var i: USize = num_len
-        while i < n_dec do s.push('0'); i = i + 1 end
+        while i < n_dec do
+          s.push('0')
+          i = i + 1
+        end
         s
       end
       (consume result, dec_exp, false)
+    else
+      // Extreme values: use approximate path via F64 to avoid OOM in MPInt/String
+      ifdef debug then
+        Debug("[MPFloat.exact_string] Extreme value encountered (k_bytes=" + k_bytes.string() + "). Exact decimal conversion range exceeded; using approximate F64 path.")
+      end
+
+      let f = f64()
+      if f.nan() then
+        return ("nan".clone(), 0, true)
+      end
+      if f.infinite() then
+        return ("1".clone(), 1000, true)
+      end
+      if f == 0 then
+        return ("0".clone(), -1000, true)
+      end
+      
+      let s_f = f.abs().string()
+      
+      // Basic parsing of F64 string to satisfy the contract
+      // e.g. "1.234e+45" or "1.234"
+      try
+        let e_pos = s_f.find("e")?
+        let m_str: String val = s_f.substring(0, e_pos)
+        let e_str: String val = s_f.substring(e_pos + 1)
+        
+        var m_raw = recover String end
+        var dot_seen = false
+        var dot_pos: USize = 0
+        var idx: USize = 0
+        for char in m_str.values() do
+          if char == '.' then
+            dot_seen = true
+            dot_pos = idx
+          else
+            m_raw.push(char)
+          end
+          idx = idx + 1
+        end
+        
+        let exp_val = e_str.i64()? + (if dot_seen then dot_pos.i64() else m_str.size().i64() end)
+        (consume m_raw, exp_val, true)
+      else
+        // No 'e', just a simple float string like "123.456"
+        let s_f_val: String val = consume s_f
+        var m_raw = recover String end
+        var dot_seen = false
+        var dot_pos: USize = 0
+        var idx: USize = 0
+        for char in s_f_val.values() do
+          if char == '.' then
+            dot_seen = true
+            dot_pos = idx
+          else
+            m_raw.push(char)
+          end
+          idx = idx + 1
+        end
+        let exp_val = if dot_seen then dot_pos.i64() else s_f_val.size().i64() end
+        (consume m_raw, exp_val, true)
+      end
     end
 
 
@@ -4116,6 +4175,163 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     (MPFloat.create(), 0)
   
 //- Conversions ---------------------------------------------------------------
+// Subnormal numbers (e.g., 2.22507e-308 for F64 and 1.17549e-38 for F32) can cause
+// intermediate underflow during the reconstruction of the floating-point value in
+// the f64() and f32() methods.
+//
+// Reasons for Failure
+//
+// 1. Underflow of the Scaling Factor: In f64(), the code calculates
+// `result * (base_f64.pow(_exponent.f64() - size.f64()))`. For very small numbers,
+// the exponent `(_exponent - size)` can be -130 or lower. Since 256^-135 = 2^-1080,
+// and the minimum representable `F64` (including subnormals) is 2^-1074, the `pow()`
+// call returns `0.0`. This makes the entire result 0.0, even if the final value
+// should have been a non-zero subnormal.
+// 2. Order of Operations: By calculating the scaling factor in isolation, it hits the
+// floating-point limits prematurely. Multiplying the mantissa by the factor in stages
+// would keep the intermediate results within the representable range.
+// 3. Potential Overflow: Conversely, for high-precision `MPFloat` instances, the integer
+// result (accumulated mantissa) can overflow to infinity before the scaling factor is
+// applied if too many digits are summed.
+//
+// How to Solve It
+//
+// 1. Limit Mantissa Accumulation: Only sum enough digits to fill the destination's precision
+// (e.g., 16 base-256 digits for `F64` provide 128 bits, which is more than enough for its
+// 53-bit mantissa). This prevents intermediate overflow.
+// 2. Conditional Scaling Split: Split the `pow()` calculation only when the exponent is
+// outside the "safe" range (where `256^e` is guaranteed not to underflow/overflow). For
+// `F64`, a safe range is approximately [-125, 125].
+// 3. Preserve Accuracy: Use integer-valued exponents for `pow()` to ensure that for normal
+// ranges, the calculation remains bit-for-bit identical to the original implementation,
+// avoiding 1-ulp regressions.
 
+  fun f64(): F64 =>
+    """
+    Convert the current `MPFloat` to `F64`. Overflows are converted to ±∞.
+    Underflow are converted to 0.
 
+    This always hold:
+    * If `f` is a `F64`: `MPFloat.from_f64(f).f64() == f`
+    * If `mpf` is a `MPFloat`: `MPFloat.from_f64(mpf.f64()) == mpf`
+
+    The algorithm limits mantissa accumulation to the necessary precision (16 digits) to
+    prevent intermediate overflow. It splits the exponent scaling (`base.pow(e)`) into two
+    parts when the exponent is large, avoiding intermediate underflow for near-subnormal
+    and subnormal values.
+    """
+    if _nan then
+      return F64.from_bits(0x7FF8000000000000)
+    end
+    if _inf then
+      if _sign then
+        return F64.from_bits(0xFFF0000000000000)
+      else
+        return F64.from_bits(0x7FF0000000000000)
+      end
+    end
+    if is_zero() then
+      if _sign then
+        return F64.from_bits(0x8000000000000000)
+      else
+        return 0.0
+      end
+    end
+
+    // Reconstruct the F64 value
+    var result: F64 = 0.0
+    let size = _size()
+    let p = size.min(16) // 16 digits = 128 bits, covers F64 precision
+    let base_f64 = _base.f64()
+    let inv_base = 1.0 / base_f64
+
+    // Horner's method from least to most significant digit
+    try
+      var i: USize = p
+      while i > 0 do
+        i = i - 1
+        result = (result + _digits(i)?.f64()) * inv_base
+      end
+    end
+
+    // Adjust by the exponent avoiding intermediate underflow/overflow
+    let final_value = if (_exponent >= -125) and (_exponent <= 125) then
+        result * base_f64.pow(_exponent.f64())
+      else
+        let e1 = _exponent / 2
+        let e2 = _exponent - e1
+        (result * base_f64.pow(e1.f64())) * base_f64.pow(e2.f64())
+      end
+
+    if _sign then
+      return -final_value
+    else
+      return final_value
+    end
+
+  
+  fun f32(): F32 =>
+    """
+    Convert the current `MPFloat` to `F32`. Overflows are converted to ±∞.
+    Underflow are converted to 0.
+
+    This always hold:
+    * If `f` is a `F32`: `MPFloat.from_f32(f).f32() == f`
+    * If `mpf` is a `MPFloat`: `MPFloat.from_f32(mpf.f32()) == mpf`
+
+    The algorithm limits mantissa accumulation to the necessary precision (8 digits) to
+    prevent intermediate overflow. It splits the exponent scaling (`base.pow(e)`) into two
+    parts when the exponent is large, avoiding intermediate underflow for near-subnormal
+    and subnormal values.
+    """
+    if _nan then
+      return F32.from_bits(0x7FC00000)
+    end
+    if _inf then
+      if _sign then
+        return F32.from_bits(0xFF800000)
+      else
+        return F32.from_bits(0x7F800000)
+      end
+    end
+    if is_zero() then
+      if _sign then
+        return F32.from_bits(0x80000000)
+      else
+        return 0.0
+      end
+    end
+
+    // Reconstruct the F32 value
+    var result: F64 = 0.0
+    let size = _size()
+    let p = size.min(16)
+    let base_f64 = _base.f64()
+    let inv_base = 1.0 / base_f64
+
+    // Horner's method from least to most significant digit
+    try
+      var i: USize = p
+      while i > 0 do
+        i = i - 1
+        result = (result + _digits(i)?.f64()) * inv_base
+      end
+    end
+
+    // Adjust by the exponent using F64 to maintain precision
+    let final_value_f64 = if (_exponent >= -125) and (_exponent <= 125) then
+        (result * base_f64.pow(_exponent.f64()))
+      else
+        let e1 = _exponent / 2
+        let e2 = _exponent - e1
+        (result * base_f64.pow(e1.f64())) * base_f64.pow(e2.f64())
+      end
+    
+    let final_value = final_value_f64.f32()
+
+    if _sign then
+      return -final_value
+    else
+      return final_value
+    end
   

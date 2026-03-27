@@ -42,4 +42,7 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] What the use of `FloatingPoint` functions `ldexp` and `frexp` that seems not to use the value of `this` but the paramter `x`?
 [ ] Boolean function `nan`, `finite` and `infinite` should be renamed `is_nan`, `is_finite` an `is_infinite` to stay consistent with usage.
 [ ] Add boolean function `is_integer` to `FloatingPoint`.
-[ ] Why are `SignedIteger.bitwidth` and `SignedInteger.bytewidth` returning different types (respectively `A` and `USize`?
+[ ] Why are `SignedIteger.bitwidth` and `SignedInteger.bytewidth` returning different types (respectively `A` and `USize`)?
+[ ] In trait `FloatingPoint`, the methods `precision2` and `precision10` return `U8`. That type is not adapted for multiprecision types where precision can be >> 256. Should be `ULong`
+[ ] Same comment for `min_exp2`, `min_exp10`, `max_exp2` and `max_exp10` that return `U16`. Should be `ULong`
+[ ] `frexp` has a wrong signature in `F32`, `F64` and `FloatingPoint`. It is currently `frexp(): (A, U32)`. It should be `frexp(): (A, ILong)` or `frexp(): (A, I32)` using an integer for the exponent instead of an unsigned. See https://llvm.org/docs/LangRef.html#llvm-frexp-intrinsic
