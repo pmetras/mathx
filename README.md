@@ -36,7 +36,8 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] Correct `almost_eq` function to use `MPFloat` instead of `F64`.
 [ ] See if pi calculation by Kudnovsky calculation can be optimized by using `MPInt`.
 [ ] Test that digit separators `_` are accepted in `from_string`.
-[ ] Option to add figit separators `_` in `exact_string`.
+[ ] Option to add digit separators `_` in `exact_string`.
+[x] See if `i128`, `i64`, `i32`, `i16` and `i8` can be optimized to prevent creating a new `MPFloat`, using `I128.from_bits`.
 
 ### Anomalies
 [ ] What the use of `FloatingPoint` functions `ldexp` and `frexp` that seems not to use the value of `this` but the paramter `x`?

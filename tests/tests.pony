@@ -182,6 +182,13 @@ actor Main is TestList
     test(_TestMPFloatTrig)
     test(_TestMPFloatHyp)
     test(_TestMPFloatPi)
+    test(_TestMPFloatI8)
+    test(_TestMPFloatI16)
+    test(_TestMPFloatI32)
+    test(_TestMPFloatI64)
+    test(_TestMPFloatI128)
+    test(_TestMPFloatUnsafeIntConversions)
+
 
     // MPFloat numbers — old tests (disabled during redesign)
     // test(_DisabledTestMPFloatCreate)

@@ -6,103 +6,6 @@ use "collections"
 use "debug"
 
 
-type RoundingMode is (RoundingNearest | RoundingNegInf | RoundingPosInf |
-                      RoundingZero | RoundingAwayZ | RoundingFaithful )
-  """
-  The rounding mode that must be applied to operations.
-
-  * MPFloat_RNDN: round to nearest, with the even rounding rule (roundTiesToEven in IEEE 754).
-  * MPFloat_RNDD: round toward negative infinity (roundTowardNegative in IEEE 754).
-  * MPFloat_RNDU: round toward positive infinity (roundTowardPositive in IEEE 754).
-  * MPFloat_RNDZ: round toward zero (roundTowardZero in IEEE 754).
-  * MPFloat_RNDA: round away from zero.
-  * MPFloat_RNDF: faithful rounding. This feature is currently experimental.
-
-  For full definition and background: https://www.mpfr.org/mpfr-current/mpfr.html#Rounding
-  and https://en.wikipedia.org/wiki/Rounding
-  """
-
-
-primitive RoundingNearest
-    """
-    Round to the nearest, with the even rounding rule.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    in case the number to be rounded lies exactly in the middle between two consecutive
-    representable numbers, it is rounded to the one with an even significand.
-    """
-  fun apply(): I32 =>
-    0
-
-  fun string(): String =>
-    "MPFloat_RNDN"
-
-
-primitive RoundingNegInf
-    """
-    Round toward negative infinity.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    `y` is less than or equal to `x`.
-    """
-  fun apply(): I32 =>
-    3
-
-  fun string(): String =>
-    "MPFloat_RNDD"
-
-
-primitive RoundingPosInf
-    """
-    Round toward positive infinity.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    `y` is greater than or equal to `x`.
-    """
-  fun apply(): I32 =>
-    2
-
-  fun string(): String =>
-    "MPFloat_RNDU"
-
-
-primitive RoundingZero
-    """
-    Round toward zero.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    `abs(y)` is less than or equal to `abs(x)`.
-    """
-  fun apply(): I32 =>
-    1
-
-  fun string(): String =>
-    "MPFloat_RNDZ"
-
-
-primitive RoundingAwayZ
-    """
-    Round away from zero.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    `abs(y)` is greater than or equal to `abs(x)`.
-    """
-  fun apply(): I32 =>
-    4
-
-  fun string(): String =>
-    "MPFloat_RNDA"
-
-
-primitive RoundingFaithful
-    """
-    Faithfull rounding.
-    A number `x` is rounded to the number `y` that is the closest to `x` such that
-    the computed value is either that corresponding to `MPFloat_RNDD` or that
-    corresponding to `MPFloat_RNDU`.
-    """
-  fun apply(): I32 =>
-    5
-
-  fun string(): String =>
-    "MPFloat_RNDF"
-
-
 class val MPFloat
   """
   MPFloat represents real numbers with arbitrary precision.
@@ -4335,3 +4238,507 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
       return final_value
     end
   
+
+  fun val i128(): I128 =>
+    """
+    Convert `this` to an `I128` value. If `this` has decimals, they
+    are truncated. In case of overflow, the value is saturated to
+    `I128.max_value()` or `I128.min_value()`.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `I128.min_value()`
+    * +∞ ⟶ `I128.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `I128` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return I128.min_value()
+      else
+        return I128.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+
+    // Check for overflow before conversion to avoid huge allocations
+    // and to implement saturation.
+    // I128 range is [-2^127, 2^127 - 1].
+    // 2^127 = 128 * 256^15.
+    // _exponent is the number of base-256 integer digits.
+    if (_exponent > 16) or ((_exponent == 16) and (try _digits(0)? >= 128 else false end)) then
+      if _sign then
+        return I128.min_value()
+      else
+        return I128.max_value()
+      end
+    end
+
+    // It fits in I128 (magnitude < 2^127, or negative and magnitude == 2^127)
+    var res: U128 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << _base_bits.u128()) or _digits(i)?.u128()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (_base_bits.usize() * (_exponent.usize() - n)).u128()
+    end
+
+    if _sign then
+      (-res).i128()
+    else
+      res.i128()
+    end
+  
+  
+  fun i64(): I64 =>
+      """
+      Convert `this` to an `I64` value. If `this` has decimals, they
+      are truncated. In case of overflow, the value is saturated to
+      `I64.max_value()` or `I64.min_value()`.
+  
+      * NaN ⟶ 0
+      * -∞ ⟶ `I64.min_value()`
+      * +∞ ⟶ `I64.max_value()`
+      * ]-1, +1[ ⟶ 0
+      * Other values are saturated to the `I64` range.
+      """
+      if _nan then
+        return 0
+      end
+      if _inf then
+        if _sign then
+          return I64.min_value()
+        else
+          return I64.max_value()
+        end
+      end
+      if is_zero() or (_exponent <= 0) then
+        return 0
+      end
+  
+      // Check for overflow before conversion to MPInt to avoid huge allocations
+      // and to implement saturation.
+      // I64 range is [-2^63, 2^63 - 1].
+      // 2^63 = 128 * 256^7.
+      // _exponent is the number of base-256 integer digits.
+      if (_exponent > 8) or ((_exponent == 8) and (try _digits(0)? >= 128 else false end)) then
+        if _sign then
+          return I64.min_value()
+        else
+          return I64.max_value()
+        end
+      end
+  
+      // It fits in I64 (magnitude < 2^63, or negative and magnitude == 2^63)
+    var res: U64 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << _base_bits.u64()) or _digits(i)?.u64()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (_base_bits.usize() * (_exponent.usize() - n)).u64()
+    end
+
+    if _sign then
+      (-res).i64()
+    else
+      res.i64()
+    end
+    
+    
+  fun i32(): I32 =>
+    """
+    Convert `this` to an `I32` value. If `this` has decimals, they
+    are truncated. In case of overflow, the value is saturated to
+    `I32.max_value()` or `I32.min_value()`.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `I32.min_value()`
+    * +∞ ⟶ `I32.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `I32` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return I32.min_value()
+      else
+        return I32.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+
+    // Check for overflow before conversion to MPInt to avoid huge allocations
+    // and to implement saturation.
+    // I32 range is [-2^31, 2^31 - 1].
+    // 2^31 = 128 * 256^3.
+    // _exponent is the number of base-256 integer digits.
+    if (_exponent > 4) or ((_exponent == 4) and (try _digits(0)? >= 128 else false end)) then
+      if _sign then
+        return I32.min_value()
+      else
+        return I32.max_value()
+      end
+    end
+
+    // It fits in I32 (magnitude < 2^31, or negative and magnitude == 2^31)
+    var res: U32 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << _base_bits.u32()) or _digits(i)?.u32()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (_base_bits.usize() * (_exponent.usize() - n)).u32()
+    end
+
+    if _sign then
+      (-res).i32()
+    else
+      res.i32()
+    end
+
+
+  fun i16(): I16 =>
+    """
+    Convert `this` to an `I16` value. If `this` has decimals, they
+    are truncated. In case of overflow, the value is saturated to
+    `I16.max_value()` or `I16.min_value()`.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `I16.min_value()`
+    * +∞ ⟶ `I16.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `I16` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return I16.min_value()
+      else
+        return I16.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+
+    // Check for overflow before conversion to MPInt to avoid huge allocations
+    // and to implement saturation.
+    // I16 range is [-2^15, 2^15 - 1].
+    // 2^15 = 128 * 256^1.
+    // _exponent is the number of base-256 integer digits.
+    if (_exponent > 2) or ((_exponent == 2) and (try _digits(0)? >= 128 else false end)) then
+      if _sign then
+        return I16.min_value()
+      else
+        return I16.max_value()
+      end
+    end
+
+    // It fits in I16 (magnitude < 2^15, or negative and magnitude == 2^15)
+    //TODO: Optimize by unrolling the loop
+    var res: U16 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << _base_bits.u16()) or _digits(i)?.u16()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (_base_bits.usize() * (_exponent.usize() - n)).u16()
+    end
+
+    if _sign then
+      (-res).i16()
+    else
+      res.i16()
+    end
+    
+    
+  fun i8(): I8 =>
+    """
+    Convert `this` to an `I8` value. If `this` has decimals, they
+    are truncated. In case of overflow, the value is saturated to
+    `I8.max_value()` or `I8.min_value()`.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `I8.min_value()`
+    * +∞ ⟶ `I8.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `I8` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return I8.min_value()
+      else
+        return I8.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+
+    // Check for overflow before conversion to MPInt to avoid huge allocations
+    // and to implement saturation.
+    // I8 range is [-2^7, 2^7 - 1].
+    // 2^7 = 128.
+    // _exponent is the number of base-256 integer digits.
+    if (_exponent > 1) or ((_exponent == 1) and (try _digits(0)? >= 128 else false end)) then
+      if _sign then
+        return I8.min_value()
+      else
+        return I8.max_value()
+      end
+    end
+
+    // It fits in I8 (magnitude < 2^7, or negative and magnitude == 2^7)
+    var res = try _digits(0)?.u8() else 0 end
+
+    if _exponent > 1 then
+      res = res << (_base_bits.u8() * (_exponent.u8() - 1))
+    end
+
+    if _sign then
+      (-res).i8()
+    else
+      res.i8()
+    end
+    
+    
+  fun ilong(): ILong =>
+    """
+    Convert `this` to a `ILong` value. On LLP64 and ILP32, that's a conversion
+    to `I32`, and to `I64` for all other platforms.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `ILong.min_value()`
+    * +∞ ⟶ `ILong.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `ILong` range.
+    """
+    ifdef lp64 then
+      i64().ilong()
+    elseif llp64 then
+      i32().ilong()
+    elseif ilp32 then
+      i32().ilong()
+    else
+      i64().ilong()
+    end
+
+
+  fun isize(): ISize =>
+    """
+    Convert `this` to a `ISize` value. On ILP32, that's a conversion to `I32`,
+    and to `I64` for all other platforms.
+
+    * NaN ⟶ 0
+    * -∞ ⟶ `ISize.min_value()`
+    * +∞ ⟶ `ISize.max_value()`
+    * ]-1, +1[ ⟶ 0
+    * Other values are saturated to the `ISize` range.
+    """
+    ifdef lp64 then
+      i64().isize()
+    elseif llp64 then
+      i64().isize()
+    elseif ilp32 then
+      i32().isize()
+    else
+      i64().isize()
+    end
+  
+
+  fun i128_unsafe(): I128 =>
+    """
+    Convert `this` to an `I128` value. If `this` has decimals, they
+    are truncated. In case of overflow or special value, the result is undefined.
+    """
+    let e = _exponent.usize()
+    if e <= 0 then
+      return 0
+    end
+
+    var res: U128 = 0
+    try
+      res = _digits(e - 1)?.u128()
+      res = res or (_digits(e - 2)?.u128() << 8)
+      res = res or (_digits(e - 3)?.u128() << 16)
+      res = res or (_digits(e - 4)?.u128() << 24)
+      res = res or (_digits(e - 5)?.u128() << 32)
+      res = res or (_digits(e - 6)?.u128() << 40)
+      res = res or (_digits(e - 7)?.u128() << 48)
+      res = res or (_digits(e - 8)?.u128() << 56)
+      res = res or (_digits(e - 9)?.u128() << 64)
+      res = res or (_digits(e - 10)?.u128() << 72)
+      res = res or (_digits(e - 11)?.u128() << 80)
+      res = res or (_digits(e - 12)?.u128() << 88)
+      res = res or (_digits(e - 13)?.u128() << 96)
+      res = res or (_digits(e - 14)?.u128() << 104)
+      res = res or (_digits(e - 15)?.u128() << 112)
+      res = res or (_digits(e - 16)?.u128() << 120)
+    end
+
+    if _sign then
+      (-res).i128_unsafe()
+    else
+      res.i128_unsafe()
+    end
+
+
+  fun i64_unsafe(): I64 =>
+    """
+    Convert `this` to an `I64` value. If `this` has decimals, they
+    are truncated. In case of overflow or special value, the result is undefined.
+    """
+    let e = _exponent.usize()
+    if e <= 0 then
+      return 0
+    end
+
+    var res: U64 = 0
+    try
+      res = _digits(e - 1)?.u64()
+      res = res or (_digits(e - 2)?.u64() << 8)
+      res = res or (_digits(e - 3)?.u64() << 16)
+      res = res or (_digits(e - 4)?.u64() << 24)
+      res = res or (_digits(e - 5)?.u64() << 32)
+      res = res or (_digits(e - 6)?.u64() << 40)
+      res = res or (_digits(e - 7)?.u64() << 48)
+      res = res or (_digits(e - 8)?.u64() << 56)
+    end
+
+    if _sign then
+      (-res).i64_unsafe()
+    else
+      res.i64_unsafe()
+    end
+
+
+  fun i32_unsafe(): I32 =>
+    """
+    Convert `this` to an `I32` value. If `this` has decimals, they
+    are truncated. In case of overflow or special value, the result is undefined.
+    """
+    let e = _exponent.usize()
+    if e <= 0 then
+      return 0
+    end
+
+    var res: U32 = 0
+    try
+      res = _digits(e - 1)?.u32()
+      res = res or (_digits(e - 2)?.u32() << 8)
+      res = res or (_digits(e - 3)?.u32() << 16)
+      res = res or (_digits(e - 4)?.u32() << 24)
+    end
+
+    if _sign then
+      (-res).i32_unsafe()
+    else
+      res.i32_unsafe()
+    end
+
+
+  fun i16_unsafe(): I16 =>
+    """
+    Convert `this` to an `I16` value. If `this` has decimals, they
+    are truncated. In case of overflow or special value, the result is undefined.
+    """
+    let e = _exponent.usize()
+    if e <= 0 then
+      return 0
+    end
+
+    var res: U16 = 0
+    try
+      res = _digits(e - 1)?.u16()
+      res = res or (_digits(e - 2)?.u16() << 8)
+    end
+
+    if _sign then
+      (-res).i16_unsafe()
+    else
+      res.i16_unsafe()
+    end
+
+
+  fun i8_unsafe(): I8 =>
+    """
+    Convert `this` to an `I8` value. If `this` has decimals, they
+    are truncated. In case of overflow or special value, the result is undefined.
+    """
+    let e = _exponent.usize()
+    if e <= 0 then
+      return 0
+    end
+
+    var res: U8 = 0
+    try res = _digits(e - 1)? end
+
+    if _sign then
+      (-res).i8()
+    else
+      res.i8()
+    end
+
+
+  fun ilong_unsafe(): ILong =>
+    """
+    Convert `this` to a `ILong` value without checking for overflow or
+    special values. On LLP64 and ILP32, that's a conversion to `I32`, and
+    to `I64` for all other platforms.
+    """
+    ifdef lp64 then
+      i64_unsafe().ilong_unsafe()
+    elseif llp64 then
+      i32_unsafe().ilong_unsafe()
+    elseif ilp32 then
+      i32_unsafe().ilong_unsafe()
+    else
+      i64_unsafe().ilong_unsafe()
+    end
+
+
+  fun isize_unsafe(): ISize =>
+    """
+    Convert `this` to a `ISize` value without checking for overflow or
+    special values. On ILP32, that's a conversion to `I32`, and to `I64`
+    for all other platforms.
+    """
+    ifdef lp64 then
+      i64_unsafe().isize_unsafe()
+    elseif llp64 then
+      i64_unsafe().isize_unsafe()
+    elseif ilp32 then
+      i32_unsafe().isize_unsafe()
+    else
+      i64_unsafe().isize_unsafe()
+    end
+
+
+    
