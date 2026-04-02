@@ -335,6 +335,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     CAUTION: This constructor converts `a` to a `U128` internally and
     overflow can occur, for instance when constructing the `MPInt` from a
     large `F64`.
+
+    TODO: Complete implementation for better type support.
     """
     _negative = (a.f64() < 0)
     let base = U128.from[U32](_base())

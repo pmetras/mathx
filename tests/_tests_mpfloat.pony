@@ -2427,6 +2427,13 @@ class iso _TestMPFloatI128 is UnitTest
     h.assert_eq[I128](I128.max_value(), MPFloat.inf_val(true).i128(), "i128(+Inf)")
     h.assert_eq[I128](I128.min_value(), MPFloat.inf_val(false).i128(), "i128(-Inf)")
 
+    // Random values
+    let rand = Rand
+    for i in Range(0, 100) do
+      let t = rand.i128()
+      h.assert_eq[I128](t, MPFloat.from_ilong(t.ilong()).i128(), "Random [" + i.string() + "] i128(" + t.string() + ")")
+    end
+
 
 class iso _TestMPFloatPi is UnitTest
   """
@@ -2571,5 +2578,186 @@ class iso _TestMPFloatConversions is UnitTest
       else
         h.assert_true(mpf.almost_eq(rt_mpf), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f32=" + mpf.string() + " got " + rt_mpf.string())
       end
+    end
+
+
+class iso _TestMPFloatU8 is UnitTest
+  """
+  Verify u8 conversion methods.
+  """
+  fun name(): String => "MPFloat/u8"
+
+  fun apply(h: TestHelper) =>
+    // U8
+    h.assert_eq[U8](123, MPFloat.from_f64(123.456).u8(), "u8(123.456)")
+    h.assert_eq[U8](U8.max_value(), MPFloat.from_f64(400).u8(), "u8(400) saturates")
+    h.assert_eq[U8](U8.min_value(), MPFloat.from_f64(-200).u8(), "u8(-200) saturates")
+    h.assert_eq[U8](0, MPFloat.from_f64(0.123).u8(), "u8(0.123)")
+    h.assert_eq[U8](0, MPFloat.from_f64(-0.123).u8(), "u8(-0.123)")
+
+    // Edge cases around 2^N
+    // U8: [0, 255]
+    h.assert_eq[U8](255, MPFloat.from_f64(255).u8(), "u8(255)")
+    h.assert_eq[U8](U8.max_value(), MPFloat.from_f64(256).u8(), "u8(256) saturates")
+    h.assert_eq[U8](0, MPFloat.from_f64(0).u8(), "u8(0)")
+    h.assert_eq[U8](U8.min_value(), MPFloat.from_f64(-1).u8(), "u8(-1) saturates")
+
+    // Special values
+    h.assert_eq[U8](0, MPFloat.nan_val().u8(), "u8(NaN)")
+    h.assert_eq[U8](U8.max_value(), MPFloat.inf_val(true).u8(), "u8(+Inf)")
+    h.assert_eq[U8](U8.min_value(), MPFloat.inf_val(false).u8(), "u8(-Inf)")
+
+
+class iso _TestMPFloatU16 is UnitTest
+  """
+  Verify u16 conversion methods.
+  """
+  fun name(): String => "MPFloat/u16"
+
+  fun apply(h: TestHelper) =>
+    // U16
+    h.assert_eq[U16](123, MPFloat.from_f64(123.456).u16(), "u16(123.456)")
+    h.assert_eq[U16](U16.max_value(), MPFloat.from_f64(400000).u16(), "u16(400000) saturates")
+    h.assert_eq[U16](U16.min_value(), MPFloat.from_f64(-40000).u16(), "u16(-40000) saturates")
+
+    // Special values
+    h.assert_eq[U16](0, MPFloat.nan_val().u16(), "u16(NaN)")
+    h.assert_eq[U16](U16.max_value(), MPFloat.inf_val(true).u16(), "u16(+Inf)")
+    h.assert_eq[U16](U16.min_value(), MPFloat.inf_val(false).u16(), "u16(-Inf)")
+
+
+class iso _TestMPFloatU32 is UnitTest
+  """
+  Verify u32 conversion methods.
+  """
+  fun name(): String => "MPFloat/u32"
+
+  fun apply(h: TestHelper) =>
+    // U32
+    h.assert_eq[U32](123, MPFloat.from_f64(123.456).u32(), "u32(123.456)")
+    h.assert_eq[U32](U32.max_value(), MPFloat.from_f64(3e12).u32(), "u32(3e12) saturates")
+    h.assert_eq[U32](U32.min_value(), MPFloat.from_f64(-3e9).u32(), "u32(-3e9) saturates")
+
+    // Special values
+    h.assert_eq[U32](0, MPFloat.nan_val().u32(), "u32(NaN)")
+    h.assert_eq[U32](U32.max_value(), MPFloat.inf_val(true).u32(), "u32(+Inf)")
+    h.assert_eq[U32](U32.min_value(), MPFloat.inf_val(false).u32(), "u32(-Inf)")
+
+
+class iso _TestMPFloatU64 is UnitTest
+  """
+  Verify u64 conversion methods.
+  """
+  fun name(): String => "MPFloat/u64"
+
+  fun apply(h: TestHelper) =>
+    // U64
+    h.assert_eq[U64](123, MPFloat.from_f64(123.456).u64(), "u64(123.456)")
+    h.assert_eq[U64](U64.max_value(), MPFloat.from_f64(2e24).u64(), "u64(2e19) saturates")
+    h.assert_eq[U64](U64.min_value(), MPFloat.from_f64(-2e19).u64(), "u64(-2e19) saturates")
+
+    // Truncation of decimals
+    h.assert_eq[U64](1, MPFloat.from_f64(1.9).u64(), "u64(1.9)")
+    h.assert_eq[U64](0, MPFloat.from_f64(-1.9).u64(), "u64(-1.9)")
+    h.assert_eq[U64](0, MPFloat.from_f64(0.5).u64(), "u64(0.5)")
+    h.assert_eq[U64](0, MPFloat.from_f64(-0.5).u64(), "u64(-0.5)")
+
+    // Large values (within U64 range)
+    let big: U64 = 0x1234567890ABCDEF
+    try
+      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF", 16)?, 64)
+      h.assert_eq[U64](big, mp_big.u64(), "u64(big)")
+
+      // Overflow behavior (saturation like F64)
+      // 2^64 + 1 saturates to U64.max_value()
+      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64))) + MPInt.from_ilong(1)
+      let mp_overflow = MPFloat.from_mpint(overflow, 68)
+      h.assert_eq[U64](U64.max_value(), mp_overflow.u64(), "u64(2^64 + 1) saturates")
+
+      // Boundary checks around 2^64
+      let p2_64_minus_1 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64))) - MPInt.from_ilong(1)
+      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64_minus_1, 68).u64(), "u64(2^64 - 1)")
+
+      let p2_64 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64)))
+      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64, 64).u64(), "u64(2^64) max value")
+
+      let n2_64_plus_1 = p2_64 + MPInt.from_ilong(1)
+      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(n2_64_plus_1, 68).u64(), "u64(2^64 + 1)")
+
+      // Huge values
+      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(huge).u64(), "u64(2^1000) saturates")
+    else
+      h.fail("MPInt arithmetic failed in tests")
+    end
+
+    // Special values
+    h.assert_eq[U64](0, MPFloat.nan_val().u64(), "u64(NaN)")
+    h.assert_eq[U64](U64.max_value(), MPFloat.inf_val(true).u64(), "u64(+Inf)")
+    h.assert_eq[U64](U64.min_value(), MPFloat.inf_val(false).u64(), "u64(-Inf)")
+
+
+class iso _TestMPFloatU128 is UnitTest
+  """
+  Verify u128() conversion method.
+  """
+  fun name(): String => "MPFloat/u128"
+
+  fun apply(h: TestHelper) =>
+    // Basic integers
+    h.assert_eq[U128](0, MPFloat.from_f64(0.0).u128(), "u128(0.0)")
+    h.assert_eq[U128](1, MPFloat.from_f64(1.0).u128(), "u128(1.0)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-1.0).u128(), "u128(-1.0)")
+    h.assert_eq[U128](123456789, MPFloat.from_f64(123456789.0).u128(), "u128(123456789.0)")
+
+    // Truncation of decimals
+    h.assert_eq[U128](1, MPFloat.from_f64(1.9).u128(), "u128(1.9)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-1.9).u128(), "u128(-1.9)")
+    h.assert_eq[U128](0, MPFloat.from_f64(0.5).u128(), "u128(0.5)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-0.5).u128(), "u128(-0.5)")
+
+    // Large values (within U128 range)
+    let big: U128 = 0x1234567890ABCDEF1234567890ABCDEF
+    try
+      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      h.assert_eq[U128](big, mp_big.u128(), "u128(big)")
+
+      let mp_neg_big = MPFloat.from_mpint(MPInt.from_string("-1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      h.assert_eq[U128](U128.min_value(), mp_neg_big.u128(), "u128(neg_big)")
+
+      // Overflow behavior (saturation like F64)
+      // 2^128 + 1 saturates to U128.max_value()
+      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(128))) + MPInt.from_ilong(1)
+      let mp_overflow = MPFloat.from_mpint(overflow, 136)
+      h.assert_eq[U128](U128.max_value(), mp_overflow.u128(), "u128(2^128 + 1) saturates")
+
+      // Boundary checks around 2^128
+      let p2_128 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(128)))
+      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128, 128).u128(), "u128(2^128 saturates)")
+
+      let p2_128_minus_1 = p2_128 - MPInt.from_ilong(1)
+      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128_minus_1, 128).u128(), "u128(2^128 - 1)")
+
+      let p2_128_minus_2 = p2_128_minus_1 - MPInt.from_ilong(1)
+      h.assert_eq[U128](U128.max_value() - 1, MPFloat.from_mpint(p2_128_minus_2, 128).u128(), "u128(-2^128 - 2)")
+
+      // Huge values
+      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(huge).u128(), "u128(2^1000) saturates")
+      h.assert_eq[U128](U128.min_value(), MPFloat.from_mpint(-huge).u128(), "u128(-2^1000) saturates")
+    else
+      h.fail("MPInt arithmetic failed in tests")
+    end
+
+    // Special values
+    h.assert_eq[U128](0, MPFloat.nan_val().u128(), "u128(NaN)")
+    h.assert_eq[U128](U128.max_value(), MPFloat.inf_val(true).u128(), "u128(+Inf)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.inf_val(false).u128(), "u128(-Inf)")
+
+    // Random values
+    let rand = Rand
+    for i in Range(0, 100) do
+      let t = rand.u128()
+      h.assert_eq[U128](t, MPFloat.from[U128](t).u128(), "Random [" + i.string() + "] u128(" + t.string() + ")")
     end
 
