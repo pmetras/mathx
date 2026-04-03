@@ -1374,3 +1374,115 @@ class iso _TestMPIntFromMPFloat is UnitTest
       end
     let id29 = try MPInt.from_mpfloat(MPFloat.from_mpint(d29, 128))? else MPInt.from_ilong(0) end
     h.assert_true(id29 == d29, "round-trip 29-digit integer with prec=128")
+
+
+class iso _TestMPIntKaratsubaAsymmetric is UnitTest
+  """
+  Regression test for the karatsuba_mul USize underflow crash.
+
+  When one operand has fewer than `half = max(size_a, size_b) / 2` base-digits,
+  the expression `size - half` wraps around to USize.max on unsigned subtraction,
+  causing a gigantic array allocation that OOMs the process.
+
+  This test exercises the asymmetric case (140-digit × 300-digit) that triggered
+  the crash before the `.max(half)` clamp was applied.
+  """
+
+  fun name(): String =>
+    "MPInt/karatsuba_asymmetric"
+
+
+  fun apply(h: TestHelper) =>
+    let rand = Rand()
+
+    // Build a ~140-base-digit number (> 128 so Karatsuba is eligible).
+    var small = MPInt.from_ilong(rand.ilong())
+    for i in Range(1, 140) do
+      small = small + MPInt.from_ilong(rand.ilong()).abs().digit_shl(i)
+    end
+
+    // Build a ~300-base-digit number (more than twice the size of `small`).
+    var large = MPInt.from_ilong(rand.ilong())
+    for i in Range(1, 300) do
+      large = large + MPInt.from_ilong(rand.ilong()).abs().digit_shl(i)
+    end
+
+    // Both orderings must give the same result as schoolbook multiplication.
+    let expected_sl = small.mul(large)
+    let expected_ls = large.mul(small)
+
+    h.assert_true(small.karatsuba_mul(large) == expected_sl,
+      "karatsuba_mul: small × large matches schoolbook")
+    h.assert_true(large.karatsuba_mul(small) == expected_ls,
+      "karatsuba_mul: large × small matches schoolbook")
+
+
+class iso _TestMPIntFromStringLargeExponent is UnitTest
+  """
+  Regression test for the from_string large-exponent O(exp²) hang.
+
+  The old implementation built a zero-padded string of length `exp`, then
+  processed it character-by-character — O(exp) memory and O(exp²) time.
+  For large exponents (e.g. `1@10000`) this was effectively a hang.
+
+  The new implementation parses the exponent value and applies it with a loop,
+  so the result is O(exp) time with no intermediate string allocation.
+  """
+
+  fun name(): String =>
+    "MPInt/from_string_large_exponent"
+
+
+  fun apply(h: TestHelper) =>
+    // 1@100  →  10^100  (a googol)
+    let googol =
+      try MPInt.from_string("1@100")?
+      else
+        h.fail("from_string(\"1@100\") raised an error")
+        return
+      end
+    // Must have exactly 101 decimal digits: "1" followed by 100 zeros.
+    let s = googol.string()
+    h.assert_true(s.size() == 101, "1@100 has 101 decimal digits, got " + s.size().string())
+    h.assert_true(try s(0)? == '1' else false end, "1@100 starts with '1'")
+    var all_zeros = true
+    for i in Range(1, s.size()) do
+      if try s(i)? != '0' else true end then
+        all_zeros = false
+      end
+    end
+    h.assert_true(all_zeros, "1@100 has 100 trailing zeros")
+
+    // 2@50  →  2 × 10^50: should equal (2 * 10^50)
+    let two_e50 =
+      try MPInt.from_string("2@50")?
+      else
+        h.fail("from_string(\"2@50\") raised an error")
+        return
+      end
+    // Verify via arithmetic: MPInt.from_string("2@50") == 2 * 10^50
+    let ten_e50 =
+      try MPInt.from_string("1@50")?
+      else h.fail("from_string(\"1@50\") raised an error"); return
+      end
+    h.assert_true(two_e50 == (MPInt.from_ilong(2) * ten_e50),
+      "2@50 == 2 × 10^50")
+
+    // Negative sign must be preserved.
+    let neg =
+      try MPInt.from_string("-3@20")?
+      else h.fail("from_string(\"-3@20\") raised an error"); return
+      end
+    h.assert_true(neg.is_negative(), "-3@20 is negative")
+    h.assert_true(neg == (MPInt.from_ilong(-3) * MPInt.from_ilong(100000000000000000) * MPInt.from_ilong(1000)),
+      "-3@20 matches -3 × 10^20")
+
+    // Large exponent (1000): must not hang and must produce a positive number.
+    // (We only check it doesn't hang and produces a >0 value; the exact value
+    // is too large to construct via other means in this test.)
+    let big =
+      try MPInt.from_string("1@1000")?
+      else h.fail("from_string(\"1@1000\") raised an error"); return
+      end
+    h.assert_true(big.is_positive(), "1@1000 is positive")
+    h.assert_true(big.string().size() == 1001, "1@1000 has 1001 decimal digits")

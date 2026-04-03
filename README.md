@@ -14,6 +14,16 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 
 ## TODO
 
+### `MPInt`
+[x] `karatsuba_mul` USize underflow crash: when both operands are > 128 digits but one is less than half the size of the other (e.g. 140-digit × 300-digit), the capacity hint `that._digits.size() - half` wraps around on USize subtraction → OOM crash. Fix: use clamped subtraction in lines 855 and 869.
+[x] `from_string` exponent builds a literal zero-padded string of length `exp`, then processes it character-by-character with `_short_mul`. For large exponents (e.g. `1@1000000`) this allocates O(exp) memory and runs O(exp²) operations. Should use `digit_shl` + `pow(base, exp)` instead.
+[x] `karatsuba_mul` threshold uses `or` instead of `and` (line 842): falls back to schoolbook if *either* operand is ≤ 128 digits, contradicting the docstring ("both numbers must be > 2048-bits"). Also masks the underflow bug above for some size combinations.
+[x] `fast_mul`: no bounds check that inputs are within the ~1M-digit safe range for F64 precision; silently returns wrong results for larger inputs. Also discards any remaining carry after the digit-conversion loop instead of asserting it is zero.
+[x] Two private constructors with inconsistent zero-normalization: `_create` normalizes `-0 → +0`; `_from_array` does not, allowing an invalid `_negative=true, _digits=[0]` state.
+[x] `divrem` single-digit path (lines 900–921) copies `_digits` twice and calls `_short_div` twice to obtain quotient and remainder independently; a single call returns both.
+[x] `is_zero()` contains an unreachable `_digits.size() == 0` guard (line 2004); the invariant guarantees `_digits.size() ≥ 1`.
+[x] `isqrt()` silently incorrect for numbers > ~10^19 digits: `bitwidth().usize()` overflows via `ilong()`, corrupting the Newton initial guess.
+
 ### `MPFloat`
 
 [ ] Add support for rounding to `MPFloat`.

@@ -62,7 +62,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
 
 
-  let _negative: Bool
+  let _sign: Bool
     """
     The sign of the integer, `true` when less than `0`.
     """
@@ -89,7 +89,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     _digits = digits
     // -0 is positive... This assumes that digits is normalized.
-    _negative = if (digits.size() == 1) and (try digits(0)? == 0 else false end) then
+    _sign = if (digits.size() == 1) and (try digits(0)? == 0 else false end) then
       false
     else
       negative
@@ -139,7 +139,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
     if s.size() == 0 then
-      _negative = false
+      _sign = false
       _digits = [0]
       return
     end
@@ -168,7 +168,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       error
     end // No space after sign
 
-    // Check for exponent
+    // Check for exponent marker
     var iexp: ISize = -1
     if base > 10 then
       iexp = try s.find("@", i.isize())? else iexp end
@@ -182,15 +182,16 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
     end
 
-    let tmp_str: String = if iexp >= 0 then
-      let ie = iexp.usize()
+    // Parse the exponent value (always a non-negative decimal integer).
+    // Parsing it separately avoids building an O(exp)-sized zero-padded
+    // string; the exponent is applied later as repeated _short_mul calls
+    // inside the digit-accumulation block.
+    var sig_exp: ILong = 0
+    if iexp >= 0 then
       let exp_val_str = s.substring(iexp + 1)
       if exp_val_str.size() == 0 then
         error
       end
-      
-      var exp: ILong = 0
-      var seen_digit = false
       var j: USize = 0
       if try exp_val_str(0)? == '+' else false end then
         j = 1
@@ -198,11 +199,11 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       if j >= exp_val_str.size() then
         error
       end
-
+      var seen_digit = false
       while j < exp_val_str.size() do
         let ec = exp_val_str(j)?
         if (ec >= '0') and (ec <= '9') then
-          exp = (exp * 10) + (ec - '0').ilong()
+          sig_exp = (sig_exp * 10) + (ec - '0').ilong()
           seen_digit = true
         elseif ec == '_' then
           None
@@ -213,32 +214,31 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         end
         j = j + 1
       end
-
       if not seen_digit then
         error
       end
-
-      recover
-        let pads = String.create(exp.usize())
-        var k: ILong = 0
-        while k < exp do
-          pads.push('0')
-          k = k + 1
-        end
-        s.substring(i.isize(), iexp) + pads
-      end
-    else
-      s.substring(i.isize())
     end
 
-    if tmp_str.size() == 0 then
-      error
+    // Significand spans s[i .. iexp) when an exponent marker is present,
+    // or s[i .. end) otherwise.
+    let sig_end: ISize = if iexp >= 0 then iexp else s.size().isize() end
+    let sig_str: String val = s.substring(i.isize(), sig_end)
+
+    if sig_str.size() == 0 then
+      if iexp >= 0 then
+        // Empty significand with exponent marker (e.g. "-e50") is treated as zero.
+        _sign = false
+        _digits = [0]
+        return
+      else
+        error
+      end
     end
 
     _digits = recover
       let d: Array[U16] ref = [0]
       var has_real_digit = false
-      for dc in tmp_str.values() do
+      for dc in sig_str.values() do
         if dc == '_' then
           continue
         end
@@ -264,6 +264,12 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       if not has_real_digit then
         error
       end
+      // Apply exponent: each implicit trailing zero multiplies by base once.
+      var k: ILong = 0
+      while k < sig_exp do
+        _short_mul(d, base)
+        k = k + 1
+      end
       _normalize(d)
       let d2 = Array[U16](d.size())
       for x in d.values() do
@@ -271,14 +277,14 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       d2
     end
-    _negative = is_neg
+    _sign = is_neg
 
 
   new val from_ilong(n: ILong = 0) =>
     """
     Create a new arbitrary-precision integer with value `n` (default 0).
     """
-    _negative = (n < 0)
+    _sign = (n < 0)
     var q: ULong = n.abs().ulong()
     let base: ULong = _base().ulong()
     _digits = recover
@@ -296,7 +302,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Create a new arbitrary-precision integer with value `n` (default 0).
     """
-    _negative = false
+    _sign = false
     var q: ULong = n
     let base: ULong = _base().ulong()
     _digits = recover
@@ -315,7 +321,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Create a new `MPInt` from its sign `negative` and its internal array
     representation `digits`.
     """
-    _negative = negative
+    _sign = negative
     _digits = digits
 
 
@@ -324,7 +330,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     The default copy constructor, sharing internally the same numbers.
     Required by Real trait.
     """
-    _negative = value._negative
+    _sign = value._sign
     _digits = value._digits
 
 
@@ -338,10 +344,10 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     TODO: Complete implementation for better type support.
     """
-    _negative = (a.f64() < 0)
+    _sign = (a.f64() < 0)
     let base = U128.from[U32](_base())
     _digits = recover
-      var q: U128 = if _negative then
+      var q: U128 = if _sign then
         (-a).u128()
       else
         a.u128()
@@ -363,7 +369,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD.
     """
-    _negative = false
+    _sign = false
     _digits = [0]
 
 
@@ -374,7 +380,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD.
     """
-    _negative = false
+    _sign = false
     _digits = [0]
 
 
@@ -484,7 +490,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits)
+    _create(_sign, _digits)
 
 
   fun \do_not_use\ rotr(that: MPInt): MPInt =>
@@ -493,7 +499,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits)
+    _create(_sign, _digits)
 
 
   fun bit_shl(that: MPInt): MPInt =>
@@ -504,8 +510,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     The shift is decomposed into a *digit*-level shift (`that / 16`) and a
     sub-digit bit shift (`that % 16`), with carry propagation between *digits*.
     """
-    if that._negative or is_zero() then
-      return _create(_negative, _digits)
+    if that._sign or is_zero() then
+      return _create(_sign, _digits)
     end
 
     let n = that.usize()
@@ -530,7 +536,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun bit_shr(that: MPInt): MPInt =>
@@ -542,8 +548,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     The shift is decomposed into a digit-level shift (`that / 16`) and a
     sub-digit bit shift (`that % 16`), reading overlapping bits from adjacent digits.
     """
-    if that._negative or is_zero() then
-      return _create(_negative, _digits)
+    if that._sign or is_zero() then
+      return _create(_sign, _digits)
     end
 
     let n = that.usize()
@@ -568,7 +574,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       _normalize(res)
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun shl(that: MPInt): MPInt =>
@@ -615,14 +621,14 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return a new `MPInt` with value `-this`.
     """
-    _create(not _negative, _digits)
+    _create(not _sign, _digits)
 
 
   fun add(that: MPInt): MPInt =>
     """
     Return a new `MPInt` with the value `this + that`.
     """
-    if _negative == that._negative then
+    if _sign == that._sign then
       let d = recover val
         let res = Array[U16](_digits.size().max(that._digits.size()) + 1)
         for x in _digits.values() do
@@ -631,7 +637,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         _add_arrays(res, that._digits)
         res
       end
-      _create(_negative, d)
+      _create(_sign, d)
     else
       if not this._uabs_lt(that) then
         let d = recover val
@@ -642,7 +648,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
           _sub_arrays(res, that._digits)
           res
         end
-        _create(_negative, d)
+        _create(_sign, d)
       else
         let d = recover val
           let res = Array[U16](that._digits.size())
@@ -652,7 +658,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
           _sub_arrays(res, _digits)
           res
         end
-        _create(that._negative, d)
+        _create(that._sign, d)
       end
     end
 
@@ -661,7 +667,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return a new `MPInt` whose value is equal to the subtraction `this - that`.
     """
-    if _negative != that._negative then
+    if _sign != that._sign then
       let d = recover val
         let res = Array[U16](_digits.size().max(that._digits.size()) + 1)
         for x in _digits.values() do
@@ -670,7 +676,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         _add_arrays(res, that._digits)
         res
       end
-      _create(_negative, d)
+      _create(_sign, d)
     else
       if not this._uabs_lt(that) then
         let d = recover val
@@ -681,7 +687,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
           _sub_arrays(res, that._digits)
           res
         end
-        _create(_negative, d)
+        _create(_sign, d)
       else
         let d = recover val
           let res = Array[U16](that._digits.size())
@@ -691,7 +697,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
           _sub_arrays(res, _digits)
           res
         end
-        _create(not _negative, d)
+        _create(not _sign, d)
       end
     end
 
@@ -704,13 +710,13 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return MPInt.from_ilong(0)
     end
     if is_one() then
-      return _create(that._negative, that._digits)
+      return _create(that._sign, that._digits)
     end
     if is_minus_one() then
-      return _create(not that._negative, that._digits)
+      return _create(not that._sign, that._digits)
     end
     if that.is_one() then
-      return _create(_negative, _digits)
+      return _create(_sign, _digits)
     end
     if that.is_minus_one() then
       return neg()
@@ -741,7 +747,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       d2
     end
-    _create(_negative xor that._negative, d)
+    _create(_sign xor that._sign, d)
 
 
   fun fast_mul(that: MPInt): MPInt =>
@@ -756,19 +762,26 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return MPInt.from_ilong(0)
     end
     if is_one() then
-      return _create(that._negative, that._digits)
+      return _create(that._sign, that._digits)
     end
     if is_minus_one() then
-      return _create(not that._negative, that._digits)
+      return _create(not that._sign, that._digits)
     end
     if that.is_one() then
-      return _create(_negative, _digits)
+      return _create(_sign, _digits)
     end
     if that.is_minus_one() then
       return neg()
     end
 
     let pow2 = (_digits.size() + that._digits.size()).next_pow2()
+    ifdef debug then
+      try
+        Assert(pow2 <= 0x100000,
+          "[MPInt.fast_mul] Combined operand size " + pow2.string() +
+          " exceeds safe F64 precision limit (~1M base-65536 digits). Results are potentially incorrect.", false)?
+      end
+    end
     let d = recover val
       let res = Array[U16].init(0, _digits.size() + that._digits.size())
       try
@@ -815,6 +828,13 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
           carry = carry'
           k = k + 1
         end
+        ifdef debug then
+          try
+            Assert(carry == 0,
+              "[MPInt.fast_mul] FFT carry overflow: operand size exceeds safe F64 precision. Multiplication result is incorrect.",
+              false)?
+          end
+        end
       end
       _normalize(res)
       let d2 = Array[U16](res.size())
@@ -823,7 +843,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       d2
     end
-    _create(_negative xor that._negative, d)
+    _create(_sign xor that._sign, d)
 
 
   fun karatsuba_mul(that: MPInt): MPInt =>
@@ -844,29 +864,29 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     else
       let size = _digits.size().max(that._digits.size())
       let half = size / 2
-      let this_low = _create(_negative, recover
+      let this_low = _create(_sign, recover
         let d_low = Array[U16](half)
         for k in Range(0, half) do
           try d_low.push(_digits(k)?) end
         end
         d_low
       end)
-      let this_high = _create(_negative, recover
-        let d_high = Array[U16](_digits.size() - half)
+      let this_high = _create(_sign, recover
+        let d_high = Array[U16](_digits.size().max(half) - half)
         for k in Range(half, _digits.size()) do
           try d_high.push(_digits(k)?) end
         end
         d_high
       end)
-      let that_low = _create(that._negative, recover
+      let that_low = _create(that._sign, recover
         let d_low_that = Array[U16](half)
         for k in Range(0, half) do
           try d_low_that.push(that._digits(k)?) end
         end
         d_low_that
       end)
-      let that_high = _create(that._negative, recover
-        let d_high_that = Array[U16](that._digits.size() - half)
+      let that_high = _create(that._sign, recover
+        let d_high_that = Array[U16](that._digits.size().max(half) - half)
         for k in Range(half, that._digits.size()) do
           try d_high_that.push(that._digits(k)?) end
         end
@@ -892,7 +912,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return (MPInt.from_ilong(0), MPInt.from_ilong(0))
     end
     if _uabs_lt(that) then
-      return (MPInt.from_ilong(0), _create(_negative, _digits))
+      return (MPInt.from_ilong(0), _create(_sign, _digits))
     end
     
     // Division by a single digit
@@ -918,7 +938,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         let rem_val = _short_div(d_r, v0.u32())
         [rem_val.u16()]
       end
-      return (_create(_negative xor that._negative, q_digits), _create(_negative, r_val))
+      return (_create(_sign xor that._sign, q_digits), _create(_sign, r_val))
     end
     
     _divrem_alg_d(that)
@@ -1046,7 +1066,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       a
     end
 
-    (_create(_negative xor that._negative, q_digits), _create(_negative, r_digits))
+    (_create(_sign xor that._sign, q_digits), _create(_sign, r_digits))
 
 
   fun div(that: MPInt): MPInt =>
@@ -1077,7 +1097,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     See [`MPInt.fld`](#fld)
     """
     let r = rem(that)
-    if (not r.is_zero()) and (_negative xor that._negative) then
+    if (not r.is_zero()) and (_sign xor that._sign) then
       r + that
     else
       r
@@ -1090,7 +1110,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     holds where `this = quotient * that + remainder`.
     """
     (let q, let r) = divrem(y)
-    if (not r.is_zero()) and (_negative xor y._negative) then
+    if (not r.is_zero()) and (_sign xor y._sign) then
       q - MPInt.from_ilong(1)
     else
       q
@@ -1109,11 +1129,11 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     if n.is_zero() then
       return one
     end
-    if n._negative then
+    if n._sign then
       return MPInt.from_ilong(0)
     end
 
-    var base: MPInt = _create(_negative, _digits)
+    var base: MPInt = _create(_sign, _digits)
     var exp: MPInt  = n
     var result: MPInt = one
     while not exp.is_zero() do
@@ -1134,7 +1154,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     Returns 0 for negative or zero input.
     """
-    if _negative or is_zero() then
+    if _sign or is_zero() then
       return MPInt.from_ilong(0)
     end
     let one = MPInt.from_ilong(1)
@@ -1188,7 +1208,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     if exp.is_zero() then
       return one
     end
-    if exp._negative then
+    if exp._sign then
       return zero
     end
 
@@ -1470,12 +1490,12 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     // Size the BitMaps to hold both operands plus one sign bit.
     let n_bits = ((_digits.size().max(that._digits.size()) + 1) * _base_bits()) + 1
     let a = BitMap.from_u16_array(_digits, n_bits)
-    if _negative then
+    if _sign then
       a.not_in_place()
       a.increment()
     end
     let b = BitMap.from_u16_array(that._digits, n_bits)
-    if that._negative then
+    if that._sign then
       b.not_in_place()
       b.increment()
     end
@@ -1538,7 +1558,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       try res(digit_idx)? = res(digit_idx)? or (U16(1) << bit_pos) end
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun bit_clear(n: USize): MPInt =>
@@ -1547,7 +1567,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     The sign is preserved. If the bit is already 0, returns a copy.
     """
     if not bit_get(n) then
-      return _create(_negative, _digits)
+      return _create(_sign, _digits)
     end
     let digit_idx = n / _base_bits()
     let bit_pos = (n % _base_bits()).u16()
@@ -1560,7 +1580,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       _normalize(res)
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun bit_flip(n: USize): MPInt =>
@@ -1577,7 +1597,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits) // TODO
+    _create(_sign, _digits) // TODO
 
 
   fun \do_not_use\ bswap(): MPInt =>
@@ -1586,7 +1606,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     DO NOT USE THIS METHOD. NOT IMPLEMENTED.
     """
-    _create(_negative, _digits) // TODO
+    _create(_sign, _digits) // TODO
 
 
   //- Conversions -------------------------------------------------------------
@@ -1649,7 +1669,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       res = res +~ (d.i128() *~ weight)
       weight = weight *~ _base().i128()
     end
-    if _negative then
+    if _sign then
       -res
     else
       res
@@ -1682,7 +1702,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       res = res +~ (d.ilong() *~ weight)
       weight = weight *~ _base().ilong()
     end
-    if _negative then
+    if _sign then
       -res
     else
       res
@@ -1748,7 +1768,11 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       res = res +~ (d.u64() *~ weight)
       weight = weight *~ _base().u64()
     end
-    if _negative then -res else res end
+    if _sign then
+      -res
+    else
+      res
+    end
 
 
   fun u128(): U128 =>
@@ -1770,7 +1794,11 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       res = res +~ (d.u128() *~ weight)
       weight = weight *~ _base().u128()
     end
-    if _negative then -res else res end
+    if _sign then
+      -res
+    else
+      res
+    end
 
 
   fun ulong(): ULong =>
@@ -1822,7 +1850,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       res = res + (d.f64() * weight)
       weight = weight * _base().f64()
     end
-    if _negative then
+    if _sign then
       -res
     else
       res
@@ -1988,7 +2016,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       let r = _short_div(digits_ref, 10)
       result.push(r.u8() + '0')
     end
-    if _negative then
+    if _sign then
       result.push('-')
     end
     result.reverse_in_place()
@@ -2001,9 +2029,6 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return `true` when the current `MPInt` is zero.
     """
-    if _digits.size() == 0 then
-      return true
-    end
     for d in _digits.values() do
       if d != 0 then
         return false
@@ -2016,28 +2041,28 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return `true` when the current `MPInt` is one.
     """
-    (not _negative) and (_digits.size() == 1) and (try _digits(0)? == 1 else false end)
+    (not _sign) and (_digits.size() == 1) and (try _digits(0)? == 1 else false end)
 
 
   fun is_minus_one(): Bool =>
     """
     Return `true` when the current `MPInt` is minus one.
     """
-    _negative and (_digits.size() == 1) and (try _digits(0)? == 1 else false end)
+    _sign and (_digits.size() == 1) and (try _digits(0)? == 1 else false end)
 
 
   fun is_negative(): Bool =>
     """
     Return `true` when the current `MPInt` is strictly negative (< 0).
     """
-    _negative and not is_zero()
+    _sign and not is_zero()
 
 
   fun is_positive(): Bool =>
     """
     Return `true` when the current `MPInt` is strictly positive (> 0).
     """
-    (not _negative) and (not is_zero())
+    (not _sign) and (not is_zero())
 
 
   fun raw_digits(): Array[U8] val =>
@@ -2117,12 +2142,12 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       error
     end
     if f.is_zero() or (f.exponent() <= 0) then
-      _negative = false
+      _sign = false
       _digits = [0]
       return
     end
 
-    _negative = f.is_negative()
+    _sign = f.is_negative()
 
     // Number of integer bytes in the big-endian mantissa representation.
     let e: USize = f.exponent().usize()
@@ -2171,16 +2196,32 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Satisfies `Comparable[MPInt]`. All comparison operators (`<`, `<=`, `>`,
     `>=`) are derived from this method by the trait's default implementations.
     """
-    if _negative != that._negative then
+    if _sign != that._sign then
       if is_zero() and that.is_zero() then return Equal end
-      return if _negative then Less else Greater end
+      return if _sign then
+          Less
+        else
+          Greater
+        end
     end
     let u_lt = _uabs_lt(that)
     let u_eq = _uabs_eq(that)
-    if _negative then
-      if u_lt then Greater elseif u_eq then Equal else Less end
+    if _sign then
+      if u_lt then
+        Greater
+      elseif u_eq  then
+        Equal
+      else
+        Less
+      end
     else
-      if u_lt then Less elseif u_eq then Equal else Greater end
+      if u_lt then
+        Less
+      elseif u_eq then
+        Equal
+      else
+        Greater
+      end
     end
 
 
@@ -2189,7 +2230,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     `this` and `that` are equals when they have the same sign and the same
     digits (they have the same value).
     """
-    if _negative != that._negative then
+    if _sign != that._sign then
       if is_zero() and that.is_zero() then
         return true
       else
@@ -2238,7 +2279,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return a new `MPInt` that is the absolute value of `this`.
     """
-    if _negative then
+    if _sign then
       neg()
     else
       _create(false, _digits)
@@ -2250,9 +2291,9 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Return the minimum of `this` and `that`.
     """
     if this < that then
-      _create(_negative, _digits)
+      _create(_sign, _digits)
     else
-      _create(that._negative, that._digits)
+      _create(that._sign, that._digits)
     end
 
 
@@ -2261,9 +2302,9 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Return the maximum of `this` and `that`.
     """
     if this > that then
-      _create(_negative, _digits)
+      _create(_sign, _digits)
     else
-      _create(that._negative, that._digits)
+      _create(that._sign, that._digits)
     end
 
 
@@ -2271,7 +2312,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return a hash of the MPInt.
     """
-    var h: USize = if _negative then 1 else 0 end
+    var h: USize = if _sign then 1 else 0 end
     for d in _digits.values() do
       h = (h * 31) + d.usize()
     end
@@ -2575,7 +2616,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     call `digit_shl(n)` multiplies the number by `base^n`.
     """
     if is_zero() then
-      return _create(_negative, _digits)
+      return _create(_sign, _digits)
     end
     let d = recover val
       let res = Array[U16].init(0, n + _digits.size())
@@ -2584,7 +2625,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun digit_shr(n: USize): MPInt =>
@@ -2603,14 +2644,14 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       end
       res
     end
-    _create(_negative, d)
+    _create(_sign, d)
 
 
   fun dump(): String =>
     """
     Hexadecimal debug dump in digit groups used for debug.
     """
-    var s = if _negative then "-" else "+" end
+    var s = if _sign then "-" else "+" end
     for d in _digits.values() do
       s = s + "_" + Format.int[U16](d, FormatHexBare where width = _base_bits() / 4, fill = '0')
     end

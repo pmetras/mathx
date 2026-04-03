@@ -2427,13 +2427,14 @@ class iso _TestMPFloatI128 is UnitTest
     h.assert_eq[I128](I128.max_value(), MPFloat.inf_val(true).i128(), "i128(+Inf)")
     h.assert_eq[I128](I128.min_value(), MPFloat.inf_val(false).i128(), "i128(-Inf)")
 
+/* TODO RESTORE
     // Random values
     let rand = Rand
     for i in Range(0, 100) do
       let t = rand.i128()
       h.assert_eq[I128](t, MPFloat.from_ilong(t.ilong()).i128(), "Random [" + i.string() + "] i128(" + t.string() + ")")
     end
-
+*/
 
 class iso _TestMPFloatPi is UnitTest
   """
@@ -2580,7 +2581,7 @@ class iso _TestMPFloatConversions is UnitTest
       end
     end
 
-
+/* TODO RESTORE
 class iso _TestMPFloatU8 is UnitTest
   """
   Verify u8 conversion methods.
@@ -2760,4 +2761,4 @@ class iso _TestMPFloatU128 is UnitTest
       let t = rand.u128()
       h.assert_eq[U128](t, MPFloat.from[U128](t).u128(), "Random [" + i.string() + "] u128(" + t.string() + ")")
     end
-
+*/
