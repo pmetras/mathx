@@ -34,7 +34,7 @@ actor Master
     The output stream to print recaps.
     """
 
-  let _ten: MPInt = MPInt.from_ilong(10)
+  let _ten: MPInt = MPInt.from[ILong](10)
     """
     The MPInt value 10.
     """
@@ -49,12 +49,12 @@ actor Master
     Maximum number of concurrent worker actors to limit memory usage.
     """
 
-  var _current_n: MPInt = MPInt.from_ilong(1)
+  var _current_n: MPInt = MPInt.from[ILong](1)
     """
     The next N to be analyzed.
     """
 
-  var _max_n: MPInt = MPInt.from_ilong(1)
+  var _max_n: MPInt = MPInt.from[ILong](1)
     """
     The value of N that produced the maximum number of steps so far.
     """
@@ -64,17 +64,17 @@ actor Master
     The maximum number of steps found so far.
     """
 
-  var _max_val_reached: MPInt = MPInt.from_ilong(1)
+  var _max_val_reached: MPInt = MPInt.from[ILong](1)
     """
     The maximum value ever reached in any sequence so far.
     """
 
-  var _max_val_n: MPInt = MPInt.from_ilong(1)
+  var _max_val_n: MPInt = MPInt.from[ILong](1)
     """
     The value of N that led to the maximum value reached so far.
     """
 
-  var _next_power_of_10: MPInt = MPInt.from_ilong(10)
+  var _next_power_of_10: MPInt = MPInt.from[ILong](10)
     """
     The next power of 10 at which to print a recap.
     """
@@ -135,7 +135,7 @@ actor Master
     Dispatches the next batch of numbers to a new worker actor.
     """
     let start_n = _current_n
-    let end_n = _current_n + MPInt.from_ilong(_batch_size.ilong())
+    let end_n = _current_n + MPInt.from[ILong](_batch_size.ilong())
     _current_n = end_n
 
     let worker = Worker(this)
@@ -183,17 +183,17 @@ actor Worker
     The master actor to report results back to.
     """
 
-  let _one: MPInt = MPInt.from_ilong(1)
+  let _one: MPInt = MPInt.from[ILong](1)
     """
     The MPInt value 1.
     """
 
-  let _two: MPInt = MPInt.from_ilong(2)
+  let _two: MPInt = MPInt.from[ILong](2)
     """
     The MPInt value 2.
     """
 
-  let _three: MPInt = MPInt.from_ilong(3)
+  let _three: MPInt = MPInt.from[ILong](3)
     """
     The MPInt value 3.
     """

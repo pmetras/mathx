@@ -45,8 +45,8 @@ actor Main
     env.out.print("\nSerie: Fibonacci Numbers (F_n = F_{n-1} + F_{n-2})")
     let collector = StatCollector(5)
     
-    var f0 = MPInt.from_ulong(ULong.from[U64](0))
-    var f1 = MPInt.from_ulong(ULong.from[U64](1))
+    var f0 = MPInt.from[ULong](ULong.from[U64](0))
+    var f1 = MPInt.from[ULong](ULong.from[U64](1))
     
     // F_1 is 1
     collector.add_number(f1)
@@ -68,11 +68,11 @@ actor Main
     env.out.print("\nSerie: Factorials (n!)")
     let collector = StatCollector(5)
     
-    var fact = MPInt.from_ulong(ULong.from[U64](1))
+    var fact = MPInt.from[ULong](ULong.from[U64](1))
     collector.add_number(fact)
     
     for i in Range[U64](2, _terms.u64() + 1) do
-      fact = fact * MPInt.from_ulong(ULong.from[U64](i))
+      fact = fact * MPInt.from[ULong](ULong.from[U64](i))
       collector.add_number(fact)
     end
     
@@ -90,11 +90,11 @@ actor Main
       env.out.print("\nSerie: x_{n+1} = 2*x_n + 1, x_0 = " + x0_u64.string())
       let collector = StatCollector(5)
       
-      var x = MPInt.from_ulong(ULong.from[U64](x0_u64))
+      var x = MPInt.from[ULong](ULong.from[U64](x0_u64))
       collector.add_number(x)
       
-      let two = MPInt.from_ulong(ULong.from[U64](2))
-      let one = MPInt.from_ulong(ULong.from[U64](1))
+      let two = MPInt.from[ULong](ULong.from[U64](2))
+      let one = MPInt.from[ULong](ULong.from[U64](1))
       
       for _ in Range[USize](1, _terms) do
         x = (x * two) + one

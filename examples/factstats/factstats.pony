@@ -19,7 +19,7 @@ actor Main
     // Header for the table
     print_header(out)
     
-    var fact = MPInt.from_ilong(ILong.from[U64](1))
+    var fact = MPInt.from[ILong](ILong.from[U64](1))
     // total_counts(0..9) for digits, total_counts(10) for total number of digits
     let total_counts = Array[U64].init(0, 11)
     
@@ -28,7 +28,7 @@ actor Main
     
     // Loop through N = 1 to 1000
     for n in Range[U64](1, 1001) do
-      fact = fact * MPInt.from_ilong(ILong.from[U64](n))
+      fact = fact * MPInt.from[ILong](ILong.from[U64](n))
       process_fact(n, fact, total_counts, out)
       
       // Periodic summaries every 50 lines

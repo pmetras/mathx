@@ -903,16 +903,16 @@ class iso _TestMPFloatMul is UnitTest
 
       let l1 = rand.ulong()
       let l2 = rand.ulong()
-      ae(MPFloat.from_ulong(l1, p) * MPFloat.from_ulong(l2, p), MPFloat.from_mpint(MPInt.from_ulong(l1) * MPInt.from_ulong(l2)),
+      ae(MPFloat.from_ulong(l1, p) * MPFloat.from_ulong(l2, p), MPFloat.from_mpint(MPInt.from[ULong](l1) * MPInt.from[ULong](l2)),
         "Random mul from ULong " + l1.string() + " × " + l2.string())
     end
 
     // Large random integers multiplications
-    var mp1 = MPInt.from_ulong(rand.ulong())
-    var mp2 = MPInt.from_ulong(rand.ulong())
+    var mp1 = MPInt.from[ULong](rand.ulong())
+    var mp2 = MPInt.from[ULong](rand.ulong())
     for i in Range(0, 30) do
-      mp1 = mp1 * MPInt.from_ulong(rand.ulong())
-      mp2 = mp2 * MPInt.from_ulong(rand.ulong())
+      mp1 = mp1 * MPInt.from[ULong](rand.ulong())
+      mp2 = mp2 * MPInt.from[ULong](rand.ulong())
       ae(MPFloat.from_mpint(mp1, p) * MPFloat.from_mpint(mp2, p), MPFloat.from_mpint(mp1 * mp2), "Random large integers mul " + mp1.string() + " × " + mp2.string())
 
       let f1 = rand.real()
@@ -1207,45 +1207,45 @@ class iso _TestMPFloatFromMPInt is UnitTest
     }
 
     // Zero: always +0.
-    let z = MPFloat.from_mpint(MPInt.from_ilong(0), p)
+    let z = MPFloat.from_mpint(MPInt.from[ILong](0), p)
     h.assert_true(z.is_zero(),     "from_mpint(0) is zero")
     h.assert_false(z.is_negative(), "from_mpint(0) is +0")
     h.assert_false(z.is_nan(),     "from_mpint(0) is not NaN")
     h.assert_true(z.is_finite(),   "from_mpint(0) is finite")
 
     // Positive small integer: 1.
-    let one = MPFloat.from_mpint(MPInt.from_ilong(1), p)
+    let one = MPFloat.from_mpint(MPInt.from[ILong](1), p)
     h.assert_false(one.is_negative(), "from_mpint(1) is positive")
     h.assert_true(one.is_finite(),    "from_mpint(1) is finite")
     ae(one, MPFloat.from_f64(1.0, p), "from_mpint(1) ≈ 1")
 
     // Negative integer: -3.
-    let neg3 = MPFloat.from_mpint(MPInt.from_ilong(-3), p)
+    let neg3 = MPFloat.from_mpint(MPInt.from[ILong](-3), p)
     h.assert_true(neg3.is_negative(), "from_mpint(-3) is negative")
     ae(neg3, MPFloat.from_f64(-3.0, p), "from_mpint(-3) ≈ -3")
 
     // Larger integer: 1000.
-    let thou = MPFloat.from_mpint(MPInt.from_ilong(1000), p)
+    let thou = MPFloat.from_mpint(MPInt.from[ILong](1000), p)
     h.assert_false(thou.is_negative(), "from_mpint(1000) is positive")
     ae(thou, MPFloat.from_f64(1000.0, p), "from_mpint(1000) ≈ 1000")
 
     // Power-of-2: 256 and 65536.
-    ae(MPFloat.from_mpint(MPInt.from_ilong(256), p), MPFloat.from_f64(256.0, p), "from_mpint(256) = 256")
-    ae(MPFloat.from_mpint(MPInt.from_ilong(65536), p), MPFloat.from_f64(65536.0, p), "from_mpint(65536) = 65536")
+    ae(MPFloat.from_mpint(MPInt.from[ILong](256), p), MPFloat.from_f64(256.0, p), "from_mpint(256) = 256")
+    ae(MPFloat.from_mpint(MPInt.from[ILong](65536), p), MPFloat.from_f64(65536.0, p), "from_mpint(65536) = 65536")
 
     // Negative large: -65536.
-    let ni65536 = MPFloat.from_mpint(MPInt.from_ilong(-65536), p)
+    let ni65536 = MPFloat.from_mpint(MPInt.from[ILong](-65536), p)
     h.assert_true(ni65536.is_negative(), "from_mpint(-65536) is negative")
     ae(ni65536, MPFloat.from_f64(-65536.0, p), "from_mpint(-65536) ≈ -65536")
 
     // Round-trip sign: from_mpint(n).is_negative() == n.is_negative()
-    let npos = MPInt.from_ilong(42)
-    let nneg = MPInt.from_ilong(-42)
+    let npos = MPInt.from[ILong](42)
+    let nneg = MPInt.from[ILong](-42)
     h.assert_false(MPFloat.from_mpint(npos, p).is_negative(), "positive MPInt → positive MPFloat")
     h.assert_true( MPFloat.from_mpint(nneg, p).is_negative(), "negative MPInt → negative MPFloat")
 
     // Precision parameter is honoured: value must be finite and positive.
-    let big = MPFloat.from_mpint(MPInt.from_ilong(1000000), 32)
+    let big = MPFloat.from_mpint(MPInt.from[ILong](1000000), 32)
     h.assert_true(big.is_finite(),  "from_mpint(1e6, prec=32) is finite")
     h.assert_false(big.is_negative(), "from_mpint(1e6, prec=32) is positive")
     ae(big, MPFloat.from_f64(1000000.0, 32), "from_mpint(1e6, prec=32) ≈ 1e6")
@@ -1259,7 +1259,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // its string representation starts with "9".  We only verify finiteness,
     // positiveness, and that the leading digit is "9" or "1" (order-of-
     // magnitude correct).
-    let e20: MPInt = try MPInt.from_string("100000000000000000000")? else MPInt.from_ilong(0) end
+    let e20: MPInt = try MPInt.from_string("100000000000000000000")? else MPInt.from[ILong](0) end
     let fe20 = MPFloat.from_mpint(e20, p)
     h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=64 bits) is finite")
     h.assert_false(fe20.is_negative(), "from_mpint(10^20, p=64 bits) is positive")
@@ -1280,7 +1280,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // to represent all digits. With p=128 bits all 29 digits survive.
     let d29: MPInt =
       try MPInt.from_string("12345678901234567890123456789")?
-      else MPInt.from_ilong(0) end
+      else MPInt.from[ILong](0) end
     let fd29 = MPFloat.from_mpint(d29, 128)
     h.assert_true(fd29.is_finite(),    "from_mpint(29-digit) is finite")
     h.assert_false(fd29.is_negative(), "from_mpint(29-digit) is positive")
@@ -1290,7 +1290,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
 
     // Negative large: -10^20 with p=96 for sufficient precision.
     let ne20: MPInt =
-      try MPInt.from_string("-100000000000000000000")? else MPInt.from_ilong(0) end
+      try MPInt.from_string("-100000000000000000000")? else MPInt.from[ILong](0) end
     let fne20 = MPFloat.from_mpint(ne20, 96)
     h.assert_true(fne20.is_finite(),    "from_mpint(-10^20) is finite")
     h.assert_true(fne20.is_negative(),  "from_mpint(-10^20) is negative")
@@ -1301,7 +1301,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // 39-digit positive with precision of 400 bits
     let d39: MPInt =
       try MPInt.from_string("123456789012345678901234567890123456789")?
-      else MPInt.from_ilong(0) end
+      else MPInt.from[ILong](0) end
     let fd39 = MPFloat.from_mpint(d39, 400)
     h.assert_true(fd39.is_finite(),    "from_mpint(39-digit) is finite")
     h.assert_false(fd39.is_negative(), "from_mpint(39-digit) is positive")
@@ -2335,25 +2335,25 @@ class iso _TestMPFloatI64 is UnitTest
 
       // Overflow behavior (saturation like F64)
       // 2^64 + 1 saturates to I64.max_value()
-      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64))) + MPInt.from_ilong(1)
+      let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) + MPInt.from[ILong](1)
       let mp_overflow = MPFloat.from_mpint(overflow, 68)
       h.assert_eq[I64](I64.max_value(), mp_overflow.i64(), "i64(2^64 + 1) saturates")
 
       // Boundary checks around 2^63
-      let p2_63_minus_1 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(63))) - MPInt.from_ilong(1)
+      let p2_63_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](63))) - MPInt.from[ILong](1)
       h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(p2_63_minus_1, 64).i64(), "i64(2^63 - 1)")
 
-      let p2_63 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(63)))
+      let p2_63 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](63)))
       h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(p2_63, 64).i64(), "i64(2^63) saturates")
 
       let n2_63 = -p2_63
       h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(n2_63, 64).i64(), "i64(-2^63)")
 
-      let n2_63_minus_1 = n2_63 - MPInt.from_ilong(1)
+      let n2_63_minus_1 = n2_63 - MPInt.from[ILong](1)
       h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(n2_63_minus_1, 64).i64(), "i64(-2^63 - 1) saturates")
 
       // Huge values
-      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
       h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(huge).i64(), "i64(2^1000) saturates")
       h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(-huge).i64(), "i64(-2^1000) saturates")
     else
@@ -2397,25 +2397,25 @@ class iso _TestMPFloatI128 is UnitTest
 
       // Overflow behavior (saturation like F64)
       // 2^128 + 1 saturates to I128.max_value()
-      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(128))) + MPInt.from_ilong(1)
+      let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128))) + MPInt.from[ILong](1)
       let mp_overflow = MPFloat.from_mpint(overflow, 136)
       h.assert_eq[I128](I128.max_value(), mp_overflow.i128(), "i128(2^128 + 1) saturates")
 
       // Boundary checks around 2^127
-      let p2_127_minus_1 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(127))) - MPInt.from_ilong(1)
+      let p2_127_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](127))) - MPInt.from[ILong](1)
       h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(p2_127_minus_1, 128).i128(), "i128(2^127 - 1)")
 
-      let p2_127 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(127)))
+      let p2_127 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](127)))
       h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(p2_127, 128).i128(), "i128(2^127) saturates")
 
       let n2_127 = -p2_127
       h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(n2_127, 128).i128(), "i128(-2^127)")
 
-      let n2_127_minus_1 = n2_127 - MPInt.from_ilong(1)
+      let n2_127_minus_1 = n2_127 - MPInt.from[ILong](1)
       h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(n2_127_minus_1, 128).i128(), "i128(-2^127 - 1) saturates")
 
       // Huge values
-      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
       h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(huge).i128(), "i128(2^1000) saturates")
       h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(-huge).i128(), "i128(-2^1000) saturates")
     else
@@ -2671,22 +2671,22 @@ class iso _TestMPFloatU64 is UnitTest
 
       // Overflow behavior (saturation like F64)
       // 2^64 + 1 saturates to U64.max_value()
-      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64))) + MPInt.from_ilong(1)
+      let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) + MPInt.from[ILong](1)
       let mp_overflow = MPFloat.from_mpint(overflow, 68)
       h.assert_eq[U64](U64.max_value(), mp_overflow.u64(), "u64(2^64 + 1) saturates")
 
       // Boundary checks around 2^64
-      let p2_64_minus_1 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64))) - MPInt.from_ilong(1)
+      let p2_64_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) - MPInt.from[ILong](1)
       h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64_minus_1, 68).u64(), "u64(2^64 - 1)")
 
-      let p2_64 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(64)))
+      let p2_64 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64)))
       h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64, 64).u64(), "u64(2^64) max value")
 
-      let n2_64_plus_1 = p2_64 + MPInt.from_ilong(1)
+      let n2_64_plus_1 = p2_64 + MPInt.from[ILong](1)
       h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(n2_64_plus_1, 68).u64(), "u64(2^64 + 1)")
 
       // Huge values
-      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
       h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(huge).u64(), "u64(2^1000) saturates")
     else
       h.fail("MPInt arithmetic failed in tests")
@@ -2728,22 +2728,22 @@ class iso _TestMPFloatU128 is UnitTest
 
       // Overflow behavior (saturation like F64)
       // 2^128 + 1 saturates to U128.max_value()
-      let overflow = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(128))) + MPInt.from_ilong(1)
+      let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128))) + MPInt.from[ILong](1)
       let mp_overflow = MPFloat.from_mpint(overflow, 136)
       h.assert_eq[U128](U128.max_value(), mp_overflow.u128(), "u128(2^128 + 1) saturates")
 
       // Boundary checks around 2^128
-      let p2_128 = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(128)))
+      let p2_128 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128)))
       h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128, 128).u128(), "u128(2^128 saturates)")
 
-      let p2_128_minus_1 = p2_128 - MPInt.from_ilong(1)
+      let p2_128_minus_1 = p2_128 - MPInt.from[ILong](1)
       h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128_minus_1, 128).u128(), "u128(2^128 - 1)")
 
-      let p2_128_minus_2 = p2_128_minus_1 - MPInt.from_ilong(1)
+      let p2_128_minus_2 = p2_128_minus_1 - MPInt.from[ILong](1)
       h.assert_eq[U128](U128.max_value() - 1, MPFloat.from_mpint(p2_128_minus_2, 128).u128(), "u128(-2^128 - 2)")
 
       // Huge values
-      let huge = (MPInt.from_ulong(1).bit_shl(MPInt.from_ilong(1000)))
+      let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
       h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(huge).u128(), "u128(2^1000) saturates")
       h.assert_eq[U128](U128.min_value(), MPFloat.from_mpint(-huge).u128(), "u128(-2^1000) saturates")
     else

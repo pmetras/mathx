@@ -447,8 +447,8 @@ class val MPFloat
     end
 
     // Accumulators.
-    let ten_int: MPInt = MPInt.from_ilong(10)
-    var n_int: MPInt = MPInt.from_ilong(0)
+    let ten_int: MPInt = MPInt.from[ILong](10)
+    var n_int: MPInt = MPInt.from[ILong](0)
     var sig_count: USize = 0
     // int_exp: extra powers of 10 from integer digits skipped beyond sig_limit.
     var int_exp: I64 = 0
@@ -476,8 +476,8 @@ class val MPFloat
       has_digit = true
       if (d != 0) or (sig_count > 0) then
         if sig_count < sig_limit then
-          // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from_ilong(d.ilong()))
-          n_int = (n_int * ten_int) + MPInt.from_ilong(d.ilong())
+          // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from[ILong](d.ilong()))
+          n_int = (n_int * ten_int) + MPInt.from[ILong](d.ilong())
           sig_count = sig_count + 1
         else
           int_exp = int_exp + 1
@@ -508,8 +508,8 @@ class val MPFloat
         has_digit = true
         if (d != 0) or (sig_count > 0) then
           if sig_count < sig_limit then
-            // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from_ilong(d.ilong()))
-            n_int = (n_int * ten_int) + MPInt.from_ilong(d.ilong())
+            // TODO DELETE n_int = n_int.mul(ten_int).add(MPInt.from[ILong](d.ilong()))
+            n_int = (n_int * ten_int) + MPInt.from[ILong](d.ilong())
             sig_count = sig_count + 1
             frac_count = frac_count + 1
           end
@@ -645,15 +645,15 @@ class val MPFloat
           // shift_bits = extra × _base_bits − n is always positive within the threshold.
           let extra: USize = (((n * 5) + 11) / 12) + p_digits + 4
           let shift_bits: USize = (extra * _base_bits) - n
-          let five_pow: MPInt = MPInt.from_ilong(5).pow(MPInt.from_ilong(n.ilong()))
-          let n_shifted: MPInt = n_int.shl(MPInt.from_ilong(shift_bits.ilong()))
+          let five_pow: MPInt = MPInt.from[ILong](5).pow(MPInt.from[ILong](n.ilong()))
+          let n_shifted: MPInt = n_int.shl(MPInt.from[ILong](shift_bits.ilong()))
           (let q, let r) = n_shifted.divrem(five_pow)
           // Round to nearest: increment q if 2×r ≥ five_pow.
           let q_rounded: MPInt =
             // TODO DELETE if r.add(r).ge(five_pow) then
             if (r + r) >= five_pow then
-              // TODO DELETE q.add(MPInt.from_ilong(1))
-              q + MPInt.from_ilong(1)
+              // TODO DELETE q.add(MPInt.from[ILong](1))
+              q + MPInt.from[ILong](1)
             else
               q
             end
@@ -1033,19 +1033,19 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
 
     Calculations are done in `MPInt` and the results are converted to `MPFloat`
     """
-    var fact_n = MPInt.from_ulong(1)
+    var fact_n = MPInt.from[ULong](1)
     for i in Range[ULong](1, n + 1) do
-      fact_n = fact_n * MPInt.from_ulong(i)
+      fact_n = fact_n * MPInt.from[ULong](i)
     end
 
     var fact_3n = fact_n
     for i in Range[ULong](n + 1, (3 * n) + 1) do
-      fact_3n = fact_3n * MPInt.from_ulong(i)
+      fact_3n = fact_3n * MPInt.from[ULong](i)
     end
 
     var fact_6n = fact_3n
     for i in Range[ULong]((3 * n) + 1, (6 * n) + 1) do
-      fact_6n = fact_6n * MPInt.from_ulong(i)
+      fact_6n = fact_6n * MPInt.from[ULong](i)
     end
 
     (MPFloat.from_mpint(fact_n, prec, rnd), MPFloat.from_mpint(fact_3n, prec, rnd), MPFloat.from_mpint(fact_6n, prec, rnd))
@@ -1987,7 +1987,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     // all bytes as integer bytes.  MPInt.from_mpfloat truncates toward zero,
     // which for a pure-integer synthetic value gives exactly N.
     let n_float = MPFloat._create(false, false, false, prec.i64(), _digits, _rounding)
-    let n_int = try MPInt.from_mpfloat(n_float)? else MPInt.from_ilong(0) end
+    let n_int = try MPInt.from_mpfloat(n_float)? else MPInt.from[ILong](0) end
 
     let k_bytes: I64 = _exponent - prec.i64()
 
@@ -1995,7 +1995,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
       // Integer case: value = N × 2^{8 × k_bytes}
       let b: USize = k_bytes.usize() * _base_bits
       let shifted: MPInt = if b > 0 then
-          n_int.shl(MPInt.from_ilong(b.ilong()))
+          n_int.shl(MPInt.from[ILong](b.ilong()))
         else
           n_int
         end
@@ -2017,7 +2017,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     elseif (k_bytes < 0) and (k_bytes > -150) then
       // Fractional case: value = N / 2^b = N × 5^b / 10^b
       let b: USize = ((-k_bytes) * 8).usize()
-      let five_pow: MPInt = MPInt.from_ilong(5).pow(MPInt.from_ilong(b.ilong()))
+      let five_pow: MPInt = MPInt.from[ILong](5).pow(MPInt.from[ILong](b.ilong()))
       let numerator: MPInt = n_int.mul(five_pow)
       let num_str_iso: String iso = numerator.string()
       let num_len: USize = num_str_iso.size()
@@ -3323,13 +3323,13 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
 
     // Step 1: n₂₅₆ = round(x / ln256); r₁ = x − n₂₅₆ × ln(256).
     let n256_f: MPFloat = (x / ln256)._trunc(p2).round()
-    let n256: ILong = (try MPInt.from_mpfloat(n256_f)? else MPInt.from_ilong(0) end).ilong()
+    let n256: ILong = (try MPInt.from_mpfloat(n256_f)? else MPInt.from[ILong](0) end).ilong()
     let n256_mpf = MPFloat.from_f64(n256.f64(), (p2 * _base_bits).ulong(), _rounding)
     let r1: MPFloat = x.sub(n256_mpf.mul(ln256)._trunc(p2))._trunc(p2)
 
     // Step 2: n₂ = round(r₁ / ln2) ∈ {−4,…,4}; r = r₁ − n₂ × ln(2).
     let n2_f: MPFloat = (r1 / ln2)._trunc(p2).round()
-    let n2: ILong = (try MPInt.from_mpfloat(n2_f)? else MPInt.from_ilong(0) end).ilong()
+    let n2: ILong = (try MPInt.from_mpfloat(n2_f)? else MPInt.from[ILong](0) end).ilong()
     let n2_mpf = MPFloat.from_f64(n2.f64(), (p2 * _base_bits).ulong(), _rounding)
     let r: MPFloat = ((r1 - n2_mpf)  * ln2._trunc(p2))._trunc(p2)
 
@@ -3452,7 +3452,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
 
     // Negative base: only valid for integer exponents.
     if that.is_integer() then
-      let ni: ILong = (try MPInt.from_mpfloat(that)? else MPInt.from_ilong(0) end).ilong()
+      let ni: ILong = (try MPInt.from_mpfloat(that)? else MPInt.from[ILong](0) end).ilong()
       return powi(ni)
     end
     MPFloat.nan_val()
@@ -3600,8 +3600,8 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     // n = round(x / (π/2)), r = x − n × (π/2).
     let xdivph = (x / pi_half)._trunc(p2)
     let n_f = xdivph.round()
-    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from_ilong(0) end).ilong()
-    let n_mpf = MPFloat.from_mpint(MPInt.from_ilong(n), (p2 * _base_bits).ulong())
+    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from[ILong](0) end).ilong()
+    let n_mpf = MPFloat.from_mpint(MPInt.from[ILong](n), (p2 * _base_bits).ulong())
     let r = ((x - n_mpf) * pi_half)._trunc(p2)
 
     // Octant k = n mod 4, normalised to [0, 3].
@@ -3665,8 +3665,8 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     let pi_half = (pi_val / two)._trunc(p2)
 
     let n_f = (x / pi_half)._trunc(p2).round()
-    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from_ilong(0) end).ilong()
-    let n_mpf = MPFloat.from_mpint(MPInt.from_ilong(n), (p2 * _base_bits).ulong())
+    let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from[ILong](0) end).ilong()
+    let n_mpf = MPFloat.from_mpint(MPInt.from[ILong](n), (p2 * _base_bits).ulong())
     let r = ((x - n_mpf) * pi_half)._trunc(p2)
 
     let k: ILong = ((n % 4) + 4) % 4

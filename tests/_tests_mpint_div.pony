@@ -47,15 +47,15 @@ class iso _TestMPIntDivision is UnitTest
       
       // Remainder sign check (Truncated division: remainder has same sign as dividend)
       if not r.is_zero() then
-        let z = MPInt.from_ilong(0)
+        let z = MPInt.from[ILong](0)
         h.assert_true((r < z) == (a < z), "Remainder sign: sign(r) == sign(a)")
       end
     end
 
     // 2. Division by 1 and -1
     let large: MPInt = _random_mpint(rand, 100)
-    let one = MPInt.from_ilong(1)
-    let m_one = MPInt.from_ilong(-1)
+    let one = MPInt.from[ILong](1)
+    let m_one = MPInt.from[ILong](-1)
     
     (let q1, let r1) = large.divrem(one)
     h.assert_true(q1 == large, "a / 1 == a")
@@ -70,17 +70,17 @@ class iso _TestMPIntDivision is UnitTest
       let ai: I64 = rand.i64() / 2 
       let bi: I64 = (rand.i64() % 1000).abs().i64() + 1
       
-      let a: MPInt = MPInt.from_ilong(ai.ilong())
-      let b: MPInt = MPInt.from_ilong(bi.ilong())
+      let a: MPInt = MPInt.from[ILong](ai.ilong())
+      let b: MPInt = MPInt.from[ILong](bi.ilong())
       
       (let q, let r) = a.divrem(b)
-      h.assert_true(q == MPInt.from_ilong((ai / bi).ilong()), "Small div matches ILong")
-      h.assert_true(r == MPInt.from_ilong((ai % bi).ilong()), "Small rem matches ILong")
+      h.assert_true(q == MPInt.from[ILong]((ai / bi).ilong()), "Small div matches ILong")
+      h.assert_true(r == MPInt.from[ILong]((ai % bi).ilong()), "Small rem matches ILong")
     end
 
     // 4. Dividend < Divisor
     try
-      let a_small: MPInt = MPInt.from_ilong(500)
+      let a_small: MPInt = MPInt.from[ILong](500)
       let b_large: MPInt = MPInt.from_string("1000000000000000000000000")?
       (let q3, let r3) = a_small.divrem(b_large)
       h.assert_true(q3.is_zero(), "Small / Large == 0")
@@ -90,14 +90,14 @@ class iso _TestMPIntDivision is UnitTest
     end
 
     // 5. Division by zero (should not crash, follows divrem implementation)
-    let zero = MPInt.from_ilong(0)
+    let zero = MPInt.from[ILong](0)
     (let q0, let r0) = large.divrem(zero)
     h.assert_true(q0.is_zero() and r0.is_zero(), "Division by zero returns (0,0)")
 
   fun _random_mpint(rand: Rand, size: USize): MPInt =>
-    var res = MPInt.from_ilong(rand.ilong())
+    var res = MPInt.from[ILong](rand.ilong())
     for i in Range(1, size) do
-      res = res + (MPInt.from_ilong(rand.ilong()).abs().digit_shl(i))
+      res = res + (MPInt.from[ILong](rand.ilong()).abs().digit_shl(i))
     end
     if (rand.next() % 2) == 0 then
       res.neg()

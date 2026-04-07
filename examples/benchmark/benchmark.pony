@@ -270,20 +270,20 @@ actor Main
     Returns 0 for `n = 0`.
     """
     if n == 0 then
-      return MPInt.from_ilong(0)
+      return MPInt.from[ILong](0)
     end
 
     var rand = Rand(seed)
 
     // Top digit: non-zero so the result has exactly n digits.
     let top: ILong = ((rand.u64() % 65535) + 1).ilong()
-    var result: MPInt = MPInt.from_ilong(top).digit_shl(n - 1)
+    var result: MPInt = MPInt.from[ILong](top).digit_shl(n - 1)
 
     // Fill positions 0 .. n-2 with random digits.
     var k: USize = 0
     while k < (n - 1) do
       let d: ILong = (rand.u64() % 65536).ilong()
-      result = result + MPInt.from_ilong(d).digit_shl(k)
+      result = result + MPInt.from[ILong](d).digit_shl(k)
       k = k + 1
     end
 
@@ -309,7 +309,7 @@ actor Main
     // Pre-compute the decimal string for from_string (outside the hot loop).
     let a_str: String = if bench == "from_string" then a.string() else "" end
 
-    var result: MPInt = MPInt.from_ilong(0)
+    var result: MPInt = MPInt.from[ILong](0)
 
     // str_checksum accumulates a checksum for the string benchmark, which
     // does not produce an MPInt result.
@@ -354,7 +354,7 @@ actor Main
       end
     | "from_string" =>
       while k < n_iter do
-        result = try MPInt.from_string(a_str)? else MPInt.from_ilong(0) end
+        result = try MPInt.from_string(a_str)? else MPInt.from[ILong](0) end
         k = k + 1
       end
     | "pow2" =>
@@ -370,7 +370,7 @@ actor Main
     | "isqrt" =>
       // Square a and add 1 so the input is not a perfect square (exercises
       // the full Newton loop rather than allowing early exit).
-      let a2: MPInt = (a * a) + MPInt.from_ilong(1)
+      let a2: MPInt = (a * a) + MPInt.from[ILong](1)
       while k < n_iter do
         result = a2.isqrt()
         k = k + 1
