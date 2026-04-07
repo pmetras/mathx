@@ -23,6 +23,11 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [x] `divrem` single-digit path (lines 900–921) copies `_digits` twice and calls `_short_div` twice to obtain quotient and remainder independently; a single call returns both.
 [x] `is_zero()` contains an unreachable `_digits.size() == 0` guard (line 2004); the invariant guarantees `_digits.size() ≥ 1`.
 [x] `isqrt()` silently incorrect for numbers > ~10^19 digits: `bitwidth().usize()` overflows via `ilong()`, corrupting the Newton initial guess.
+[x] Make NTT really generic and not assume that `A` is `USize` or platform-dependant.
+[ ] Complete implementation of `from[A: ((Number | MPInt | MPFloat) & Real[A] val)]` for better types support.
+[x] Add `from_u64_array`, `from_u32_array` and `from_u8_array` to `BitMap` or evaluate if we can write `BitMap.from_array[A: (U8 | U16 | U32 | U64)]`. In `MPInt`, replace calls to `BitMap.from_u16_array` with `BitMap.from_u32_array`. Of course, do the same for `to_u16_array`.
+[x] Correct the `raw_digits` docstring.
+[ ] List private methods that are never used. List public methods too. Do we have synonyms? Can we reduce the API scope?
 
 ### `MPFloat`
 
@@ -49,18 +54,15 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] Option to add digit separators `_` in `exact_string`.
 [x] See if `i128`, `i64`, `i32`, `i16` and `i8` can be optimized to prevent creating a new `MPFloat`, using `I128.from_bits`.
 
-### MPInt
-[ ] Complete implementation of `from[A: ((Number | MPInt | MPFloat) & Real[A] val)]` for better types support.
-
 ### Anomalies
-[ ] What the use of `FloatingPoint` functions `ldexp` and `frexp` that seems not to use the value of `this` but the paramter `x`?
+[x] What the use of `FloatingPoint` functions `ldexp` and `frexp` that seems not to use the value of `this` but the paramter `x`?
 [ ] Boolean function `nan`, `finite` and `infinite` should be renamed `is_nan`, `is_finite` an `is_infinite` to stay consistent with usage.
 [ ] Add boolean function `is_integer` to `FloatingPoint`.
 [ ] Why are `SignedIteger.bitwidth` and `SignedInteger.bytewidth` returning different types (respectively `A` and `USize`)?
 [ ] In trait `FloatingPoint`, the methods `precision2` and `precision10` return `U8`. That type is not adapted for multiprecision types where precision can be >> 256. Should be `ULong`
 [ ] Same comment for `min_exp2`, `min_exp10`, `max_exp2` and `max_exp10` that return `U16`. Should be `ULong`
-[ ] `frexp` has a wrong signature in `F32`, `F64` and `FloatingPoint`. It is currently `frexp(): (A, U32)`. It should be `frexp(): (A, ILong)` or `frexp(): (A, I32)` using an integer for the exponent instead of an unsigned. See https://llvm.org/docs/LangRef.html#llvm-frexp-intrinsic
-[ ] `F32` and `F64` `min` implementation is not IEEE 754 compliant as it does not propagate NaN values:
+[x] `frexp` has a wrong signature in `F32`, `F64` and `FloatingPoint`. It is currently `frexp(): (A, U32)`. It should be `frexp(): (A, ILong)` or `frexp(): (A, I32)` using an integer for the exponent instead of an unsigned. See https://llvm.org/docs/LangRef.html#llvm-frexp-intrinsic
+[x] `F32` and `F64` `min` implementation is not IEEE 754 compliant as it does not propagate NaN values:
     * NaN.min(5) → returns 5
     * 5.min(NaN) → returns NaN
     * NaN.min(NaN) → returns NaN

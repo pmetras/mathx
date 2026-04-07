@@ -5,11 +5,14 @@ df = pd.read_csv('examples/benchmark/bench.csv')
 df['datetime'] = pd.to_datetime(df['ts_s'], unit='s')
 
 # Compare ns_per_iter across runs for all multiplication variants
-mul = df[df['bench'].isin(['mul', 'mul_karatsuba', 'mul_fft'])]
+mul = df[df['bench'].isin(['mul'])] #, 'mul_karatsuba', 'mul_fft', 'mul_ntt'])]
+
+mul = mul[mul['build'] == 'release']
+
 pivot = mul.pivot_table(
     values='ns_per_iter',
     index='n_digits',
-    columns=['build', 'bench', 'ts_s'],
+    columns=['build', 'bench', 'ts_s', 'comment'],
 )
 pivot.plot(logy=True, logx=True, marker='o', figsize=(10, 6))
 plt.title('MPInt multiplication: ns per iteration vs operand size')

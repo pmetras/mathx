@@ -50,8 +50,8 @@ actor Main
   | Name           | Operation           | Complexity  | Notes                       |
   |----------------|---------------------|-------------|-----------------------------|
   | `mul`          | `a * b`             | O(n²) now   | Tracks dispatch improvement |
-  | `mul_karatsuba`| `a.karatsuba_mul(b)`| O(n^1.585)  | Karatsuba algorithm         |
-  | `mul_fft`      | `a.fast_mul(b)`     | O(n log n)  | FFT; limited to ~1M digits  |
+  | `mul_karatsuba`| `a.mul_karatsuba(b)`| O(n^1.585)  | Karatsuba algorithm         |
+  | `mul_fft`      | `a.mul_fft(b)`      | O(n log n)  | FFT; limited to ~1M digits  |
   | `string`       | `a.string()`        | O(n²) now   | Decimal conversion          |
   | `from_string`  | `MPInt.from_string` | O(n²) now   | Decimal parsing             |
   | `pow2`         | `a * a`             | O(n²) now   | Squaring; proxy for `pow`   |
@@ -98,7 +98,9 @@ actor Main
     """
     let all_bench_names: Array[String] val = [
       "mul"
+      "mul_schoolbook"
       "mul_karatsuba"
+      "mul_ntt"
       "mul_fft"
       "string"
       "from_string"
@@ -226,7 +228,8 @@ actor Main
     """
     // Time guards (independent of memory).
     match bench
-    | "mul" =>
+    | "mul_schoolbook" =>
+      // mul_schoolbook is O(n²); cap at the Karatsuba dispatch threshold.
       if n > 500 then
         return "O(n²) schoolbook too slow for n > 500 (use mul_karatsuba or mul_fft)"
       end
@@ -237,8 +240,12 @@ actor Main
     end
 
     // Memory guard.
+    // mul_fft allocates two FFT arrays of next_pow2(2n) F64 values ≈ 32n bytes.
+    // mul dispatches to mul_fft for n ≥ 512, so use the same factor.
     let bytes_per_digit: U64 = match bench
       | "mul_fft" => 32
+      | "mul_ntt" => 32
+      | "mul"     => 32
       else 24
     end
     let estimated: U64 = bytes_per_digit * n.u64()
@@ -317,14 +324,24 @@ actor Main
         result = a * b
         k = k + 1
       end
+    | "mul_schoolbook" =>
+      while k < n_iter do
+        result = a.mul_schoolbook(b)
+        k = k + 1
+      end
     | "mul_karatsuba" =>
       while k < n_iter do
-        result = a.karatsuba_mul(b)
+        result = a.mul_karatsuba(b)
+        k = k + 1
+      end
+    | "mul_ntt" =>
+      while k < n_iter do
+        result = a.mul_ntt(b)
         k = k + 1
       end
     | "mul_fft" =>
       while k < n_iter do
-        result = a.fast_mul(b)
+        result = a.mul_fft(b)
         k = k + 1
       end
     | "string" =>

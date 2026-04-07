@@ -57,3 +57,200 @@ ts_s,build,bench,n_digits,n_iter,elapsed_ns,ns_per_iter,checksum,comment
 1775329986,debug,divrem,2000,5,834245,166849,1,Before optimizations
 1775329986,debug,isqrt,10,5,220153,44030,216,Before optimizations
 1775329986,debug,isqrt,100,5,12956388,2591277,48,Before optimizations
+1775332472,release,mul,10,5,5427,1085,89,Rank 1 and 5 applied
+1775332472,release,mul,100,5,318525,63705,227,Rank 1 and 5 applied
+1775332472,release,mul,500,5,5127216,1025443,72,Rank 1 and 5 applied
+1775332472,release,mul_karatsuba,10,5,3471,694,89,Rank 1 and 5 applied
+1775332472,release,mul_karatsuba,100,5,234871,46974,227,Rank 1 and 5 applied
+1775332472,release,mul_karatsuba,500,5,2908258,581651,72,Rank 1 and 5 applied
+1775332472,release,mul_karatsuba,2000,5,18499430,3699886,56,Rank 1 and 5 applied
+1775332472,release,mul_fft,10,5,23321,4664,89,Rank 1 and 5 applied
+1775332472,release,mul_fft,100,5,51977,10395,227,Rank 1 and 5 applied
+1775332472,release,mul_fft,500,5,232092,46418,72,Rank 1 and 5 applied
+1775332472,release,mul_fft,2000,5,1208082,241616,56,Rank 1 and 5 applied
+1775332472,release,string,10,5,4298,859,6,Rank 1 and 5 applied
+1775332472,release,string,100,5,302714,60542,464,Rank 1 and 5 applied
+1775332472,release,string,500,5,6772150,1354430,2399,Rank 1 and 5 applied
+1775332472,release,string,2000,5,112513991,22502798,9621,Rank 1 and 5 applied
+1775332472,release,from_string,10,5,164810,32962,216,Rank 1 and 5 applied
+1775332472,release,from_string,100,5,142923,28584,48,Rank 1 and 5 applied
+1775332472,release,from_string,500,5,2306889,461377,56,Rank 1 and 5 applied
+1775332472,release,from_string,2000,5,35896696,7179339,118,Rank 1 and 5 applied
+1775332472,release,pow2,10,5,2512,502,224,Rank 1 and 5 applied
+1775332472,release,pow2,100,5,105590,21118,211,Rank 1 and 5 applied
+1775332472,release,pow2,500,5,2697576,539515,247,Rank 1 and 5 applied
+1775332472,release,pow2,2000,5,42113007,8422601,6,Rank 1 and 5 applied
+1775332472,release,divrem,10,5,2316,463,1,Rank 1 and 5 applied
+1775332472,release,divrem,100,5,8051,1610,1,Rank 1 and 5 applied
+1775332472,release,divrem,500,5,30518,6103,1,Rank 1 and 5 applied
+1775332472,release,divrem,2000,5,120765,24153,1,Rank 1 and 5 applied
+1775332472,release,isqrt,10,5,28507,5701,216,Rank 1 and 5 applied
+1775332472,release,isqrt,100,5,923148,184629,48,Rank 1 and 5 applied
+1775332481,debug,mul,10,5,20520,4104,89,Rank 1 and 5 applied
+1775332481,debug,mul,100,5,1757626,351525,227,Rank 1 and 5 applied
+1775332481,debug,mul,500,5,17185497,3437099,72,Rank 1 and 5 applied
+1775332481,debug,mul,2000,5,8683297,1736659,56,Rank 1 and 5 applied
+1775332481,debug,mul_schoolbook,10,5,10104,2020,89,Rank 1 and 5 applied
+1775332481,debug,mul_schoolbook,100,5,815102,163020,227,Rank 1 and 5 applied
+1775332481,debug,mul_schoolbook,500,5,20225939,4045187,72,Rank 1 and 5 applied
+1775332481,debug,mul_karatsuba,10,5,10098,2019,89,Rank 1 and 5 applied
+1775332481,debug,mul_karatsuba,100,5,861727,172345,227,Rank 1 and 5 applied
+1775332481,debug,mul_karatsuba,500,5,17731230,3546246,72,Rank 1 and 5 applied
+1775332481,debug,mul_karatsuba,2000,5,123701732,24740346,56,Rank 1 and 5 applied
+1775332481,debug,mul_fft,10,5,78174,15634,89,Rank 1 and 5 applied
+1775332481,debug,mul_fft,100,5,504468,100893,227,Rank 1 and 5 applied
+1775332481,debug,mul_fft,500,5,1877500,375500,72,Rank 1 and 5 applied
+1775332481,debug,mul_fft,2000,5,8607684,1721536,56,Rank 1 and 5 applied
+1775332481,debug,string,10,5,35350,7070,6,Rank 1 and 5 applied
+1775332481,debug,string,100,5,1726943,345388,464,Rank 1 and 5 applied
+1775332481,debug,string,500,5,39891091,7978218,2399,Rank 1 and 5 applied
+1775332481,debug,string,2000,5,595660752,119132150,9621,Rank 1 and 5 applied
+1775332481,debug,from_string,10,5,206311,41262,216,Rank 1 and 5 applied
+1775332481,debug,from_string,100,5,1409646,281929,48,Rank 1 and 5 applied
+1775332481,debug,from_string,500,5,30991367,6198273,56,Rank 1 and 5 applied
+1775332481,debug,from_string,2000,5,481310751,96262150,118,Rank 1 and 5 applied
+1775332481,debug,pow2,10,5,9781,1956,224,Rank 1 and 5 applied
+1775332481,debug,pow2,100,5,869828,173965,211,Rank 1 and 5 applied
+1775332481,debug,pow2,500,5,12054516,2410903,247,Rank 1 and 5 applied
+1775332481,debug,pow2,2000,5,8419610,1683922,6,Rank 1 and 5 applied
+1775332481,debug,divrem,10,5,7815,1563,1,Rank 1 and 5 applied
+1775332481,debug,divrem,100,5,64077,12815,1,Rank 1 and 5 applied
+1775332481,debug,divrem,500,5,208818,41763,1,Rank 1 and 5 applied
+1775332481,debug,divrem,2000,5,817953,163590,1,Rank 1 and 5 applied
+1775332481,debug,isqrt,10,5,241357,48271,216,Rank 1 and 5 applied
+1775332481,debug,isqrt,100,5,12918769,2583753,48,Rank 1 and 5 applied
+1775349020,release,mul,10,5,4498,899,89,Rank 4 applied: 32-bits limbs
+1775349020,release,mul,100,5,256888,51377,227,Rank 4 applied: 32-bits limbs
+1775349020,release,mul,500,5,5859637,1171927,72,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_karatsuba,10,5,3648,729,89,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_karatsuba,100,5,237155,47431,227,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_karatsuba,500,5,3574333,714866,72,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_karatsuba,2000,5,18265809,3653161,56,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_fft,10,5,21123,4224,89,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_fft,100,5,47862,9572,227,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_fft,500,5,216115,43223,72,Rank 4 applied: 32-bits limbs
+1775349020,release,mul_fft,2000,5,1150475,230095,56,Rank 4 applied: 32-bits limbs
+1775349020,release,string,10,5,4127,825,6,Rank 4 applied: 32-bits limbs
+1775349020,release,string,100,5,322763,64552,464,Rank 4 applied: 32-bits limbs
+1775349020,release,string,500,5,6828090,1365618,2399,Rank 4 applied: 32-bits limbs
+1775349020,release,string,2000,5,107302598,21460519,9621,Rank 4 applied: 32-bits limbs
+1775349020,release,from_string,10,5,115301,23060,216,Rank 4 applied: 32-bits limbs
+1775349020,release,from_string,100,5,143294,28658,48,Rank 4 applied: 32-bits limbs
+1775349020,release,from_string,500,5,2387992,477598,56,Rank 4 applied: 32-bits limbs
+1775349020,release,from_string,2000,5,36304950,7260990,118,Rank 4 applied: 32-bits limbs
+1775349020,release,pow2,10,5,2858,571,224,Rank 4 applied: 32-bits limbs
+1775349020,release,pow2,100,5,174164,34832,211,Rank 4 applied: 32-bits limbs
+1775349020,release,pow2,500,5,2632120,526424,247,Rank 4 applied: 32-bits limbs
+1775349020,release,pow2,2000,5,41340250,8268050,6,Rank 4 applied: 32-bits limbs
+1775349020,release,divrem,10,5,2225,445,1,Rank 4 applied: 32-bits limbs
+1775349020,release,divrem,100,5,7258,1451,1,Rank 4 applied: 32-bits limbs
+1775349020,release,divrem,500,5,28323,5664,1,Rank 4 applied: 32-bits limbs
+1775349020,release,divrem,2000,5,111377,22275,1,Rank 4 applied: 32-bits limbs
+1775349020,release,isqrt,10,5,26681,5336,216,Rank 4 applied: 32-bits limbs
+1775349020,release,isqrt,100,5,917402,183480,48,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul,10,5,38750,7750,13,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul,100,5,2478097,495619,72,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul,500,5,14706821,2941364,214,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul,2000,5,19180744,3836148,202,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_schoolbook,10,5,10296,2059,13,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_schoolbook,100,5,791165,158233,72,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_schoolbook,500,5,18875330,3775066,214,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_karatsuba,10,5,9679,1935,13,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_karatsuba,100,5,855903,171180,72,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_karatsuba,500,5,18604831,3720966,214,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_karatsuba,2000,5,124379735,24875947,202,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_fft,10,5,132895,26579,13,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_fft,100,5,871854,174370,72,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_fft,500,5,4389865,877973,214,Rank 4 applied: 32-bits limbs
+1775349028,debug,mul_fft,2000,5,17829249,3565849,202,Rank 4 applied: 32-bits limbs
+1775349028,debug,string,10,5,119066,23813,109,Rank 4 applied: 32-bits limbs
+1775349028,debug,string,100,5,7899699,1579939,910,Rank 4 applied: 32-bits limbs
+1775349028,debug,string,500,5,174530304,34906060,4862,Rank 4 applied: 32-bits limbs
+1775349028,debug,string,2000,5,2547496503,509499300,19208,Rank 4 applied: 32-bits limbs
+1775349028,debug,from_string,10,5,263589,52717,216,Rank 4 applied: 32-bits limbs
+1775349028,debug,from_string,100,5,2458471,491694,48,Rank 4 applied: 32-bits limbs
+1775349028,debug,from_string,500,5,54845301,10969060,56,Rank 4 applied: 32-bits limbs
+1775349028,debug,from_string,2000,5,880493065,176098613,118,Rank 4 applied: 32-bits limbs
+1775349028,debug,pow2,10,5,9593,1918,171,Rank 4 applied: 32-bits limbs
+1775349028,debug,pow2,100,5,1392109,278421,252,Rank 4 applied: 32-bits limbs
+1775349028,debug,pow2,500,5,11791156,2358231,147,Rank 4 applied: 32-bits limbs
+1775349028,debug,pow2,2000,5,18121355,3624271,201,Rank 4 applied: 32-bits limbs
+1775349028,debug,divrem,10,5,8827,1765,1,Rank 4 applied: 32-bits limbs
+1775349028,debug,divrem,100,5,78290,15658,1,Rank 4 applied: 32-bits limbs
+1775349028,debug,divrem,500,5,259229,51845,1,Rank 4 applied: 32-bits limbs
+1775349028,debug,divrem,2000,5,981553,196310,1,Rank 4 applied: 32-bits limbs
+1775349028,debug,isqrt,10,5,230426,46085,216,Rank 4 applied: 32-bits limbs
+1775349028,debug,isqrt,100,5,19279463,3855892,48,Rank 4 applied: 32-bits limbs
+1775525438,release,mul,10,5,3774,754,13,Rank 2: NTT multiplication
+1775525438,release,mul,100,5,238295,47659,72,Rank 2: NTT multiplication
+1775525438,release,mul,500,5,3047715,609543,214,Rank 2: NTT multiplication
+1775525438,release,mul,2000,5,26294537,5258907,202,Rank 2: NTT multiplication
+1775525438,release,mul_schoolbook,10,5,1915,383,13,Rank 2: NTT multiplication
+1775525438,release,mul_schoolbook,100,5,91374,18274,72,Rank 2: NTT multiplication
+1775525438,release,mul_schoolbook,500,5,2212992,442598,214,Rank 2: NTT multiplication
+1775525438,release,mul_karatsuba,10,5,1320,264,13,Rank 2: NTT multiplication
+1775525438,release,mul_karatsuba,100,5,97201,19440,72,Rank 2: NTT multiplication
+1775525438,release,mul_karatsuba,500,5,1697557,339511,214,Rank 2: NTT multiplication
+1775525438,release,mul_karatsuba,2000,5,14058794,2811758,202,Rank 2: NTT multiplication
+1775525438,release,mul_ntt,10,5,101747,20349,13,Rank 2: NTT multiplication
+1775525438,release,mul_ntt,100,5,1432382,286476,72,Rank 2: NTT multiplication
+1775525438,release,mul_ntt,500,5,5738351,1147670,214,Rank 2: NTT multiplication
+1775525438,release,mul_ntt,2000,5,24074262,4814852,202,Rank 2: NTT multiplication
+1775525438,release,mul_fft,10,5,32446,6489,13,Rank 2: NTT multiplication
+1775525438,release,mul_fft,100,5,95800,19160,72,Rank 2: NTT multiplication
+1775525438,release,mul_fft,500,5,475753,95150,214,Rank 2: NTT multiplication
+1775525438,release,mul_fft,2000,5,2141768,428353,202,Rank 2: NTT multiplication
+1775525438,release,string,10,5,6056,1211,109,Rank 2: NTT multiplication
+1775525438,release,string,100,5,575871,115174,910,Rank 2: NTT multiplication
+1775525438,release,string,500,5,14962121,2992424,4862,Rank 2: NTT multiplication
+1775525438,release,string,2000,5,243933424,48786684,19208,Rank 2: NTT multiplication
+1775525438,release,from_string,10,5,157747,31549,216,Rank 2: NTT multiplication
+1775525438,release,from_string,100,5,249263,49852,48,Rank 2: NTT multiplication
+1775525438,release,from_string,500,5,4586164,917232,56,Rank 2: NTT multiplication
+1775525438,release,from_string,2000,5,68614737,13722947,118,Rank 2: NTT multiplication
+1775525438,release,pow2,10,5,1894,378,171,Rank 2: NTT multiplication
+1775525438,release,pow2,100,5,131058,26211,252,Rank 2: NTT multiplication
+1775525438,release,pow2,500,5,1478784,295756,147,Rank 2: NTT multiplication
+1775525438,release,pow2,2000,5,23596988,4719397,201,Rank 2: NTT multiplication
+1775525438,release,divrem,10,5,2596,519,1,Rank 2: NTT multiplication
+1775525438,release,divrem,100,5,8781,1756,1,Rank 2: NTT multiplication
+1775525438,release,divrem,500,5,42641,8528,1,Rank 2: NTT multiplication
+1775525438,release,divrem,2000,5,167651,33530,1,Rank 2: NTT multiplication
+1775525438,release,isqrt,10,5,30509,6101,216,Rank 2: NTT multiplication
+1775525438,release,isqrt,100,5,965670,193134,48,Rank 2: NTT multiplication
+1775525443,debug,mul,10,5,55226,11045,13,Rank 2: NTT multiplication
+1775525443,debug,mul,100,5,1782450,356490,72,Rank 2: NTT multiplication
+1775525443,debug,mul,500,5,16604865,3320973,214,Rank 2: NTT multiplication
+1775525443,debug,mul,2000,5,18857757,3771551,202,Rank 2: NTT multiplication
+1775525443,debug,mul_schoolbook,10,5,9469,1893,13,Rank 2: NTT multiplication
+1775525443,debug,mul_schoolbook,100,5,1331474,266294,72,Rank 2: NTT multiplication
+1775525443,debug,mul_karatsuba,10,5,15568,3113,13,Rank 2: NTT multiplication
+1775525443,debug,mul_karatsuba,100,5,1482180,296436,72,Rank 2: NTT multiplication
+1775525443,debug,mul_karatsuba,500,5,13096062,2619212,214,Rank 2: NTT multiplication
+1775525443,debug,mul_karatsuba,2000,5,126040361,25208072,202,Rank 2: NTT multiplication
+1775525443,debug,mul_ntt,10,5,2338242,467648,13,Rank 2: NTT multiplication
+1775525443,debug,mul_ntt,100,5,16260581,3252116,72,Rank 2: NTT multiplication
+1775525443,debug,mul_ntt,500,5,65710609,13142121,214,Rank 2: NTT multiplication
+1775525443,debug,mul_ntt,2000,5,276605445,55321089,202,Rank 2: NTT multiplication
+1775525443,debug,mul_fft,10,5,99647,19929,13,Rank 2: NTT multiplication
+1775525443,debug,mul_fft,100,5,1368899,273779,72,Rank 2: NTT multiplication
+1775525443,debug,mul_fft,500,5,3736786,747357,214,Rank 2: NTT multiplication
+1775525443,debug,mul_fft,2000,5,17993012,3598602,202,Rank 2: NTT multiplication
+1775525443,debug,string,10,5,84922,16984,109,Rank 2: NTT multiplication
+1775525443,debug,string,100,5,6635974,1327194,910,Rank 2: NTT multiplication
+1775525443,debug,string,500,5,160356769,32071353,4862,Rank 2: NTT multiplication
+1775525443,debug,string,2000,5,2480355983,496071196,19208,Rank 2: NTT multiplication
+1775525443,debug,from_string,10,5,609704,121940,216,Rank 2: NTT multiplication
+1775525443,debug,from_string,100,5,4208240,841648,48,Rank 2: NTT multiplication
+1775525443,debug,from_string,500,5,70671907,14134381,56,Rank 2: NTT multiplication
+1775525443,debug,from_string,2000,5,1124941708,224988341,118,Rank 2: NTT multiplication
+1775525443,debug,pow2,10,5,9519,1903,171,Rank 2: NTT multiplication
+1775525443,debug,pow2,100,5,785768,157153,252,Rank 2: NTT multiplication
+1775525443,debug,pow2,500,5,12211211,2442242,147,Rank 2: NTT multiplication
+1775525443,debug,pow2,2000,5,17531270,3506254,201,Rank 2: NTT multiplication
+1775525443,debug,divrem,10,5,9174,1834,1,Rank 2: NTT multiplication
+1775525443,debug,divrem,100,5,67106,13421,1,Rank 2: NTT multiplication
+1775525443,debug,divrem,500,5,261814,52362,1,Rank 2: NTT multiplication
+1775525443,debug,divrem,2000,5,1036586,207317,1,Rank 2: NTT multiplication
+1775525443,debug,isqrt,10,5,231160,46232,216,Rank 2: NTT multiplication
+1775525443,debug,isqrt,100,5,15897871,3179574,48,Rank 2: NTT multiplication

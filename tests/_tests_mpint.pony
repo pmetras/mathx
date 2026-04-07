@@ -277,16 +277,18 @@ class iso _TestMPIntMiscellaneous is UnitTest
     "MPInt/miscellaneous"
 
   fun apply(h: TestHelper) =>
+    // digit_shl/digit_shr operate in base 2^32 (U32 limbs).
     let one = MPInt.from_ilong(1)
-    h.assert_true(one.digit_shl(1) == MPInt.from_ilong(65536), "Shift left by 1")
-    h.assert_true(one.digit_shl(2) == MPInt.from_ilong(4294967296), "Shift left by 2")
-    h.assert_true(one.digit_shl(3) == MPInt.from_ilong(281474976710656), "Shift left by 3")
+    let zero = MPInt.from_ilong(0)
+    let base32 = MPInt.from_ilong(4294967296)  // 2^32, fits in ILong on 64-bit
+    h.assert_true(one.digit_shl(1) == base32, "Shift left by 1")
+    h.assert_true(one.digit_shl(2) == (base32 * base32), "Shift left by 2")
+    h.assert_true(one.digit_shl(3) == (base32 * base32 * base32), "Shift left by 3")
     h.assert_true(one.digit_shl(10).digit_shr(10) == one, "Shift left then right")
 
-    let one3 = MPInt.from_ilong(281474976710656)
-    let one2 = MPInt.from_ilong(4294967296)
-    let one1 = MPInt.from_ilong(65536)
-    let zero = MPInt.from_ilong(0)
+    let one3 = one.digit_shl(3)
+    let one2 = one.digit_shl(2)
+    let one1 = base32
     h.assert_true(one3.digit_shr(3) == one, "Shift right by 3")
     h.assert_true(one2.digit_shr(2) == one, "Shift right by 2")
     h.assert_true(one1.digit_shr(1) == one, "Shift right by 1")
@@ -410,7 +412,7 @@ class iso _TestMPIntKaratsuba is UnitTest
 
       let mult1 = big1 * big2
       h.log("mult1=" + mult1.dump())
-      let mult2 = big1.karatsuba_mul(big2)
+      let mult2 = big1.mul_karatsuba(big2)
       h.log("mult2=" + mult2.dump())
       h.assert_true(mult1 == mult2, "Karatsuba multiplication")
       h.log("big1 * big2 = " + big1.string() + " * " + big2.string())
@@ -425,7 +427,7 @@ class iso _TestMPIntFastMultiplication is UnitTest
   """
 
   fun name(): String =>
-    "MPInt/fast_mult"
+    "MPInt/mul_fftt"
 
   fun apply(h: TestHelper) =>
     let rand = Rand()
@@ -435,7 +437,7 @@ class iso _TestMPIntFastMultiplication is UnitTest
       let b = rand.ilong()
       let b' = MPInt.from_ilong(b)
 
-      h.assert_true((a' * b') == a'.fast_mul(b'), "Fast multiplication")
+      h.assert_true((a' * b') == a'.mul_fft(b'), "Fast multiplication")
     end
 
 
@@ -445,7 +447,7 @@ class iso _TestMPIntFastMultiplicationLarge is UnitTest
   """
 
   fun name(): String =>
-    "MPInt/fast_mul_large"
+    "MPInt/mul_fft_large"
 
   fun apply(h: TestHelper) =>
     let rand = Rand()
@@ -468,14 +470,14 @@ class iso _TestMPIntFastMultiplicationLarge is UnitTest
       end
 
       let mult1 = big1 * big2
-      let mult2 = big1.fast_mul(big2)
+      let mult2 = big1.mul_fft(big2)
       h.assert_true(mult1 == mult2, "Fast multiplication of large numbers")
     end
 
 
 class iso _TestMPIntMultiplicationComparison is UnitTest
   """
-  Compare different multiplication algorithms (Schoolbook, Karatsuba, FFT)
+  Compare different multiplication algorithms (Schoolbook, Karatsuba, FFT, NTT)
   to ensure they all produce the same results for various sizes.
   """
 
@@ -484,11 +486,11 @@ class iso _TestMPIntMultiplicationComparison is UnitTest
 
   fun apply(h: TestHelper) =>
     let rand = Rand()
-    
-    // Test sizes: 
+
+    // Test sizes:
     // - Small: 1-10 digits (Schoolbook)
     // - Medium: 150 digits (Triggers Karatsuba)
-    // - Large: 500 digits (FFT range)
+    // - Large: 500 digits (NTT/FFT range)
     let sizes: Array[USize] = [1; 10; 150; 500]
 
     for size in sizes.values() do
@@ -496,14 +498,17 @@ class iso _TestMPIntMultiplicationComparison is UnitTest
         let a = _random_mpint(rand, size)
         let b = _random_mpint(rand, size)
 
-        let res_school = a.mul(b)
-        let res_karatsuba = a.karatsuba_mul(b)
-        let res_fft = a.fast_mul(b)
+        let res_school = a.mul_schoolbook(b)
+        let res_karatsuba = a.mul_karatsuba(b)
+        let res_fft = a.mul_fft(b)
+        let res_ntt = a.mul_ntt(b)
 
-        h.assert_true(res_school == res_karatsuba, 
+        h.assert_true(res_school == res_karatsuba,
           "Schoolbook vs Karatsuba mismatch at size " + size.string())
-        h.assert_true(res_school == res_fft, 
+        h.assert_true(res_school == res_fft,
           "Schoolbook vs FFT mismatch at size " + size.string())
+        h.assert_true(res_school == res_ntt,
+          "Schoolbook vs NTT mismatch at size " + size.string())
       end
     end
 
@@ -541,40 +546,51 @@ class iso _TestMPIntMultiplicationEdgeCases is UnitTest
     h.assert_true(one.mul(large) == large)
     h.assert_true(m_one.mul(large) == large.neg())
 
-    // Tests for karatsuba_mul
-    h.assert_true(zero.karatsuba_mul(large).is_zero())
-    h.assert_true(one.karatsuba_mul(large) == large)
-    h.assert_true(m_one.karatsuba_mul(large) == large.neg())
+    // Tests for mul_karatsuba
+    h.assert_true(zero.mul_karatsuba(large).is_zero())
+    h.assert_true(one.mul_karatsuba(large) == large)
+    h.assert_true(m_one.mul_karatsuba(large) == large.neg())
 
-    // Tests for fast_mul
-    h.assert_true(zero.fast_mul(large).is_zero())
-    h.assert_true(one.fast_mul(large) == large)
-    h.assert_true(m_one.fast_mul(large) == large.neg())
+    // Tests for mul_fft
+    h.assert_true(zero.mul_fft(large).is_zero())
+    h.assert_true(one.mul_fft(large) == large)
+    h.assert_true(m_one.mul_fft(large) == large.neg())
+
+    // Tests for mul_ntt
+    h.assert_true(zero.mul_ntt(large).is_zero())
+    h.assert_true(one.mul_ntt(large) == large)
+    h.assert_true(m_one.mul_ntt(large) == large.neg())
 
     // Symmetric cases
     h.assert_true(large.mul(zero).is_zero())
-    h.assert_true(large.karatsuba_mul(zero).is_zero())
-    h.assert_true(large.fast_mul(zero).is_zero())
+    h.assert_true(large.mul_karatsuba(zero).is_zero())
+    h.assert_true(large.mul_fft(zero).is_zero())
+    h.assert_true(large.mul_ntt(zero).is_zero())
 
     h.assert_true(large.mul(one) == large)
-    h.assert_true(large.karatsuba_mul(one) == large)
-    h.assert_true(large.fast_mul(one) == large)
+    h.assert_true(large.mul_karatsuba(one) == large)
+    h.assert_true(large.mul_fft(one) == large)
+    h.assert_true(large.mul_ntt(one) == large)
 
     h.assert_true(large.mul(m_one) == large.neg())
-    h.assert_true(large.karatsuba_mul(m_one) == large.neg())
-    h.assert_true(large.fast_mul(m_one) == large.neg())
+    h.assert_true(large.mul_karatsuba(m_one) == large.neg())
+    h.assert_true(large.mul_fft(m_one) == large.neg())
+    h.assert_true(large.mul_ntt(m_one) == large.neg())
 
     // 0 * 0
     h.assert_true(zero.mul(zero).is_zero())
-    h.assert_true(zero.fast_mul(zero).is_zero())
+    h.assert_true(zero.mul_fft(zero).is_zero())
+    h.assert_true(zero.mul_ntt(zero).is_zero())
 
     // 1 * -1
     h.assert_true(one.mul(m_one) == m_one)
-    h.assert_true(one.fast_mul(m_one) == m_one)
+    h.assert_true(one.mul_fft(m_one) == m_one)
+    h.assert_true(one.mul_ntt(m_one) == m_one)
 
     // Squaring
     h.assert_true(two.mul(two) == MPInt.from_ilong(4))
-    h.assert_true(large.mul(large) == large.fast_mul(large))
+    h.assert_true(large.mul(large) == large.mul_fft(large))
+    h.assert_true(large.mul(large) == large.mul_ntt(large))
 
   fun _random_mpint(rand: Rand, size: USize): MPInt =>
     var res = MPInt.from_ilong(rand.ilong())
@@ -1378,7 +1394,7 @@ class iso _TestMPIntFromMPFloat is UnitTest
 
 class iso _TestMPIntKaratsubaAsymmetric is UnitTest
   """
-  Regression test for the karatsuba_mul USize underflow crash.
+  Regression test for the mul_karatsuba USize underflow crash.
 
   When one operand has fewer than `half = max(size_a, size_b) / 2` base-digits,
   the expression `size - half` wraps around to USize.max on unsigned subtraction,
@@ -1411,10 +1427,10 @@ class iso _TestMPIntKaratsubaAsymmetric is UnitTest
     let expected_sl = small.mul(large)
     let expected_ls = large.mul(small)
 
-    h.assert_true(small.karatsuba_mul(large) == expected_sl,
-      "karatsuba_mul: small × large matches schoolbook")
-    h.assert_true(large.karatsuba_mul(small) == expected_ls,
-      "karatsuba_mul: large × small matches schoolbook")
+    h.assert_true(small.mul_karatsuba(large) == expected_sl,
+      "mul_karatsuba: small × large matches schoolbook")
+    h.assert_true(large.mul_karatsuba(small) == expected_ls,
+      "mul_karatsuba: large × small matches schoolbook")
 
 
 class iso _TestMPIntFromStringLargeExponent is UnitTest

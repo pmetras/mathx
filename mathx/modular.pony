@@ -25,11 +25,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     ifdef debug then
       let zero = A.from[USize](0)
-      try
-        Assert(a >= zero, "[Modular.add_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.add_mod] Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.add_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.add_mod] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.add_mod] Second parameter ("; b; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.add_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     let a' = a % m
@@ -50,11 +48,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     ifdef debug then
       let zero = A.from[USize](0)
-      try
-        Assert(a >= zero, "[Modular.sub_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.sub_mod] Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.sub_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.sub_mod] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.sub_mod] Second parameter ("; b; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.sub_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     let a' = a % m
@@ -70,15 +66,12 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     Negation of `a` modulo `m`.
     """
+    let zero = A.from[USize](0)
     ifdef debug then
-      try
-        let zero = A.from[USize](0)
-        Assert(a >= zero, "[Modular.neg_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.neg_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.neg_mod] First parameter ("; a; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.neg_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
-    let zero = A.from[USize](0)
     let a' = a % m
     if a' == zero then
       zero
@@ -96,11 +89,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.mul_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.mul_mod] Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.mul_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.mul_mod] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.mul_mod] Second parameter ("; b; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.mul_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     // If a and b are small enough, we won't overflow and we can use direct
@@ -118,14 +109,16 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
       var b' = b
       while (b' > zero) do
         if ((b' % two) == one) then
-          res = (res + a') % m
+          // Use add_mod to avoid overflow when m is close to the type's max value.
+          res = Modular[A].add_mod(res, a', m)
         end
 
-        a' = (a' * two) % m
+        // Double a' modulo m using add_mod (safe for primes close to 2^bitwidth).
+        a' = Modular[A].add_mod(a', a', m)
         b' = b' / two
       end
 
-      res % m
+      res
     end
 
 
@@ -141,10 +134,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.inv_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.inv_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.inv_mod] First parameter ("; a; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.inv_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     // Initialize
@@ -186,11 +177,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.div_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.div_mod] Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.div_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.div_mod] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.div_mod] Second parameter ("; b; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.div_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     let inv = inv_mod(b, m)
@@ -211,11 +200,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.pow_mod] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.pow_mod] Second parameter (" + b.string() + ") must be positive", true)?
-        Assert(m >= zero, "[Modular.pow_mod] Modulo parameter (" + m.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.pow_mod] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.pow_mod] Second parameter ("; b; ") must be non-negative"])
+      (m >= zero) or Fail(["[Modular.pow_mod] Modulo parameter ("; m; ") must be non-negative"])
     end
 
     let one = A.from[USize](1)
@@ -261,10 +248,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.gcd] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.gcd] Second parameter (" + b.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.gcd] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.gcd] Second parameter ("; b; ") must be non-negative"])
     end
 
     (var big, var small) = if a > b then (a, b) else (b, a) end
@@ -286,10 +271,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.gcd2] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.gcd2] Second parameter (" + b.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.gcd2] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.gcd2] Second parameter ("; b; ") must be non-negative"])
     end
 
     if a == zero then
@@ -308,11 +291,10 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     let two = A.from[USize](2)
 
     while true do
+      // Invariant
       ifdef debug then
-        try
-          Assert(((u % two) == one) and ((v % two) == one), "[Modular.gcd2] u (" + u.string() +
-                ") and v (" + v.string() + ") should be odd...", true)?
-        end
+        (((u % two) == one) and ((v % two) == one)) or Fail(["[Modular.gcd2] u ("; u
+          ") and v ("; v; ") should be odd..."])
       end
     
       if u > v then
@@ -345,14 +327,11 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      try
-        Assert(a >= zero, "[Modular.lcm] First parameter (" + a.string() + ") must be positive", true)?
-        Assert(b >= zero, "[Modular.lcm] Second parameter (" + b.string() + ") must be positive", true)?
-      end
+      (a >= zero) or Fail(["[Modular.lcm] First parameter ("; a; ") must be non-negative"])
+      (b >= zero) or Fail(["[Modular.lcm] Second parameter ("; b; ") must be non-negative"])
     end
 
     if (a == zero) or (b == zero) then
       return zero
     end
     (a / gcd2(a, b)) * b
-

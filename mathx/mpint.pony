@@ -18,19 +18,21 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
   This pure Pony implementation must not be used for cryptographic applications.
 
-  A `MPInt` is represented by an array of `U16`, with the least important digit
-  in index `0`. The digits are encoded in base `65536`. Because multiplication
-  and division use a Fast Fourier Transform algorithm using `F64` values having
-  a 53 bits mantissa, this limits the size of `MPInt` (and `MPFloat`) to around
-  1e6 base-65536 digits. This should be enough for most uses of these classes.
+  A `MPInt` is represented by an array of `U32`, with the least important digit
+  in index `0`. The digits are encoded in base `4_294_967_296` (2^32). Schoolbook
+  multiplication uses native U64 products for each digit pair. The FFT
+  implementation splits each U32 digit into two U16 halves internally,
+  preserving F64 precision; this limits FFT multiplication to ~1M base-65536
+  halfwords combined (~500K U32 digits). For most uses this is sufficient.
   If you need more precision, use the GMP/MPFR implementations of `MPInt` and
   `MPFloat`.
   """
 
-  let _digits: Array[U16] val
+  let _digits: Array[U32] val
     """
-    The arbitrary-precision number encoded in base 65536 (see [`_base`](#_base)).
-    The least important digit is in index `0` (Little-Endian order).
+    The arbitrary-precision number encoded in base `4_294_967_296` (2^32) (see
+    [`_base`](#_base)). The least important digit is in index `0`
+    (Little-Endian order).
 
     Digits are encoded in reverse of traditional occidental practice, with
     the least important first. So number 1234 is encoded as `4321`, with
@@ -38,6 +40,9 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     This is the natural way for many integer operations, where having a carry
     needs only to `push` it to the array.
 
+    We use an array of `U32` digits. U32 digits allow native U64 products for
+    schoolbook multiplication. The FFT implementation splits each U32 digit into
+    two U16 halves internally, preserving F64 precision.
     Why select an array of `U16` instead of `U64` or `U32` that would be best
     fitted for modern CPU architectures? The size of a **digit** is related to
     the size of **flint**, representing integers as floats... I want to use
@@ -52,10 +57,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     represent integers (**flint**). `F64` in Pony is using iEEE-754 format and
     has a mantissa of 53 bits. Without taking into account the summation, a
     product of integers must fit into 53 bits, meaning that the integers must
-    be less than 26 bits. We can use `U16` or `U8`... I've selected `U16`.
-    If the implementation and algorithms are changed, one can consider using a
-    larger **digit**, particularly if using cyclic convolutions (see Knuth TAOCP
-    4.6.4.E59).
+    be less than 26 bits. We can use `U16` or `U8` for the FFT... I've selected `U16`.
 
     We assume that `_digits` contains at least one **digit** item. The zero
     values is coded with `_digits(0) == 0`.
@@ -68,22 +70,22 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
 
 
-  fun tag _base(): U32 =>
+  fun tag _base(): U64 =>
     """
     The base used to encode the 'digits' of `MPInt` numbers. The digits are
-    coded as `U16` giving a `2^16` base.
+    coded as `U32` giving a `2^32` base.
     """
-    65536
+    0x1_0000_0000
 
 
   fun tag _base_bits(): USize =>
     """
     The number of bits in a `MPInt` 'digit'.
     """
-    16
+    32
 
 
-  new val _create(negative: Bool, digits: Array[U16] val) =>
+  new val _create(sign: Bool, digits: Array[U32] val) =>
     """
     Private constructor for sharing digits arrays.
     """
@@ -92,7 +94,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _sign = if (digits.size() == 1) and (try digits(0)? == 0 else false end) then
       false
     else
-      negative
+      sign
     end
 
 
@@ -236,7 +238,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
     _digits = recover
-      let d: Array[U16] ref = [0]
+      let d: Array[U32] ref = [0]
       var has_real_digit = false
       for dc in sig_str.values() do
         if dc == '_' then
@@ -271,7 +273,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         k = k + 1
       end
       _normalize(d)
-      let d2 = Array[U16](d.size())
+      let d2 = Array[U32](d.size())
       for x in d.values() do
         d2.push(x)
       end
@@ -288,12 +290,12 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     var q: ULong = n.abs().ulong()
     let base: ULong = _base().ulong()
     _digits = recover
-      let d: Array[U16] iso = Array[U16]
+      let d: Array[U32] iso = Array[U32]
       while q >= base do
         (q, let r) = q.divrem(base)
-        d.push(r.u16())
+        d.push(r.u32())
       end
-      d.push(q.u16())
+      d.push(q.u32())
       consume d
     end
 
@@ -306,22 +308,22 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     var q: ULong = n
     let base: ULong = _base().ulong()
     _digits = recover
-      let d: Array[U16] iso = Array[U16]
+      let d: Array[U32] iso = Array[U32]
       while q >= base do
         (q, let r) = q.divrem(base)
-        d.push(r.u16())
+        d.push(r.u32())
       end
-      d.push(q.u16())
+      d.push(q.u32())
       consume d
     end
 
 
-  new val _from_array(negative: Bool, digits: Array[U16] val) =>
+  new val _from_array(sign: Bool, digits: Array[U32] val) =>
     """
-    Create a new `MPInt` from its sign `negative` and its internal array
+    Create a new `MPInt` from its `sign` and its internal array
     representation `digits`.
     """
-    _sign = negative
+    _sign = sign
     _digits = digits
 
 
@@ -345,19 +347,19 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     TODO: Complete implementation for better type support.
     """
     _sign = (a.f64() < 0)
-    let base = U128.from[U32](_base())
+    let base: U128 = _base().u128()
     _digits = recover
       var q: U128 = if _sign then
         (-a).u128()
       else
         a.u128()
       end
-      let d: Array[U16] iso = Array[U16]
+      let d: Array[U32] iso = Array[U32]
       while q >= base do
         (q, let r) = q.divrem(base)
-        d.push(r.u16())
+        d.push(r.u32())
       end
-      d.push(q.u16())
+      d.push(q.u32())
       consume d
     end
 
@@ -518,21 +520,21 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     let digit_shift = n / _base_bits()
     let bit_shift = n % _base_bits()
     let d = recover val
-      let res = Array[U16](_digits.size() + digit_shift + 1)
+      let res = Array[U32](_digits.size() + digit_shift + 1)
       // Zero-fill the low digits
       for _ in Range(0, digit_shift) do
         res.push(0)
       end
 
       // Shift each digit left, propagating carry
-      var carry: U32 = 0
+      var carry: U64 = 0
       for digit in _digits.values() do
-        let v = (digit.u32() << bit_shift.u32()) or carry
-        res.push(v.u16())
-        carry = v >> 16
+        let v = (digit.u64() << bit_shift.u64()) or carry
+        res.push(v.u32())
+        carry = v >> _base_bits().u64()
       end
       if carry > 0 then
-        res.push(carry.u16())
+        res.push(carry.u32())
       end
       res
     end
@@ -561,11 +563,11 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     let new_size = _digits.size() - digit_shift
     let d = recover val
-      let res = Array[U16](new_size)
+      let res = Array[U32](new_size)
       for i in Range(0, new_size) do
-        let lo: U16 = try _digits(i + digit_shift)? >> bit_shift.u16() else 0 end
-        let hi: U16 = if (bit_shift > 0) and ((i + digit_shift + 1) < _digits.size()) then
-          try (_digits(i + digit_shift + 1)? << (16 - bit_shift).u16()) else 0 end
+        let lo: U32 = try _digits(i + digit_shift)? >> bit_shift.u32() else 0 end
+        let hi: U32 = if (bit_shift > 0) and ((i + digit_shift + 1) < _digits.size()) then
+          try (_digits(i + digit_shift + 1)? << (32 - bit_shift).u32()) else 0 end
         else
           0
         end
@@ -630,7 +632,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     if _sign == that._sign then
       let d = recover val
-        let res = Array[U16](_digits.size().max(that._digits.size()) + 1)
+        let res = Array[U32](_digits.size().max(that._digits.size()) + 1)
         for x in _digits.values() do
           res.push(x)
         end
@@ -641,7 +643,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     else
       if not this._uabs_lt(that) then
         let d = recover val
-          let res = Array[U16](_digits.size())
+          let res = Array[U32](_digits.size())
           for x in _digits.values() do
             res.push(x)
           end
@@ -651,7 +653,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         _create(_sign, d)
       else
         let d = recover val
-          let res = Array[U16](that._digits.size())
+          let res = Array[U32](that._digits.size())
           for x in that._digits.values() do
             res.push(x)
           end
@@ -669,7 +671,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     if _sign != that._sign then
       let d = recover val
-        let res = Array[U16](_digits.size().max(that._digits.size()) + 1)
+        let res = Array[U32](_digits.size().max(that._digits.size()) + 1)
         for x in _digits.values() do
           res.push(x)
         end
@@ -680,7 +682,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     else
       if not this._uabs_lt(that) then
         let d = recover val
-          let res = Array[U16](_digits.size())
+          let res = Array[U32](_digits.size())
           for x in _digits.values() do
             res.push(x)
           end
@@ -690,7 +692,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         _create(_sign, d)
       else
         let d = recover val
-          let res = Array[U16](that._digits.size())
+          let res = Array[U32](that._digits.size())
           for x in that._digits.values() do
             res.push(x)
           end
@@ -704,7 +706,60 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
   fun mul(that: MPInt): MPInt =>
     """
-    Multiply `this` by `that` and return a new `MPInt`.
+    Multiply `this` by `that`, automatically selecting the best algorithm
+    based on the size of the larger operand (in base-2^32 digits):
+
+    - `mul_schoolbook` O(n²) for n ≤ 32 digits (1024 bits): fastest for small
+      operands due to cache efficiency and zero dispatch overhead.
+    - `mul_karatsuba` O(n^1.585) for 32 < n ≤ 512 digits: 5–15× faster than
+      schoolbook at 150-digit operands.
+    - `mul_fft` O(n log n) for n > 512 digits: using FFT but switches to NTT
+      when the precision of the product can produce errors (around ~1 million
+      digits).
+    - `mul_ntt` O(n log n) for n > 512 digits: exact NTT-based multiplication
+      using the 64-bit prime p = 2^64 − 2^32 + 1. No floating-point rounding;
+      unlimited operand size.
+
+    The dispatch thresholds are empirical starting points derived from GMP's
+    published values. Tune them with the benchmark suite in `examples/benchmark/`.
+
+    `mul_schoolbook`, `mul_karatsuba`, `mul_ntt`, and `mul_fft` remain public
+    for direct access in benchmarks and specialised client code.
+    """
+    // Schoolbook → Karatsuba threshold: 32 base-2^32 digits (1024 bits).
+    // Based on GMP MPN_KARA_THRESHOLD ≈ 20–40 32-bit limbs.
+    // Must match the base-case threshold inside `mul_karatsuba`.
+    let kara_thresh: USize = 32
+    // Karatsuba → FFT threshold: 512 base-2^32 digits (≈ 5000 decimal digits).
+    // Based on GMP MPN_FFT_THRESHOLD ≈ 1200 32-bit limbs.
+    // FFT is faster than NTT, and we already have the code, but FFT has a limited
+    // precision and NTT must take over when a dynamic threshold is reached.
+    let fft_thresh: USize = 512
+    let n: USize = _digits.size().max(that._digits.size())
+    if n <= kara_thresh then
+      mul_schoolbook(that)
+    elseif n < fft_thresh then
+      mul_karatsuba(that)
+    else // FFT or NTT?
+      // Over ~1 million digits, NTT takes over
+      let pow2 = ((_digits.size() + that._digits.size()) * 2).next_pow2()
+      if pow2 <= 0x100000 then
+        mul_fft(that)
+      else
+        mul_ntt(that)
+      end
+    end
+
+
+  fun mul_schoolbook(that: MPInt): MPInt =>
+    """
+    Multiply `this` by `that` using the O(n²) schoolbook algorithm.
+
+    Iterates over every pair of digits accumulating partial products with
+    carry propagation. Optimal for small operands (≤ 32 base-65536 digits /
+    512 bits) where cache efficiency outweighs asymptotically-faster methods.
+
+    For larger operands, prefer `mul` which dispatches automatically.
     """
     if is_zero() or that.is_zero() then
       return MPInt.from_ilong(0)
@@ -723,40 +778,46 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
     let d = recover val
-      let res = Array[U16].init(0, _digits.size() + that._digits.size())
+      let res = Array[U32].init(0, _digits.size() + that._digits.size())
       var i: USize = 0
       while i < _digits.size() do
-        var carry: U32 = 0
+        var carry: U64 = 0
         var j: USize = 0
         try
           while j < that._digits.size() do
-            let m = (_digits(i)?.u32() * that._digits(j)?.u32()) +
-                    res(i + j)?.u32() + carry
-            carry = m >> _base_bits().u32()
-            res.update(i + j, m.u16())?
+            let m: U64 = (_digits(i)?.u64() * that._digits(j)?.u64()) +
+                    res(i + j)?.u64() + carry
+            carry = m >> 32
+            res.update(i + j, m.u32())?
             j = j + 1
           end
-          res.update(i + that._digits.size(), carry.u16())?
+          res.update(i + that._digits.size(), carry.u32())?
         end
         i = i + 1
       end
       _normalize(res)
-      let d2 = Array[U16](res.size())
-      for x in res.values() do
-        d2.push(x)
-      end
-      d2
+      consume res
     end
     _create(_sign xor that._sign, d)
 
 
-  fun fast_mul(that: MPInt): MPInt =>
+  fun mul_fft(that: MPInt): MPInt =>
     """
-    Fast multiplication of `this` and `that` using FFT. The result has a size
-    of `this.size() + that.size()`.
+    Multiply `this` by `that` using the FFT-based Schönhage–Strassen algorithm.
 
-    See Knuth TAOCP 4.3.3.C
-    Why is it fast? See https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm
+    Packs base-65536 digits into `F64` arrays, applies the real-to-complex FFT
+    (Knuth TAOCP §4.3.3.C), performs pointwise complex multiplication in the
+    frequency domain, then inverse-transforms and carry-propagates back to
+    base-65536 digits.
+
+    Safe for operands up to ~1M base-65536 digits combined (limited by F64
+    mantissa precision). A debug assertion fires if that limit is exceeded.
+    For unlimited-precision multiplication, use `mul_ntt` or `mul` (which
+    dispatches to `mul_ntt` automatically for large operands).
+
+    For most code, prefer `mul` which dispatches automatically.
+
+    Reference: https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm
     """
     if is_zero() or that.is_zero() then
       return MPInt.from_ilong(0)
@@ -774,130 +835,232 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return neg()
     end
 
-    let pow2 = (_digits.size() + that._digits.size()).next_pow2()
+    // Internally use base-65536 (U16) representation for FFT precision.
+    // Each U32 digit is split into lo-halfword and hi-halfword.
+    let a_u16_size: USize = _digits.size() * 2
+    let b_u16_size: USize = that._digits.size() * 2
+    let pow2 = (a_u16_size + b_u16_size).next_pow2()
     ifdef debug then
-      try
-        Assert(pow2 <= 0x100000,
-          "[MPInt.fast_mul] Combined operand size " + pow2.string() +
-          " exceeds safe F64 precision limit (~1M base-65536 digits). Results are potentially incorrect.", false)?
-      end
+      (pow2 <= 0x100000) or Fail(["[MPInt.mul_fft] Combined operand size "; pow2
+        " exceeds safe F64 precision limit (~1M base-65536 halfwords). Results are potentially incorrect."])
     end
     let d = recover val
-      let res = Array[U16].init(0, _digits.size() + that._digits.size())
+      let res = Array[U32].init(0, _digits.size() + that._digits.size())
       try
         var a = Array[F64].init(0, pow2)
         var i: USize = 0
         for x in _digits.values() do
-          a.update(i, x.f64())?
+          a.update((2 * i),     (x and 0xFFFF).f64())?
+          a.update((2 * i) + 1, (x >> 16).f64())?
           i = i + 1
         end
-        
+
         var b = Array[F64].init(0, pow2)
         i = 0
         for x in that._digits.values() do
-          b.update(i, x.f64())?
+          b.update((2 * i),     (x and 0xFFFF).f64())?
+          b.update((2 * i) + 1, (x >> 16).f64())?
           i = i + 1
         end
 
         FFT.fourier_real(a)
         FFT.fourier_real(b)
-        
-        // Complex multiplication in packed format:
-        // F(0) and F(N/2) are real and stored in b(0) and b(1)
+
+        // Complex multiplication in packed format
         b.update(0, b(0)? * a(0)?)?
         b.update(1, b(1)? * a(1)?)?
         i = 2
         while i < pow2 do
           let ar = a(i)?
-          let ai = a(i+1)?
+          let ai = a(i + 1)?
           let br = b(i)?
-          let bi = b(i+1)?
-          b.update(i, (ar * br) - (ai * bi))?
-          b.update(i+1, (ar * bi) + (ai * br))?
+          let bi = b(i + 1)?
+          b.update(i,     (ar * br) - (ai * bi))?
+          b.update(i + 1, (ar * bi) + (ai * br))?
           i = i + 2
         end
         FFT.fourier_real(b, true)
 
+        // Carry propagation in base 65536; pack U16 pairs into U32 result digits.
         var carry: F64 = 0
+        let base16: F64 = 65536.0
+        let n_u16 = a_u16_size + b_u16_size
         var k: USize = 0
-        let base: F64 = _base().f64()
-        while k < res.size() do
-          let temp = b(k)? + carry + 0.5
-          let carry' = (temp / base).trunc()
-          res.update(k, (temp - (carry' * base)).u16())?
-          carry = carry'
-          k = k + 1
+        while k < n_u16 do
+          // Low halfword
+          let t0 = (if k < pow2 then b(k)? else 0.0 end) + carry + 0.5
+          let q0 = (t0 / base16).trunc()
+          let lo: U32 = (t0 - (q0 * base16)).u32()
+          carry = q0
+          // High halfword
+          let t1 = (if (k + 1) < pow2 then b(k + 1)? else 0.0 end) + carry + 0.5
+          let q1 = (t1 / base16).trunc()
+          let hi: U32 = (t1 - (q1 * base16)).u32()
+          carry = q1
+          res.update(k / 2, lo or (hi << 16))?
+          k = k + 2
         end
-        ifdef debug then
-          try
-            Assert(carry == 0,
-              "[MPInt.fast_mul] FFT carry overflow: operand size exceeds safe F64 precision. Multiplication result is incorrect.",
-              false)?
-          end
+        // Invariant
+        try
+          Fact(carry == 0, "[MPInt.mul_fft] FFT carry overflow: operand size exceeds safe F64 precision. Multiplication result is incorrect.")?
         end
       end
       _normalize(res)
-      let d2 = Array[U16](res.size())
-      for x in res.values() do
-        d2.push(x)
-      end
-      d2
+      consume res
     end
     _create(_sign xor that._sign, d)
 
 
-  fun karatsuba_mul(that: MPInt): MPInt =>
+  fun mul_ntt(that: MPInt): MPInt =>
     """
-    Multiply `this` by `that`using the
-    [Karatsuba algorithm](https://en.wikipedia.org/wiki/Karatsuba_algorithm).
-    This algorith uses a recursive divide and conquer approach that requires
-    creating new temporary `MPInt`. It reduces the multiplication of two n-
-    digits numbers to 3 multiplications of n/2-digits, and by recursion
-    providing at the limit O(n^log2(3)) operations.
+    Multiply `this` by `that` using the Number-Theoretic Transform (NTT).
 
-    The Karatsuba multiplication triggers only when the numbers are more
-    than 2048-bits long (128 base-digits). When the size is less than that
-    limit, classical `mul` multiplication is used.
+    Splits each U32 digit into two U16 half-words, applies the NTT over
+    Z/p where p = 2^64 − 2^32 + 1 (a 64-bit NTT-friendly prime), performs
+    pointwise multiplication modulo p, inverse-transforms, and
+    carry-propagates the exact integer coefficients back to base-2^32 digits.
+
+    Unlike `mul_fft`, the NTT is exact (no floating-point rounding errors)
+    and supports operands of arbitrary size. The maximum convolution
+    coefficient per output position is n_u16 × 65535² where
+    n_u16 = 2×(|a| + |b|). This stays below p for operands up to ~2^31
+    digits (≈ 64 billion bits), which is beyond any practical use.
+
+    For most code, prefer `mul` which dispatches automatically.
     """
-    if (_digits.size() <= 128) or (that._digits.size() <= 128) then
-      mul(that)
-    else
-      let size = _digits.size().max(that._digits.size())
-      let half = size / 2
-      let this_low = _create(_sign, recover
-        let d_low = Array[U16](half)
-        for k in Range(0, half) do
-          try d_low.push(_digits(k)?) end
-        end
-        d_low
-      end)
-      let this_high = _create(_sign, recover
-        let d_high = Array[U16](_digits.size().max(half) - half)
-        for k in Range(half, _digits.size()) do
-          try d_high.push(_digits(k)?) end
-        end
-        d_high
-      end)
-      let that_low = _create(that._sign, recover
-        let d_low_that = Array[U16](half)
-        for k in Range(0, half) do
-          try d_low_that.push(that._digits(k)?) end
-        end
-        d_low_that
-      end)
-      let that_high = _create(that._sign, recover
-        let d_high_that = Array[U16](that._digits.size().max(half) - half)
-        for k in Range(half, that._digits.size()) do
-          try d_high_that.push(that._digits(k)?) end
-        end
-        d_high_that
-      end)
-
-      let z2 = this_high.karatsuba_mul(that_high)
-      let z0 = this_low.karatsuba_mul(that_low)
-      let z1 = (this_low + this_high).karatsuba_mul(that_low + that_high) - z2 - z0
-      z2.digit_shl(2 * half) + z1.digit_shl(half) + z0
+    if is_zero() or that.is_zero() then
+      return MPInt.from_ilong(0)
     end
+    if is_one() then
+      return _create(that._sign, that._digits)
+    end
+    if is_minus_one() then
+      return _create(not that._sign, that._digits)
+    end
+    if that.is_one() then
+      return _create(_sign, _digits)
+    end
+    if that.is_minus_one() then
+      return neg()
+    end
+
+    // Split each U32 digit into two U16 half-words for NTT convolution.
+    let a_u16_size: USize = _digits.size() * 2
+    let b_u16_size: USize = that._digits.size() * 2
+    let pow2 = (a_u16_size + b_u16_size).next_pow2()
+
+    let d = recover val
+      let res = Array[U32].init(0, _digits.size() + that._digits.size())
+      try
+        let ntt = NTT[U64]
+        let p = ntt._p()
+
+        // Load this operand as U16 half-words into a_ntt.
+        var a_ntt = Array[U64].init(0, pow2)
+        var ai: USize = 0
+        for xa in _digits.values() do
+          a_ntt.update((2 * ai),     (xa and 0xFFFF).u64())?
+          a_ntt.update((2 * ai) + 1, (xa >> 16).u64())?
+          ai = ai + 1
+        end
+
+        // Load that operand as U16 half-words into b_ntt.
+        var b_ntt = Array[U64].init(0, pow2)
+        var bi: USize = 0
+        for xb in that._digits.values() do
+          b_ntt.update((2 * bi),     (xb and 0xFFFF).u64())?
+          b_ntt.update((2 * bi) + 1, (xb >> 16).u64())?
+          bi = bi + 1
+        end
+
+        // Forward NTT, pointwise multiply mod p, inverse NTT.
+        ntt.transform(a_ntt, false)
+        ntt.transform(b_ntt, false)
+
+        var pi2: USize = 0
+        while pi2 < pow2 do
+          b_ntt.update(pi2, Modular[U64].mul_mod(a_ntt(pi2)?, b_ntt(pi2)?, p))?
+          pi2 = pi2 + 1
+        end
+
+        ntt.transform(b_ntt, true)
+
+        // Carry-propagate in base 65536; pack U16 pairs back into U32 digits.
+        var carry: U64 = 0
+        let base16: U64 = 65536
+        let n_u16 = a_u16_size + b_u16_size
+        var k: USize = 0
+        while k < n_u16 do
+          let t0 = (if k < pow2 then b_ntt(k)? else 0 end) + carry
+          let lo: U32 = (t0 % base16).u32()
+          carry = t0 / base16
+          let t1 = (if (k + 1) < pow2 then b_ntt(k + 1)? else 0 end) + carry
+          let hi: U32 = (t1 % base16).u32()
+          carry = t1 / base16
+          res.update(k / 2, lo or (hi << 16))?
+          k = k + 2
+        end
+      end
+      _normalize(res)
+      consume res
+    end
+    _create(_sign xor that._sign, d)
+
+
+  fun mul_karatsuba(that: MPInt): MPInt =>
+    """
+    Multiply `this` by `that` using the
+    [Karatsuba algorithm](https://en.wikipedia.org/wiki/Karatsuba_algorithm).
+
+    Splits each operand at the midpoint and computes three half-size products
+    instead of four, giving O(n^log₂3 ≈ 1.585) complexity. Significantly
+    faster than schoolbook for operands above ~32 base-65536 digits (512 bits).
+
+    The base case falls back to `mul_schoolbook` when either operand is
+    ≤ 32 digits (the same threshold used by the `mul` dispatcher). For most
+    code, prefer `mul` which dispatches automatically.
+
+    Reference: https://en.wikipedia.org/wiki/Karatsuba_algorithm
+    """
+    // Base case: both operands must exceed 32 digits to benefit from Karatsuba.
+    // This threshold matches the kara_thresh constant in `mul`.
+    if (_digits.size() <= 32) or (that._digits.size() <= 32) then
+      return mul_schoolbook(that)
+    end
+    let size = _digits.size().max(that._digits.size())
+    let half = size / 2
+    let this_low = _create(_sign, recover
+      let d_low = Array[U32](half)
+      for k in Range(0, half) do
+        try d_low.push(_digits(k)?) end
+      end
+      d_low
+    end)
+    let this_high = _create(_sign, recover
+      let d_high = Array[U32](_digits.size().max(half) - half)
+      for k in Range(half, _digits.size()) do
+        try d_high.push(_digits(k)?) end
+      end
+      d_high
+    end)
+    let that_low = _create(that._sign, recover
+      let d_low_that = Array[U32](half)
+      for k in Range(0, half) do
+        try d_low_that.push(that._digits(k)?) end
+      end
+      d_low_that
+    end)
+    let that_high = _create(that._sign, recover
+      let d_high_that = Array[U32](that._digits.size().max(half) - half)
+      for k in Range(half, that._digits.size()) do
+        try d_high_that.push(that._digits(k)?) end
+      end
+      d_high_that
+    end)
+    let z2 = this_high.mul_karatsuba(that_high)
+    let z0 = this_low.mul_karatsuba(that_low)
+    let z1 = (this_low + this_high).mul_karatsuba(that_low + that_high) - z2 - z0
+    z2.digit_shl(2 * half) + z1.digit_shl(half) + z0
 
 
   //- Division ----------------------------------------------------------------
@@ -919,24 +1082,24 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     if that._digits.size() == 1 then
       let v0 = try that._digits(0)? else 1 end
       let q_digits = recover val
-        let d_q = Array[U16](_digits.size())
+        let d_q = Array[U32](_digits.size())
         for x in _digits.values() do
           d_q.push(x)
         end
-        _short_div(d_q, v0.u32())
-        let d2_q = Array[U16](d_q.size())
+        _short_div(d_q, v0)
+        let d2_q = Array[U32](d_q.size())
         for x in d_q.values() do
           d2_q.push(x)
         end
         d2_q
       end
       let r_val = recover val
-        let d_r = Array[U16](_digits.size())
+        let d_r = Array[U32](_digits.size())
         for x in _digits.values() do
           d_r.push(x)
         end
-        let rem_val = _short_div(d_r, v0.u32())
-        [rem_val.u16()]
+        let rem_val = _short_div(d_r, v0)
+        [rem_val]
       end
       return (_create(_sign xor that._sign, q_digits), _create(_sign, r_val))
     end
@@ -950,21 +1113,21 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     TAOCP Vol 2, 4.3.1.
     """
     // Constants
-    let base2: U32 = _base() / 2
-    let base: U64 = _base().u64()
+    let base2: U32 = (_base() / 2).u32()
+    let base: U64 = _base()
 
     // Step D1: Normalize
     let v_high = try that._digits(that._digits.size() - 1)? else 0 end
     var s_shift: U32 = 0
-    var v_h = v_high.u32()
+    var v_h: U32 = v_high
     while v_h < base2 do
       v_h = v_h << 1
       s_shift = s_shift + 1
     end
     let d_val: U32 = U32(1) << s_shift
 
-    let u_ref: Array[U16] iso = recover iso
-      let a: Array[U16] = Array[U16].create(_digits.size() + 1)
+    let u_ref: Array[U32] iso = recover iso
+      let a: Array[U32] = Array[U32].create(_digits.size() + 1)
       for x in _digits.values() do a.push(x) end
       _short_mul(a, d_val)
       if a.size() == _digits.size() then
@@ -973,8 +1136,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       a
     end
 
-    let v_ref: Array[U16] = recover
-      let a: Array[U16] = Array[U16].create(that._digits.size())
+    let v_ref: Array[U32] = recover
+      let a: Array[U32] = Array[U32].create(that._digits.size())
       for x in that._digits.values() do a.push(x) end
       _short_mul(a, d_val)
       a
@@ -982,13 +1145,13 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     let n_val: USize = v_ref.size()
     let m_val: USize = u_ref.size() - n_val - 1
-    let q_ref: Array[U16] iso = recover iso Array[U16].init(0, m_val + 1) end
+    let q_ref: Array[U32] iso = recover iso Array[U32].init(0, m_val + 1) end
 
     let v_n_1: U64 = try v_ref(n_val - 1)?.u64() else 0 end
     let v_n_2: U64 = try v_ref(n_val - 2)?.u64() else 0 end
 
     let shift = _base_bits().u64()
-    let mask = _base().i64() - 1
+    let mask: I64 = (_base() - 1).i64()
 
     // Step D2: Loop on j
     var j_idx: USize = m_val
@@ -1017,43 +1180,44 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
         // Step D4: Multiply and subtract
         var borrow: I64 = 0
         for i_sub in Range(0, n_val) do
-          let p = q_hat * v_ref(i_sub)?.u64()
-          let sub_res: I64 = u_ref(j_idx + i_sub)?.i64() - (p.i64() and mask) - borrow
-          u_ref.update(j_idx + i_sub, (sub_res and mask).u16())?
-          borrow = (p.i64() >> shift) - (sub_res >> shift)
+          let p: U64 = q_hat * v_ref(i_sub)?.u64()
+          let p_lo: I64 = (p and mask.u64()).i64()
+          let sub_res: I64 = u_ref(j_idx + i_sub)?.i64() - p_lo - borrow
+          u_ref.update(j_idx + i_sub, (sub_res and mask).u32())?
+          borrow = (p >> shift).i64() - (sub_res >> shift)
         end
-        
+
         let sub_res_last: I64 = u_ref(j_idx + n_val)?.i64() - borrow
-        u_ref.update(j_idx + n_val, (sub_res_last and mask).u16())?
-        
+        u_ref.update(j_idx + n_val, (sub_res_last and mask).u32())?
+
         if sub_res_last < 0 then
           // Step D5: Negative case - add back
           q_hat = q_hat - 1
-          var carry: U32 = 0
+          var carry_ab: U64 = 0
           for i_add in Range(0, n_val) do
-            let sum: U32 = u_ref(j_idx + i_add)?.u32() + v_ref(i_add)?.u32() + carry
-            u_ref.update(j_idx + i_add, sum.u16())?
-            carry = sum >> _base_bits().u32()
+            let sum: U64 = u_ref(j_idx + i_add)?.u64() + v_ref(i_add)?.u64() + carry_ab
+            u_ref.update(j_idx + i_add, sum.u32())?
+            carry_ab = sum >> 32
           end
-          u_ref.update(j_idx + n_val, (u_ref(j_idx + n_val)?.u32() + carry).u16())?
+          u_ref.update(j_idx + n_val, (u_ref(j_idx + n_val)?.u64() + carry_ab).u32())?
         end
 
-        q_ref.update(j_idx, q_hat.u16())?
+        q_ref.update(j_idx, q_hat.u32())?
 
         if j_idx == 0 then break end
         j_idx = j_idx - 1
       end
     end
 
-    let q_digits: Array[U16] val = recover
-      let a: Array[U16] ref = consume q_ref
+    let q_digits: Array[U32] val = recover
+      let a: Array[U32] ref = consume q_ref
       _normalize(a)
       a
     end
 
     // Step D7: Unnormalize
-    let r_digits: Array[U16] val = recover
-      let a: Array[U16] ref = Array[U16].init(0, n_val)
+    let r_digits: Array[U32] val = recover
+      let a: Array[U32] ref = Array[U32].init(0, n_val)
       try
         var k_rem: USize = 0
         while k_rem < n_val do
@@ -1487,14 +1651,17 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Convert both operands to two's complement `BitMap`s, apply `op` in place on
     the first, then convert the result back to sign-magnitude `MPInt`.
     """
-    // Size the BitMaps to hold both operands plus one sign bit.
-    let n_bits = ((_digits.size().max(that._digits.size()) + 1) * _base_bits()) + 1
-    let a = BitMap.from_u16_array(_digits, n_bits)
+    let max_u32_size = _digits.size().max(that._digits.size())
+    let n_bits = ((max_u32_size + 1) * _base_bits()) + 1
+    let n_u32_digits = (n_bits + (_base_bits() - 1)) / _base_bits()
+
+    let a = BitMap.from_array[U32](_digits, n_bits)
     if _sign then
       a.not_in_place()
       a.increment()
     end
-    let b = BitMap.from_u16_array(that._digits, n_bits)
+
+    let b = BitMap.from_array[U32](that._digits, n_bits)
     if that._sign then
       b.not_in_place()
       b.increment()
@@ -1502,18 +1669,18 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
 
     op(a, b)
 
-    // Two's complement sign bit determines result sign. And convert back
-    // to MPInt.
+    // Two's complement sign bit determines result sign. Convert back to MPInt.
     let negative = a(n_bits - 1)
     if negative then
       a.not_in_place()
       a.increment()
     end
-    let n_digits = (n_bits + (_base_bits() - 1)) / _base_bits()
-    let raw = a.to_u16_array(n_digits)
+    let raw = a.to_array[U32](n_u32_digits)
     let d = recover val
-      let res = Array[U16](raw.size())
-      for v in raw.values() do res.push(v) end
+      let res = Array[U32](raw.size())
+      for v in raw.values() do
+        res.push(v)
+      end
       _normalize(res)
       res
     end
@@ -1534,7 +1701,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     most significant digit.
     """
     let digit_idx = n / _base_bits()
-    let bit_pos = (n % _base_bits()).u16()
+    let bit_pos = (n % _base_bits()).u32()
     if digit_idx >= _digits.size() then
       false
     else
@@ -1548,14 +1715,16 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     The sign is preserved.
     """
     let digit_idx = n / _base_bits()
-    let bit_pos = (n % _base_bits()).u16()
+    let bit_pos = (n % _base_bits()).u32()
     let d = recover val
-      let res = Array[U16](_digits.size().max(digit_idx + 1))
+      let res = Array[U32](_digits.size().max(digit_idx + 1))
       for k in Range(0, _digits.size()) do
         try res.push(_digits(k)?) end
       end
-      while res.size() <= digit_idx do res.push(0) end
-      try res(digit_idx)? = res(digit_idx)? or (U16(1) << bit_pos) end
+      while res.size() <= digit_idx do
+        res.push(0)
+      end
+      try res(digit_idx)? = res(digit_idx)? or (U32(1) << bit_pos) end
       res
     end
     _create(_sign, d)
@@ -1570,13 +1739,13 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return _create(_sign, _digits)
     end
     let digit_idx = n / _base_bits()
-    let bit_pos = (n % _base_bits()).u16()
+    let bit_pos = (n % _base_bits()).u32()
     let d = recover val
-      let res = Array[U16](_digits.size())
+      let res = Array[U32](_digits.size())
       for k in Range(0, _digits.size()) do
         try res.push(_digits(k)?) end
       end
-      try res(digit_idx)? = res(digit_idx)? and (not (U16(1) << bit_pos)) end
+      try res(digit_idx)? = res(digit_idx)? and (not (U32(1) << bit_pos)) end
       _normalize(res)
       res
     end
@@ -2001,8 +2170,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     var result: String iso = String
     
     // We do all calculations on a local mutable array
-    let digits_ref: Array[U16] ref = recover
-      let d_tmp = Array[U16](_digits.size())
+    let digits_ref: Array[U32] ref = recover
+      let d_tmp = Array[U32](_digits.size())
       for x in _digits.values() do
         d_tmp.push(x)
       end
@@ -2069,30 +2238,32 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     Return the absolute value of this `MPInt` as a big-endian `Array[U8]`.
 
-    Each base-65536 `U16` word is split into its high byte (`word >> 8`) and
-    low byte (`word and 0xFF`).  The words are emitted most-significant first
-    (i.e. `_digits` is reversed), so the result is a standard big-endian
-    byte representation of the magnitude.
+    Each base-2³² `U32` digit is emitted as four bytes, most-significant byte
+    first (shifts of 24, 16, 8, 0). Digits are visited most-significant first
+    (i.e. `_digits` is iterated in reverse), so the result is a standard
+    big-endian byte representation of the magnitude.
 
     Leading zero bytes are stripped so that, for a non-zero value, the first
-    byte is always non-zero.  Zero itself returns a single-element array
+    byte is always non-zero. Zero itself returns a single-element array
     `[0]`.
 
     This is used by `MPFloat.from_mpint` to convert directly from the
-    base-65536 representation to base-256 without going through a decimal
+    base-2³² representation to base-256 without going through a decimal
     string, reducing conversion cost from O(n²) to O(n).
     """
     let n: USize = _digits.size()
     recover
-      // Build big-endian bytes: MSW first, each word as (hi, lo).
+      // Build big-endian bytes: MSW first, each word as 4 bytes (b3 b2 b1 b0).
       // _digits is val, so it is accessible inside the recover block.
-      let raw = Array[U8].create(n * 2)
+      let raw = Array[U8].create(n * 4)
       var k: USize = n
       while k > 0 do
         k = k - 1
-        let w: U16 = try _digits(k)? else 0 end
+        let w: U32 = try _digits(k)? else 0 end
+        raw.push((w >> 24).u8())
+        raw.push((w >> 16).u8())
         raw.push((w >> 8).u8())
-        raw.push((w and 0xFF).u8())
+        raw.push(w.u8())
       end
       // Strip leading zero bytes, keeping at least one byte.
       var start: USize = 0
@@ -2123,7 +2294,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     - The result is exact for every finite `MPFloat` whose magnitude is an
       integer: `MPInt.from_mpfloat(MPFloat.from_mpint(n, prec))` returns `n`
       unchanged as long as `|n| < 256^prec`.
-    - `trunc(±0.9)` = 0.  `trunc(−5.9)` = −5 (not −6).
+    - `trunc(±0.9)` = 0. `trunc(−5.9)` = −5 (not −6).
 
     Special cases:
     - NaN or ±∞ → `error` (no integer representation exists).
@@ -2158,30 +2329,27 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     // fractional and are discarded).
     let int_stored: USize = e.min(stored.size())
 
-    // Number of little-endian U16 words needed to hold all integer bytes.
-    let n_words: USize = (e + 1) / 2
+    // Number of little-endian U32 words needed to hold all integer bytes.
+    let n_words: USize = (e + 3) / 4
 
     _digits = recover
       // Zero-initialise: bytes beyond int_stored are implicit zeros, which
       // map to zero words with no extra work.
-      let d = Array[U16].init(0, n_words)
+      let d = Array[U32].init(0, n_words)
 
-      // Map each stored integer byte to its U16 word.
+      // Map each stored integer byte to its U32 word.
       //
       // Byte at index `i` (0 = MSB) sits at position `pos = e − 1 − i` from
-      // the LSB end.  It lands in word `widx = pos / 2`.  When `pos` is odd
-      // it is the HIGH byte of that word; when even it is the LOW byte.
+      // the LSB end. It lands in word `widx = pos / 4`. The byte occupies
+      // bits `bpos*8 .. bpos*8+7` within that word (bpos = pos % 4, 0=LSB).
       var i: USize = 0
       while i < int_stored do
-        let bval: U16 = try stored(i)?.u16() else 0 end
+        let bval: U32 = try stored(i)?.u32() else 0 end
         let pos: USize = e - 1 - i
-        let widx: USize = pos / 2
+        let widx: USize = pos / 4
+        let bpos: U32 = (pos % 4).u32()
         try
-          if (pos % 2) == 1 then
-            d(widx)? = d(widx)? or (bval << 8)
-          else
-            d(widx)? = d(widx)? or bval
-          end
+          d(widx)? = d(widx)? or (bval << (bpos * 8))
         end
         i = i + 1
       end
@@ -2443,7 +2611,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     false
 
 
-  fun tag _is_zero(d: Array[U16] box): Bool =>
+  fun tag _is_zero(d: Array[U32] box): Bool =>
     """
     Static zero check for array. Check that the *digits* array contains only 0 digits.
     """
@@ -2455,7 +2623,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     true
 
 
-  fun tag _normalize(d: Array[U16] ref) =>
+  fun tag _normalize(d: Array[U32] ref) =>
     """
     Static normalization for array. Remove the leading non-significant
     0 *digits* in the array that is used by `MPInt` numbers.
@@ -2473,50 +2641,50 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
 
 
-  fun tag _short_add(d: Array[U16] ref, b: U32) =>
+  fun tag _short_add(d: Array[U32] ref, b: U32) =>
     """
     Short addition of the single word `b`, added to the least significant *digit*
     of `this`.
 
     This operation can increaze the size of the `_digits` array by 1.
     """
-    var carry = b
+    var carry: U64 = b.u64()
     var k: USize = 0
     while (k < d.size()) and (carry > 0) do
       try
-        let s = d(k)?.u32() + carry
-        d.update(k, s.u16())?
-        carry = s >> _base_bits().u32()
+        let s: U64 = d(k)?.u64() + carry
+        d.update(k, s.u32())?
+        carry = s >> _base_bits().u64()
       end
       k = k + 1
     end
     if carry > 0 then
-      d.push(carry.u16())
+      d.push(carry.u32())
     end
 
 
-  fun tag _short_mul(d: Array[U16] ref, b: U32) =>
+  fun tag _short_mul(d: Array[U32] ref, b: U32) =>
     """
     Short multiplication of `this` by the single word `b`.
 
     This operation can increaze the size of the `_digits` array by 1.
     """
-    var carry: U32 = 0
+    var carry: U64 = 0
     var k: USize = 0
     while k < d.size() do
       try
-        let m = (d(k)?.u32() * b) + carry
-        d.update(k, m.u16())?
-        carry = m >> _base_bits().u32()
+        let m: U64 = (d(k)?.u64() * b.u64()) + carry
+        d.update(k, m.u32())?
+        carry = m >> _base_bits().u64()
       end
       k = k + 1
     end
     if carry > 0 then
-      d.push(carry.u16())
+      d.push(carry.u32())
     end
 
 
-  fun tag _short_div(d: Array[U16] ref, b: U32): U32 =>
+  fun tag _short_div(d: Array[U32] ref, b: U32): U32 =>
     """
     Short division of `this` by the single word `b`, returning the remainder.
 
@@ -2527,67 +2695,67 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     while k > 0 do
       k = k - 1
       try
-        let cur = d(k)?.u32() + (rem_val * _base())
-        let q = cur / b
-        rem_val = cur % b
-        d.update(k, q.u16())?
+        let cur: U64 = d(k)?.u64() + (rem_val.u64() * _base())
+        let q: U64 = cur / b.u64()
+        rem_val = (cur % b.u64()).u32()
+        d.update(k, q.u32())?
       end
     end
     _normalize(d)
     rem_val
 
 
-  fun tag _add_arrays(u: Array[U16] ref, v: Array[U16] box) =>
+  fun tag _add_arrays(u: Array[U32] ref, v: Array[U32] box) =>
     """
     Static array addition, adding the content of `v` to `u` and propagating
     the carry over *digits*. In the end, `u <-- u + v`.
 
     The size of `u` can increase of 1 *digit*.
     """
-    var carry: U32 = 0
+    var carry: U64 = 0
     var k: USize = 0
     while k < v.size() do
       try
-        let s = (if k < u.size() then u(k)? else 0 end).u32() + v(k)?.u32() + carry
+        let s: U64 = (if k < u.size() then u(k)? else 0 end).u64() + v(k)?.u64() + carry
         if k < u.size() then
-          u.update(k, s.u16())?
+          u.update(k, s.u32())?
         else
-          u.push(s.u16())
+          u.push(s.u32())
         end
-        carry = s >> _base_bits().u32()
+        carry = s >> _base_bits().u64()
       end
       k = k + 1
     end
     while (k < u.size()) and (carry > 0) do
       try
-        let s = u(k)?.u32() + carry
-        u.update(k, s.u16())?
-        carry = s >> _base_bits().u32()
+        let s: U64 = u(k)?.u64() + carry
+        u.update(k, s.u32())?
+        carry = s >> _base_bits().u64()
       end
       k = k + 1
     end
     if carry > 0 then
-      u.push(carry.u16())
+      u.push(carry.u32())
     end
 
 
-  fun tag _sub_arrays(u: Array[U16] ref, v: Array[U16] box) =>
+  fun tag _sub_arrays(u: Array[U32] ref, v: Array[U32] box) =>
     """
     Static array subtraction, subtracting the content of `v` to the *digits*
     of `u`, propagating borrow between *digits*. In the end, `u <-- u - v`.
     The final result is normalized, removing non-significant leading 0.
     """
-    var borrow: U32 = 0
+    var borrow: U64 = 0
     var k: USize = 0
     while k < v.size() do
       try
-        let v_val = v(k)?.u32() + borrow
-        let u_val = u(k)?.u32()
+        let v_val: U64 = v(k)?.u64() + borrow
+        let u_val: U64 = u(k)?.u64()
         if u_val < v_val then
-          u.update(k, ((u_val + _base()) - v_val).u16())?
+          u.update(k, ((u_val + _base()) - v_val).u32())?
           borrow = 1
         else
-          u.update(k, (u_val - v_val).u16())?
+          u.update(k, (u_val - v_val).u32())?
           borrow = 0
         end
       end
@@ -2595,12 +2763,12 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
     while (k < u.size()) and (borrow > 0) do
       try
-        let u_val = u(k)?.u32()
+        let u_val: U64 = u(k)?.u64()
         if u_val < borrow then
-          u.update(k, ((u_val + _base()) - borrow).u16())?
+          u.update(k, ((u_val + _base()) - borrow).u32())?
           borrow = 1
         else
-          u.update(k, (u_val - borrow).u16())?
+          u.update(k, (u_val - borrow).u32())?
           borrow = 0
         end
       end
@@ -2619,7 +2787,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return _create(_sign, _digits)
     end
     let d = recover val
-      let res = Array[U16].init(0, n + _digits.size())
+      let res = Array[U32].init(0, n + _digits.size())
       for k in Range(0, _digits.size()) do
         try res.update(k + n, _digits(k)?)? end
       end
@@ -2638,7 +2806,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       return MPInt.from_ilong(0)
     end
     let d = recover val
-      let res = Array[U16].init(0, _digits.size() - n)
+      let res = Array[U32].init(0, _digits.size() - n)
       for k in Range(n, _digits.size()) do
         try res.update(k - n, _digits(k)?)? end
       end
@@ -2653,6 +2821,6 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     """
     var s = if _sign then "-" else "+" end
     for d in _digits.values() do
-      s = s + "_" + Format.int[U16](d, FormatHexBare where width = _base_bits() / 4, fill = '0')
+      s = s + "_" + Format.int[U32](d, FormatHexBare where width = 8, fill = '0')
     end
     s
