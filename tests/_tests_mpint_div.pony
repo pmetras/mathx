@@ -27,21 +27,21 @@ class iso _TestMPIntDivision is UnitTest
       // Property check
       let check = (q * b) + r
       if check != a then
-        h.log("FAIL Property: a=" + a.dump() + " (" + a.string() + ")")
-        h.log("              b=" + b.dump() + " (" + b.string() + ")")
-        h.log("              q=" + q.dump() + " (" + q.string() + ")")
-        h.log("              r=" + r.dump() + " (" + r.string() + ")")
+        h.log("FAIL Property: a=" + a.hex_dump() + " (" + a.string() + ")")
+        h.log("              b=" + b.hex_dump() + " (" + b.string() + ")")
+        h.log("              q=" + q.hex_dump() + " (" + q.string() + ")")
+        h.log("              r=" + r.hex_dump() + " (" + r.string() + ")")
         let qb = q * b
-        h.log("              q*b=" + qb.dump())
-        h.log("              (q*b)+r=" + check.dump())
+        h.log("              q*b=" + qb.hex_dump())
+        h.log("              (q*b)+r=" + check.hex_dump())
         h.assert_true(check == a, "Division property: (a/b)*b + r == a")
       end
       
       // Remainder magnitude check
       if not r.abs_lt(b.abs()) then
         h.log("FAIL Magnitude: |r| >= |b|")
-        h.log("               r=" + r.dump() + " (" + r.string() + ")")
-        h.log("               b=" + b.dump() + " (" + b.string() + ")")
+        h.log("               r=" + r.hex_dump() + " (" + r.string() + ")")
+        h.log("               b=" + b.hex_dump() + " (" + b.string() + ")")
         h.assert_true(r.abs_lt(b.abs()), "Remainder magnitude: |r| < |b|")
       end
       

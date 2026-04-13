@@ -7,7 +7,9 @@
 
 
 use "debug"
+
 use "../../assertx"
+use "../../formatx"
 
 use "lib:gmp"
 use "lib:mpfr"
@@ -477,10 +479,8 @@ class val MPFloat
     value of the exponent is not defined.
     """
     ifdef debug then
-      try
-        Assert((2 <= base) and (base <= 36), "[MPFloat.string] The base (" +
-              base.string() + ") must be in the range [2..36]", true)?
-      end
+      ((2 <= base) and (base <= 36)) or
+        Fail(Format("[MPFloat.string] The base ({}) must be in the range [2..36]", base))
     end
     (let mantissa, let exponent) = MPF.get_str(base.i32(), get_precision().ilong(), _mpfr, rnd)
 

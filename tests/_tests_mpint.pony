@@ -411,9 +411,9 @@ class iso _TestMPIntKaratsuba is UnitTest
       end
 
       let mult1 = big1 * big2
-      h.log("mult1=" + mult1.dump())
+      h.log("mult1=" + mult1.hex_dump())
       let mult2 = big1.mul_karatsuba(big2)
-      h.log("mult2=" + mult2.dump())
+      h.log("mult2=" + mult2.hex_dump())
       h.assert_true(mult1 == mult2, "Karatsuba multiplication")
       h.log("big1 * big2 = " + big1.string() + " * " + big2.string())
       h.log("mult1=" + mult1.string())

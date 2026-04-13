@@ -3,6 +3,8 @@
 use "collections"
 
 use "../assertx"
+use "../formatx"
+
 
 primitive Modular[A: UnsignedInteger[A] val = USize]
   """
@@ -25,9 +27,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     ifdef debug then
       let zero = A.from[USize](0)
-      (a >= zero) or Fail(["[Modular.add_mod] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.add_mod] Second parameter ("; b; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.add_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.add_mod] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.add_mod] Second parameter ({}) must be non-negative", b))
+      (m >= zero) or Fail(Format("[Modular.add_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     let a' = a % m
@@ -48,9 +50,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     ifdef debug then
       let zero = A.from[USize](0)
-      (a >= zero) or Fail(["[Modular.sub_mod] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.sub_mod] Second parameter ("; b; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.sub_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.sub_mod] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.sub_mod] Second parameter ({}) must be non-negative", b))
+      (m >= zero) or Fail(Format("[Modular.sub_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     let a' = a % m
@@ -68,8 +70,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.neg_mod] First parameter ("; a; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.neg_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.neg_mod] First parameter ({}) must be non-negative", a))
+      (m >= zero) or Fail(Format("[Modular.neg_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     let a' = a % m
@@ -89,9 +91,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.mul_mod] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.mul_mod] Second parameter ("; b; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.mul_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.mul_mod] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.mul_mod] Second parameter ({}) must be non-negative", b))
+      (m >= zero) or Fail(Format("[Modular.mul_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     // If a and b are small enough, we won't overflow and we can use direct
@@ -134,8 +136,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.inv_mod] First parameter ("; a; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.inv_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.inv_mod] First parameter ({}) must be non-negative", a))
+      (m >= zero) or Fail(Format("[Modular.inv_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     // Initialize
@@ -177,9 +179,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.div_mod] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.div_mod] Second parameter ("; b; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.div_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.div_mod] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.div_mod] Second parameter ({}) must be non-negative", b))
+      (m >= zero) or Fail(Format("[Modular.div_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     let inv = inv_mod(b, m)
@@ -200,9 +202,9 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.pow_mod] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.pow_mod] Second parameter ("; b; ") must be non-negative"])
-      (m >= zero) or Fail(["[Modular.pow_mod] Modulo parameter ("; m; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.pow_mod] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.pow_mod] Second parameter ({}) must be non-negative", b))
+      (m >= zero) or Fail(Format("[Modular.pow_mod] Modulo parameter ({}) must be non-negative", m))
     end
 
     let one = A.from[USize](1)
@@ -248,8 +250,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.gcd] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.gcd] Second parameter ("; b; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.gcd] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.gcd] Second parameter ({}) must be non-negative", b))
     end
 
     (var big, var small) = if a > b then (a, b) else (b, a) end
@@ -271,8 +273,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.gcd2] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.gcd2] Second parameter ("; b; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.gcd2] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.gcd2] Second parameter ({}) must be non-negative", b))
     end
 
     if a == zero then
@@ -293,8 +295,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     while true do
       // Invariant
       ifdef debug then
-        (((u % two) == one) and ((v % two) == one)) or Fail(["[Modular.gcd2] u ("; u
-          ") and v ("; v; ") should be odd..."])
+        (((u % two) == one) and ((v % two) == one)) or
+          Fail(Format("[Modular.gcd2] u ({}) and v ({}) should be odd...", [u; v]))
       end
     
       if u > v then
@@ -327,8 +329,8 @@ primitive Modular[A: UnsignedInteger[A] val = USize]
     """
     let zero = A.from[USize](0)
     ifdef debug then
-      (a >= zero) or Fail(["[Modular.lcm] First parameter ("; a; ") must be non-negative"])
-      (b >= zero) or Fail(["[Modular.lcm] Second parameter ("; b; ") must be non-negative"])
+      (a >= zero) or Fail(Format("[Modular.lcm] First parameter ({}) must be non-negative", a))
+      (b >= zero) or Fail(Format("[Modular.lcm] Second parameter ({}) must be non-negative", b))
     end
 
     if (a == zero) or (b == zero) then

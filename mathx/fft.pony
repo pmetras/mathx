@@ -1,11 +1,10 @@
 // Fast Fourier Transform
 
 use "debug"
-use "format"
-
 use "collections"
 
 use "../assertx"
+use "../formatx"
 
 
 primitive FFT[F: (Float & FloatingPoint[F]) = F64]
@@ -70,7 +69,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         end
       end
     else
-      Fail("Index j (" + j.string() + ") out of bounds [0.." + size.string() + ")")
+      Fail(Format("[FFT._rearrange] Index j ({}) out of bounds [0..{})", [j; size]))
     end
     a
 
@@ -86,7 +85,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         a.update(i, a(i)? / scale)?
       end
     else
-      Fail("Index out of bound [0.." + size.string() + ") in normalization")
+      Fail(Format("[FFT._normalize] Index out of bound [0..{}) in normalization", size))
     end
     a
 
@@ -110,14 +109,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
     ifdef debug then
-      try
-        Assert((size and (size - 1)) == 0, "[FFT.fourier] The input array 'a' size (" +
-              size.string() + ") must be a power of 2. Enlarge it to " +
-              size.next_pow2().string(), true)?
-        Assert(size >= 2, "[FFT.fourier] Array 'a' must have at least 2 elements", true)?
-        Assert(normalize or inverse, "[FFT.fourier] `normalize` must be " +
-              "set to `false` only with inverse FFT", true)?
-      end
+      ((size and (size - 1)) == 0) or
+        Fail(Format("[FFT.fourier] The input array 'a' size ({})" +
+                    " must be a power of 2. Enlarge it to {}",
+                    [size; size.next_pow2()]))
+      (size >= 2) or
+        Fail("[FFT.fourier] Array 'a' must have at least 2 elements")
+      (normalize or inverse) or
+        Fail("[FFT.fourier] `normalize` must be" +
+              " set to `false` only with inverse FFT")
     end
 
     // Rearrange array indexes in reverse bits order.
@@ -166,8 +166,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         step = 2 * step
       end
     else
-      Fail("Index of of bounds [0.." + size.string() + ") i=" + i.string() +
-           ", j=" + j.string())
+      Fail(Format("[FFT.fourier] Index of of bounds [0..{}) i={}, j={}", [size; i; j]))
     end
 
     // If inverse, scale the result if normalization is required
@@ -191,14 +190,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
     ifdef debug then
-      try
-        Assert((size and (size - 1)) == 0, "[FFT.fourier_unsafe] The input array 'a' size (" +
-              size.string() + ") must be a power of 2. Enlarge it to " +
-              size.next_pow2().string(), true)?
-        Assert(size >= 2, "[FFT.fourier_unsafe] Array 'a' must have at least 2 elements", true)?
-        Assert(normalize or inverse, "[FFT.fourier_unsafe] `normalize` must be " +
-              "set to `false` only with inverse FFT", true)?
-      end
+      ((size and (size - 1)) == 0) or
+        Fail(Format("[FFT.fourier_unsafe] The input array 'a' size ({})" +
+                    " must be a power of 2. Enlarge it to {}",
+                    [size; size.next_pow2()]))
+      (size >= 2) or
+        Fail("[FFT.fourier_unsafe] Array 'a' must have at least 2 elements")
+      (normalize or inverse) or
+        Fail("[FFT.fourier_unsafe] `normalize` must be " +
+             " set to `false` only with inverse FFT")
     end
 
     // Rearrange array indexes in reverse bits order.
@@ -275,15 +275,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = a.size()
     let size2 = size / 2 // Number of complex data points
     ifdef debug then
-      try
-        Assert((size2 and (size2 - 1)) == 0,
-              "[FFT.fourier_complex] The input array 'a' size (" + size.string() +
-              ") must be a power of 4. Enlarge it to " +
-              (size2.next_pow2() * 2).string(), true)?
-        Assert(size >= 2, "[FFT.fourier_complex] Array 'a' must have at least 2 elements", true)?
-        Assert(normalize or inverse, "[FFT.fourier_complex] `normalize` must be " +
-              "set to `false` only with inverse FFT", true)?
-      end
+      ((size2 and (size2 - 1)) == 0) or
+        Fail(Format("[FFT.fourier_complex] The input array 'a' size ({})" +
+              " must be a power of 4. Enlarge it to {}",
+              [ size; (size2.next_pow2() * 2)]))
+      (size >= 2) or
+        Fail("[FFT.fourier_complex] Array 'a' must have at least 2 elements")
+      (normalize or inverse) or
+        Fail("[FFT.fourier_complex] `normalize` must be" +
+              " set to `false` only with inverse FFT")
     end
 
     // Reorganize the array content in bits order
@@ -303,7 +303,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         j = j + m
       end
     else
-      Fail("Index out of bounds [0.." + size2.string() + ")")
+      Fail(Format("[FFT.fourier_complex] Index out of bounds [0..{})", size2))
     end
 
     // The constants
@@ -350,7 +350,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         step = jump
       end
     else
-      Fail("Index out of bounds [0.." + size.string() + ")")
+      Fail(Format("[FFT.fourier_complex] Index out of bounds [0..{})", size))
     end
 
     // If inverse, scale the result if normalize is required
@@ -361,7 +361,8 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
           a.update(i, a(i)? / scale)?
         end
       else
-        Fail("Index out of bound [0.." + size.string() + ") in normalization")
+        Fail(Format("[FFT.fourier_complex] Index out of bound [0..{}) in normalization",
+                    size))
       end
     end
 
@@ -451,14 +452,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     let size = a.size()
 
     ifdef debug then
-      try
-        Assert((size and (size - 1)) == 0, "[FFT.fourier_real] The input array 'a' size (" +
-              size.string() + ") must be a power of 2. Enlarge it to " +
-              size.next_pow2().string(), true)?
-        Assert(size >= 4, "[FFT.fourier_real] Array 'a' must have at leat 4 elements", true)?
-        Assert(normalize or inverse, "[FFT.fourier_real] `normalize` must be " +
-              "set to `false` only with inverse FFT", true)?
-      end
+      ((size and (size - 1)) == 0) or
+        Fail(Format("[FFT.fourier_real] The input array 'a' size ({})" +
+              " must be a power of 2. Enlarge it to {}",
+              [size; size.next_pow2()]))
+      (size >= 4) or
+        Fail("[FFT.fourier_real] Array 'a' must have at leat 4 elements")
+      (normalize or inverse) or
+        Fail("[FFT.fourier_real] `normalize` must be" +
+              " set to `false` only with inverse FFT")
     end
 
     // Constants
@@ -531,7 +533,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
 	      a.update((size / 2) + 1, -a((size / 2) + 1)?)?
       end
     else
-      Fail("Index out of bounds [0.." + size.string() + ")")
+      Fail(Format("[FFT.fourier_real] Index out of bounds [0..{})", size))
     end
     // Return the array
     a
@@ -559,14 +561,15 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = a.size()
     ifdef debug then
-      try
-        Assert((size and (size - 1)) == 0, "[FFT.fourier2] The input array 'a' size (" +
-              size.string() + ") must be a power of 2. Enlarge it to " +
-              size.next_pow2().string(), true)?
-        Assert(size >= 2, "[FFT.fourier2] Array 'a' must have at least 2 elements", true)?
-        Assert(normalize or inverse, "[FFT.fourier2] `normalize` must be " +
-            "set to `false` only with inverse FFT", true)?
-      end
+      ((size and (size - 1)) == 0) or
+        Fail(Format("[FFT.fourier2] The input array 'a' size ({})" +
+                    " must be a power of 2. Enlarge it to ",
+                    [size; size.next_pow2()]))
+      (size >= 2) or
+        Fail("[FFT.fourier2] Array 'a' must have at least 2 elements")
+      (normalize or inverse) or
+        Fail("[FFT.fourier2] `normalize` must be" +
+            " set to `false` only with inverse FFT")
     end
 
     // Prepare trigonometric tables: calculate the complex roots or 1
@@ -612,7 +615,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         end
       end
     else
-      Fail("Index out of bounds [0.." + size.string() + ")")
+      Fail(Format("[FFT.fourier2] Index out of bounds [0..{})", size))
     end
 
     // If inverse, scale the result if normalize is required
@@ -626,8 +629,8 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
 
   fun bluestein(a: Array[Complex[F]],
                 inverse: Bool = false,
-		normalize: Bool = true)
-	       : Array[Complex[F]] =>
+		            normalize: Bool = true)
+	              : Array[Complex[F]] =>
     """
     Calculate the discrete Fourier transform of `a` array that can have any size,
     not necessarily a power of 2 like with `fourier` methods. Calculation is
@@ -691,7 +694,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         _normalize(a)
       end
     else
-      Fail("Index error when accessing arrays")
+      Fail("[FFT.bluestein] Index error when accessing arrays")
     end
     
     // Now a contains the DFT
@@ -710,10 +713,9 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
     """
     let size = u.size()
     ifdef debug then
-      try
-        Assert(v.size() == size, "[FFT.convolve] Array sizes must be identical: u.size = " +
-              size.string() + ", v.size = " + v.size().string(), true)?
-      end
+      (v.size() == size) or
+        Fail(Format("[FFT.convolve] Array sizes must be identical: u.size = {}," +
+                    " v.size = {}", [size; v.size()]))
     end
 
     let new_u = u.clone()
@@ -727,7 +729,7 @@ primitive FFT[F: (Float & FloatingPoint[F]) = F64]
         new_u.update(i, new_u(i)? * new_v(i)?)?
       end
     else
-      Fail("Index access error")
+      Fail("[FFT.convolve] Index access error")
     end
     
     // Inverse FFT

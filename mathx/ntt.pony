@@ -3,6 +3,7 @@
 use "collections"
 
 use "../assertx"
+use "../formatx"
 
 
 primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
@@ -330,13 +331,18 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     let n = a.size()
     // Pre-conditions
     ifdef debug then
-      ((n and (n - 1)) == 0) or Fail(["[NTT.transform] The input array 'a' size ("
-                        n; ") must be a power of 2. Enlarge it to "; n.next_pow2()])
+      ((n and (n - 1)) == 0) or
+        Fail(Format("[NTT.transform] The input array 'a' size ({}) must be a" +
+                    " power of 2. Enlarge it to {}", [n; n.next_pow2()]))
       (n > 0) or Fail("[NTT.transform] Array 'a' can't be empty")
 
       let zero = A.from[USize](0)
-      for i in Range(0, n) do
-        (try a(i)? >= zero else false end) or Fail("[NTT.transform] Array element must be non-negative")
+      try
+        for i in Range(0, n) do
+          (a(i)? >= zero) or
+            Fail(Format("[NTT.transform] Array element must be non-negative." +
+                        " a({}) = {}", [i; a(i)?]))
+        end
       end
     end
 
@@ -391,8 +397,12 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     let zero = A.from[USize](0)
     ifdef debug then
       (size > 0) or Fail("[NTT.naive_transform] Array 'a' can't be empty")
-      for i in Range(0, size) do
-        (try a(i)? >= zero else false end) or Fail("[NTT.naive_transform] Array element must be non-negative")
+      try
+        for i in Range(0, size) do
+          (a(i)? >= zero) or
+            Fail(Format("[NTT.naive_transform] Array element must be non-negative." +
+                        " a({}) = {}", [i; a(i)?]))
+        end
       end
     end
 

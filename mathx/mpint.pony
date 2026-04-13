@@ -1,10 +1,11 @@
 // Multi-precision integers
 
 use "debug"
+use "collections"
+
 use "../assertx"
 use "../bitsx"
-use "format"
-use "collections"
+use "../formatx"
 
 
 class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Comparable[MPInt] & Stringable)
@@ -137,7 +138,8 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     Don't abuse it!
     """
     ifdef debug then
-      Assert((2 <= base) and (base <= 36), "[MPint.from_string] The base must be in [2..36]", true)?
+      ((2 <= base) and (base <= 36)) or
+        Fail(Format("[MPint.from_string] The base ({}) must be in [2..36]", base))
     end
 
     if s.size() == 0 then
@@ -810,8 +812,10 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     let b_u16_size: USize = that._digits.size() * 2
     let pow2 = (a_u16_size + b_u16_size).next_pow2()
     ifdef debug then
-      (pow2 <= 0x100000) or Fail(["[MPInt.mul_fft] Combined operand size "; pow2
-        " exceeds safe F64 precision limit (~1M base-65536 halfwords). Results are potentially incorrect."])
+      (pow2 <= 0x100000) or
+        Fail(Format("[MPInt.mul_fft] Combined operand size {} exceeds safe F64" +
+                    " precision limit (~1M base-65536 halfwords). Results are" +
+                    " potentially incorrect.", pow2))
     end
     let d = recover val
       let res = Array[U32].init(0, _digits.size() + that._digits.size())
@@ -2784,12 +2788,17 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _create(_sign, d)
 
 
-  fun dump(): String =>
+  fun hex_dump(): String =>
     """
     Hexadecimal debug dump in digit groups used for debug.
     """
-    var s = if _sign then "-" else "+" end
+    let s = recover String((_digits.size() * 4) + 1) end
+    if _sign then
+      s.push('-')
+    else
+      s.push('+')
+    end
     for d in _digits.values() do
-      s = s + "_" + Format.int[U32](d, FormatHexBare where width = 8, fill = '0')
+      s.append(Format("08x", d))
     end
     s

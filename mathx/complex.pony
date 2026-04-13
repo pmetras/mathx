@@ -5,6 +5,7 @@ use "collections"
 
 use "../assertx"
 use "../pony_testx"
+use "../formatx"
 
 
 class val Complex[F: (Float & FloatingPoint[F]) = F64]
@@ -112,10 +113,9 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     (default to `F.epsilon`).
     """
     ifdef debug then
-      try
-        Assert(tol >= F.from[ISize](0), "[Complex.is_real] Precision tolerance (" + tol.string() +
-              ") must be positive", true)?
-      end
+      (tol >= F.from[ISize](0)) or
+        Fail(Format("[Complex.is_real] Precision tolerance ({}) must be positive",
+                    tol))
     end
     _im.abs() <= tol
 
@@ -126,10 +126,9 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     (default to `F.epsilon)`.
     """
     ifdef debug then
-      try
-        Assert(abs_tol >= F.from[ISize](0), "[Complex.is_imag] Precision tolerance (" +
-              abs_tol.string() + ") must be positive", true)?
-      end
+      (abs_tol >= F.from[ISize](0)) or
+        Fail(Format("[Complex.is_imag] Precision tolerance ({}) must be positive",
+                    abs_tol))
     end
     _re.abs() <= abs_tol
 
@@ -141,10 +140,9 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     imaginary parts and not on the modulus.
     """
     ifdef debug then
-      try
-        Assert(abs_tol >= F.from[ISize](0), "[Complex.is_null] Precision tolerance (" +
-              abs_tol.string() + ") must be positive", true)?
-      end
+      (abs_tol >= F.from[ISize](0)) or
+        Fail(Format("[Complex.is_null] Precision tolerance ({}) must be positive",
+                    abs_tol))
     end
     (_re.abs() <= abs_tol) and (_im.abs() <= abs_tol)
 
@@ -241,14 +239,15 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     let zero: F = F.from[F64](0.0)
     let one: F = F.from[F64](1.0)
     ifdef debug then
-      try
-        Assert(rel_tol >= zero, "[Complex.almost_eq] Relative tolerance (" + rel_tol.string() +
-              ") must be positive", true)?
-        Assert(rel_tol <= one, "[Complex.almost_eq] Relative tolerance (" + rel_tol.string() +
-              ") should be lower than 1.0", true)?
-        Assert(abs_tol >= zero, "[Complex.almost_eq] Absolute tolerance (" + abs_tol.string() +
-              ") must be positive", true)?
-      end
+      (rel_tol >= zero) or
+        Fail(Format("[Complex.almost_eq] Relative tolerance ({}) must be positive",
+                    rel_tol))
+      (rel_tol <= one) or
+        Fail(Format("[Complex.almost_eq] Relative tolerance ({}) should be lower than 1.0",
+                    rel_tol))
+      (abs_tol >= zero) or
+        Fail(Format("[Complex.almost_eq] Absolute tolerance ({}) must be positive",
+                    abs_tol))
     end
 
     if nan() or that.nan() then

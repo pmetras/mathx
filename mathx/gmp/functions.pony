@@ -4,6 +4,7 @@
 use "lib:mpfr"
 
 use "../../assertx"
+use "../../formatx"
 
 
 type RoundingMode is (RoundingNearest | RoundingNegInf | RoundingPosInf |
@@ -1004,10 +1005,9 @@ primitive MPF
     let n1 = tab1.size()
     let n2 = tab2.size()
     ifdef debug then
-      try
-        Assert(n1 == n2, "[MPF.dot] The two arrays don't have the same size: " +
-              n1.string() + " != " + n2.string() + ". Can't calculate dot product.", true)?
-      end
+      (n1 == n2) or
+        Fail(Format("[MPF.dot] The two arrays don't have the same size: " +
+              "{} != {}. Can't calculate dot product.", [n1; n2]))
     end
     @mpfr_dot(mpfr, ptab1, ptab2, n1, rnd())
 
