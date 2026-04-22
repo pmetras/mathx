@@ -293,6 +293,39 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     _digits = digits
 
 
+  new val from_bytes_be(negative: Bool, bytes: Array[U8] val) =>
+    """
+    Create an `MPInt` from a big-endian byte array `bytes`.
+
+    Each byte is treated as one base-256 digit with the most-significant byte
+    at index 0.  `negative` sets the sign; a zero-length array produces zero.
+
+    This is the inverse of `magnitude_bytes_be()`.
+    """
+    _sign = negative
+    let n: USize = bytes.size()
+    if n == 0 then
+      _digits = [0]
+      return
+    end
+    let n_words: USize = (n + 3) / 4
+    _digits = recover
+      let d = Array[U32].init(0, n_words)
+      var i: USize = 0
+      while i < n do
+        let bval: U32 = try bytes(i)?.u32() else 0 end
+        let pos: USize = n - 1 - i
+        let widx: USize = pos / 4
+        let bpos: U32 = (pos % 4).u32()
+        try
+          d(widx)? = d(widx)? or (bval << (bpos * 8))
+        end
+        i = i + 1
+      end
+      d
+    end
+
+
   new val create(value: MPInt) =>
     """
     The default copy constructor, sharing internally the same numbers.

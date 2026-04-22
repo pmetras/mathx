@@ -435,7 +435,7 @@ class PrimeIterator[A: UnsignedInteger[A] val = USize] is Iterator[A]
     Do we need to find more prime number? Return `true` if the iterator hasn't
     reached the upper limit.
     
-    As prime numbers are inifinite, there's always a next prime... Bu we don't
+    As prime numbers are inifinite, there's always a next prime... But we don't
     know if this prime is before or after the upper limit of the iterator.
     `has_next` returns `true` when the last prime number found is over the
     upper limit.

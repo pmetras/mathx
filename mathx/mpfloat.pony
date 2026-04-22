@@ -1400,6 +1400,36 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     _digits
 
 
+  fun sign_bit(): Bool =>
+    """
+    Return `true` when this value is strictly negative or is −0.
+    NaN has an undefined sign; this method returns the raw `_sign` field.
+    """
+    _sign
+
+
+  fun rep(): MPFRep =>
+    """
+    Return the pure representation of this value as an `MPFRep`.
+
+    The `MPFRep` contains the same sign, exponent, and digit array as `this`,
+    without the rounding mode.  Intended for interoperability with `MPFContext`
+    and `_MPFAlgo`.
+    """
+    MPFRep._create(_sign, _nan, _inf, _exponent, _digits)
+
+
+  fun ctx(): MPFContext =>
+    """
+    Return the execution context (precision + rounding mode) of this value
+    as an `MPFContext`.
+
+    The precision is derived from `_digits.size() × 8` bits; the rounding
+    mode is `_rounding`.
+    """
+    MPFContext((_size() * 8).ulong(), _rounding)
+
+
   //- Arithmetic ---------------------------------------------------------------
 
   fun _cmp_mag(that: MPFloat): Compare =>
@@ -3331,7 +3361,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     let n2_f: MPFloat = (r1 / ln2)._trunc(p2).round()
     let n2: ILong = (try MPInt.from_mpfloat(n2_f)? else MPInt.from[ILong](0) end).ilong()
     let n2_mpf = MPFloat.from_f64(n2.f64(), (p2 * _base_bits).ulong(), _rounding)
-    let r: MPFloat = ((r1 - n2_mpf)  * ln2._trunc(p2))._trunc(p2)
+    let r: MPFloat = (r1 - n2_mpf.mul(ln2)._trunc(p2))._trunc(p2)
 
     // Step 3: Taylor series for e^r, |r| ≤ ln(2)/2.
     var result: MPFloat = _exp_taylor(r, p2)
@@ -3602,7 +3632,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     let n_f = xdivph.round()
     let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from[ILong](0) end).ilong()
     let n_mpf = MPFloat.from_mpint(MPInt.from[ILong](n), (p2 * _base_bits).ulong())
-    let r = ((x - n_mpf) * pi_half)._trunc(p2)
+    let r = (x - n_mpf.mul(pi_half)._trunc(p2))._trunc(p2)
 
     // Octant k = n mod 4, normalised to [0, 3].
     let k: ILong = ((n % 4) + 4) % 4
@@ -3667,7 +3697,7 @@ new val pi_chudnovsky(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
     let n_f = (x / pi_half)._trunc(p2).round()
     let n: ILong = (try MPInt.from_mpfloat(n_f)? else MPInt.from[ILong](0) end).ilong()
     let n_mpf = MPFloat.from_mpint(MPInt.from[ILong](n), (p2 * _base_bits).ulong())
-    let r = ((x - n_mpf) * pi_half)._trunc(p2)
+    let r = (x - n_mpf.mul(pi_half)._trunc(p2))._trunc(p2)
 
     let k: ILong = ((n % 4) + 4) % 4
 

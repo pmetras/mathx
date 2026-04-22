@@ -149,6 +149,10 @@ actor Main is TestList
     test(_TestFFTBluestein[F64])
     test(_TestFFTBluestein[F32])
 
+    // MPFContext: precision policy and rounding
+    test(_TestMPFContextCreate)
+    test(_TestMPFContextWorkingBytes)
+
     // MPFloat numbers — pure Pony implementation (new class val redesign)
     test(_TestMPFloatNewCreate)
     test(_TestMPFloatNewSpecial)
