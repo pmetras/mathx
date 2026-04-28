@@ -14,7 +14,7 @@ class iso _TestMPFContextCreate is UnitTest
   fun apply(h: TestHelper) =>
     // Default: 112 bits = 14 bytes.
     let ctx = MPFContext
-    h.assert_eq[ULong](ctx.precision, 112)
+    h.assert_eq[USize](ctx.precision, 112)
     h.assert_eq[USize](ctx.p_bytes(), 14)
 
     // 113 bits rounds up to 15 bytes.

@@ -1,60 +1,10 @@
 // Multi-precision floating point: pure representation layer.
 
 use "../assertx"
+use "../formatx"
 
 use "collections"
 use "debug"
-
-
-primitive _MPFBase
-  """
-  Base-256 digit constants shared across the multi-precision float implementation.
-  """
-
-  fun val base(): U32 =>
-    """
-    The radix used for the digit array: 256.
-    """
-    256
-
-
-  fun val bits(): USize =>
-    """
-    Number of bits per base-256 digit: 8.
-    """
-    8
-
-
-  fun val lowb(a: U16): U8 =>
-    """
-    Extract the lower byte of the `U16` value `a`.
-    """
-    a.u8()
-
-
-  fun val highb(a: U16): U8 =>
-    """
-    Extract the upper byte of the `U16` value `a` (bits 15–8).
-    """
-    a.shr(8).u8()
-
-
-  fun val addc(a: U8, b: U8, c: U16): (U8, U16) =>
-    """
-    Single-digit addition `a + b + c`, returning `(digit, carry)`.
-    The carry is 0 or 1 and propagates to the next more-significant column.
-    """
-    let r: U16 = a.u16() + b.u16() + c
-    (r.u8(), r.shr(8))
-
-
-  fun val subc(a: U8, b: U8, c: U16): (U8, U16) =>
-    """
-    Single-digit subtraction `a − b` with borrow `c`, returning
-    `(digit, new_borrow)`.  Uses unsigned-complement arithmetic.
-    """
-    let r: U16 = ((a.max_value().u16() + a.u16()) - b.u16()) + c.shr(8)
-    (r.u8(), r.shr(8))
 
 
 class val MPFRep
@@ -62,9 +12,8 @@ class val MPFRep
   The pure representation of an arbitrary-precision floating-point number.
 
   `MPFRep` stores the sign, special-value flags, base-256 exponent and mantissa
-  digits of a number.  It provides no arithmetic operations — those belong to
-  `MPFContext` and `_MPFAlgo`.  The type is `class val` (globally immutable) so
-  that instances can be freely shared across actors and stored in collections.
+  digits of a number. The type is `class val` (globally immutable) so that instances
+  can be freely shared across actors and stored in collections.
 
   Representation invariant (for a finite, non-zero value):
 
@@ -72,14 +21,14 @@ class val MPFRep
 
   where `d₀…d_{n−1}` are base-256 digits stored big-endian in `_digits`
   (most-significant digit at index 0), and `d₀ ≠ 0` (normalised form).
-  Zero has an all-zero digit array.  `_exponent` is a signed base-256 exponent.
+  Zero has an all-zero digit array. `_exponent` is a signed base-256 exponent.
 
   Special values: NaN (`_nan = true`) and ±∞ (`_inf = true`) are supported,
   mirroring IEEE 754 / GMP/MPFR conventions.
 
   The precision is encoded implicitly in `_digits.size()`: a representation
   with `p` bytes has approximately `p × log₁₀(256) ≈ p × 2.408` decimal
-  significant digits.  Construction routines accept a byte count `p_bytes`
+  significant digits. Construction routines accept a byte count `p_bytes`
   rather than a bit count; the caller is responsible for the conversion
   `p_bytes = ceil(prec_bits / 8)`.
   """
@@ -92,13 +41,13 @@ class val MPFRep
 
   let _nan: Bool
     """
-    `true` when the number is Not-a-Number.  When set, `_inf`, `_sign` and
+    `true` when the number is Not-a-Number. When set, `_inf`, `_sign` and
     `_digits` are irrelevant.
     """
 
   let _inf: Bool
     """
-    `true` when the number is ±∞.  Sign is given by `_sign`.
+    `true` when the number is ±∞. Sign is given by `_sign`.
     Ignored when `_nan` is `true`.
     """
 
@@ -125,7 +74,7 @@ class val MPFRep
     digits: Array[U8] val)
   =>
     """
-    Private canonical constructor.  All constructors and internal operations
+    Private canonical constructor. All constructors and internal operations
     produce their result through this entry point.
     """
     _sign = sgn
@@ -163,7 +112,7 @@ class val MPFRep
 
   new val inf_val(positive: Bool = true) =>
     """
-    Create an infinite representation.  Pass `positive = false` for −∞.
+    Create an infinite representation. Pass `positive = false` for −∞.
     """
     _sign = not positive
     _nan = false
@@ -177,7 +126,7 @@ class val MPFRep
     Create a new `MPFRep` from the `F64` value `f` using `p_bytes` base-256
     mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
 
-    Special values (NaN, ±∞, ±0) are preserved.  The conversion normalises
+    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises
     `f` so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
     """
     if f.nan() then
@@ -214,7 +163,7 @@ class val MPFRep
       var frac = m.f64() * F64(2).pow(shift.f64())
       _exponent = expn
 
-      let base = _MPFBase.base().f64()
+      let base: F64 = 256.0
       _digits = recover
         let d = Array[U8].init(0, p_bytes)
         var i: USize = 0
@@ -235,7 +184,7 @@ class val MPFRep
     Create a new `MPFRep` from the `F32` value `f` using `p_bytes` base-256
     mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
 
-    Special values (NaN, ±∞, ±0) are preserved.  The conversion normalises
+    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises
     `f` so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
     """
     if f.nan() then
@@ -268,7 +217,7 @@ class val MPFRep
       var frac = m * F32(2).pow(shift.f32())
       _exponent = expn
 
-      let base = _MPFBase.base().f32()
+      let base: F32 = 256.0
       _digits = recover
         let d = Array[U8].init(0, p_bytes)
         var i: USize = 0
@@ -291,7 +240,7 @@ class val MPFRep
 
     The conversion is exact up to the requested precision: the magnitude of
     `n` is represented without error as long as `n` fits within `p_bytes × 8`
-    bits.  Larger values are truncated to `p_bytes` bytes.
+    bits. Larger values are truncated to `p_bytes` bytes.
 
     Special cases:
     - Zero → `+0` (positive zero regardless of any sign on the MPInt zero).
@@ -299,7 +248,7 @@ class val MPFRep
 
     Algorithm: `MPInt.raw_digits()` provides the absolute value as a big-endian
     `Array[U8]` (each base-65536 word split into two bytes, MSW first, leading
-    zeros stripped).  The result maps directly onto the `MPFRep` layout:
+    zeros stripped). The result maps directly onto the `MPFRep` layout:
     `_exponent` = total byte count of the full magnitude (before truncation).
     This is O(n) in the word count.
     """
@@ -331,7 +280,7 @@ class val MPFRep
   new val from_mpfloat_rep(f: MPFRep, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` whose value equals `f` but with `p_bytes` base-256
-    mantissa bytes (default 14).  Useful for changing the working precision of
+    mantissa bytes (default 14). Useful for changing the working precision of
     an existing representation.
 
     The result is truncated to `p_bytes` (no rounding — rounding is the
@@ -359,7 +308,7 @@ class val MPFRep
     _nan = false
     _inf = false
 
-    let base: ULong = _MPFBase.base().ulong()
+    let base: ULong = ULong(256)
     var q: ULong = n
 
     _digits = recover
@@ -375,7 +324,7 @@ class val MPFRep
     _exponent = _digits.size().i64()
 
 
-  new val min_normalized(p_bytes: USize = 14) =>
+  new \do_not_use\ val min_normalized(p_bytes: USize = 14) =>
     """
     The smallest normalised representation.
 
@@ -456,8 +405,8 @@ class val MPFRep
     Extract the upper byte of the `U16` value `a` (bits 15–8).
     """
     a.shr(8).u8()
-
-
+    
+    
   fun _addc(a: U8, b: U8, c: U16): (U8, U16) =>
     """
     Single-digit addition `a + b + c`, returning `(digit, carry)`.
@@ -470,7 +419,7 @@ class val MPFRep
   fun _subc(a: U8, b: U8, c: U16): (U8, U16) =>
     """
     Single-digit subtraction `a − b` with borrow `c`, returning
-    `(digit, new_borrow)`.  Uses unsigned-complement arithmetic so that the
+    `(digit, new_borrow)`. Uses unsigned-complement arithmetic so that the
     borrow is encoded in the high bit of a `U16`.
     """
     let r: U16 = ((a.max_value().u16() + a.u16()) - b.u16()) + c.shr(8)
@@ -480,8 +429,8 @@ class val MPFRep
   fun _inc_first(): MPFRep =>
     """
     Return a new `MPFRep` identical to `this` but with the most-significant
-    digit (`_digits(0)`) incremented by 1.  No carry propagation is performed;
-    the caller must ensure `_digits(0) < 255`.  Used internally by Newton
+    digit (`_digits(0)`) incremented by 1. No carry propagation is performed;
+    the caller must ensure `_digits(0) < 255`. Used internally by Newton
     iteration updates of the form `x ← x + 1`.
     """
     let size = _size()
@@ -497,11 +446,11 @@ class val MPFRep
   fun _trunc(n: USize): MPFRep =>
     """
     Return a new `MPFRep` containing only the `n` most-significant base-256
-    digits of `this`.  Used internally to bound intermediate results in Newton
+    digits of `this`. Used internally to bound intermediate results in Newton
     iterations so that successive multiplications do not grow the array without
     limit.
 
-    This is a pure truncation (no rounding).  Output rounding is the
+    This is a pure truncation (no rounding). Output rounding is the
     responsibility of `MPFContext._round_to`.
     """
     let s: USize = _size().min(n)
@@ -515,10 +464,10 @@ class val MPFRep
 
   fun _neg_comp(): MPFRep =>
     """
-    Return the byte-level two's-complement negation of `_digits`.  This is
+    Return the byte-level two's-complement negation of `_digits`. This is
     NOT a mathematical float negation — it is a fixed-point unsigned complement
     used internally by Newton iterations to compute `2 − x` in unsigned
-    arithmetic.  Use `neg()` (on `MPFloat`) for the mathematical sign flip.
+    arithmetic. Use `neg()` (on `MPFloat`) for the mathematical sign flip.
     """
     let size = _size()
     let d: Array[U8] val = recover
@@ -589,7 +538,7 @@ class val MPFRep
     Return `true` if `this` is a finite value with no fractional part, i.e.
     `this == trunc(this)`.
 
-    - NaN → `false`.  ±∞ → `false`.
+    - NaN → `false`. ±∞ → `false`.
     - ±0 → `true` (zero is an integer).
     - Any value whose base-256 representation has no non-zero fractional
       bytes (bytes at index ≥ `_exponent`) → `true`.
@@ -624,13 +573,11 @@ class val MPFRep
     if e >= _size() then
       return false
     end
-    var i: USize = e
     try
-      while i < _size() do
+      for i in Range(e, _size()) do
         if _digits(i)? != 0 then
           return true
         end
-        i = i + 1
       end
     end
     false
@@ -639,7 +586,7 @@ class val MPFRep
   fun _trunc_frac(): MPFRep =>
     """
     Return `this` with the fractional part removed (truncated toward zero).
-    Internal alias equivalent to `trunc()` on `MPFloat`.  Called by division
+    Internal alias equivalent to `trunc()` on `MPFloat`. Called by division
     and floored-division routines to obtain the integer part.
     """
     if not is_finite() then
@@ -668,7 +615,7 @@ class val MPFRep
 
     The integer part of the value occupies the first `e` bytes of `raw_digits()`
     (when `e > 0`); bytes at position `e` and beyond represent the fractional
-    part.  A non-positive exponent means the value is strictly in (−1, 1).
+    part. A non-positive exponent means the value is strictly in (−1, 1).
     """
     _exponent
 
@@ -678,7 +625,7 @@ class val MPFRep
     Return the internal base-256 mantissa as a big-endian `Array[U8]`.
 
     Together with `exponent()` this determines the magnitude exactly:
-    `|value| = 0.d₀d₁… × 256^exponent()`.  The first byte `d₀` is always
+    `|value| = 0.d₀d₁… × 256^exponent()`. The first byte `d₀` is always
     non-zero for finite non-zero values.
 
     This accessor is intended for low-level conversions such as
@@ -699,7 +646,7 @@ class val MPFRep
 
   fun _cmp_mag(that: MPFRep): Compare =>
     """
-    Compare the magnitudes `|this|` and `|that|`.  Returns `Greater` if
+    Compare the magnitudes `|this|` and `|that|`. Returns `Greater` if
     `|this| > |that|`, `Less` if `|this| < |that|`, `Equal` otherwise.
     Both operands must be finite and non-zero; callers must check.
     """
@@ -727,7 +674,7 @@ class val MPFRep
       end
     end
     // After matching the common prefix, check whether the extra bytes of
-    // the longer operand are all zero.  If so the magnitudes are equal.
+    // the longer operand are all zero. If so the magnitudes are equal.
     if na > nb then
       var all_zero: Bool = true
       try
@@ -760,7 +707,7 @@ class val MPFRep
   fun _add_mag(that: MPFRep, sgn: Bool): MPFRep =>
     """
     Add the magnitudes `|this|` and `|that|` and return the sum with the
-    given sign `sgn`.  Both operands must be finite.  The result exponent
+    given sign `sgn`. Both operands must be finite. The result exponent
     equals `max(this._exponent, that._exponent)`, incremented by one when a
     carry propagates out of the most-significant column.
 
@@ -829,8 +776,8 @@ class val MPFRep
   fun _sub_mag(that: MPFRep, sgn: Bool): MPFRep =>
     """
     Subtract the magnitude `|that|` from `|this|`, where `|this| ≥ |that|`
-    (enforced by the caller via `_cmp_mag`).  Returns the difference with sign
-    `sgn`.  Both operands must be finite.  The result is normalised: leading
+    (enforced by the caller via `_cmp_mag`). Returns the difference with sign
+    `sgn`. Both operands must be finite. The result is normalised: leading
     zero bytes are stripped and the exponent adjusted accordingly.
 
     The result is returned at full working precision (no output rounding).
@@ -910,11 +857,7 @@ class val MPFRep
         until i == 0 end
         res.update(0, _lowb(carry))?
       else
-        try
-          Assert(false,
-            "[MPFRep._short_add] index out of bounds at i=" + err_i.string(),
-            true)?
-        end
+        Fail(Format("[MPFRep._short_add] index out of bounds at i={}", err_i))
       end
       res
     end
@@ -924,7 +867,7 @@ class val MPFRep
   fun _short_mul(b: U8): MPFRep =>
     """
     Short multiplication: multiply `this` by the single byte `b`.
-    The result has the same digit count as `this`.  Any overflow beyond the
+    The result has the same digit count as `this`. Any overflow beyond the
     most-significant digit is captured in `_digits(0)` via the carry.
     """
     let size: USize = _size()
@@ -944,11 +887,7 @@ class val MPFRep
         until i == 0 end
         res.update(0, _highb(carry))?
       else
-        try
-          Assert(false,
-            "[MPFRep._short_mul] index out of bounds at i=" + err_i.string(),
-            true)?
-        end
+        Fail(Format("[MPFRep._short_mul] index out of bounds at i={}", err_i))
       end
       res
     end
@@ -957,8 +896,8 @@ class val MPFRep
 
   fun _short_div(b: U8): (MPFRep, U8) =>
     """
-    Short division: divide `this` by the single byte `b`.  Returns
-    `(quotient, remainder)`.  The quotient has the same digit count as `this`.
+    Short division: divide `this` by the single byte `b`. Returns
+    `(quotient, remainder)`. The quotient has the same digit count as `this`.
     """
     let size: USize = _size()
     var remain: U16 = 0
@@ -976,11 +915,7 @@ class val MPFRep
           i = i + 1
         end
       else
-        try
-          Assert(false,
-            "[MPFRep._short_div] index out of bounds at i=" + err_i.string(),
-            true)?
-        end
+        Fail(Format("[MPFRep._short_div] index out of bounds at i={}", err_i))
       end
       res
     end
@@ -990,8 +925,8 @@ class val MPFRep
   fun digit_shl(n: USize = 1): MPFRep =>
     """
     Left-shift by `n` base-256 digit positions: drop the `n` most-significant
-    digits and zero-pad on the right.  Equivalent to multiplying by `256^n`
-    modulo the array size.  The exponent field is not adjusted.
+    digits and zero-pad on the right. Equivalent to multiplying by `256^n`
+    modulo the array size. The exponent field is not adjusted.
 
     Used internally to strip the integer part after an arithmetic step.
     """
@@ -1006,11 +941,7 @@ class val MPFRep
           i = i + 1
         end
       else
-        try
-          Assert(false,
-            "[MPFRep.digit_shl] index out of bounds at i=" + i.string(),
-            true)?
-        end
+        Fail(Format("[MPFRep.digit_shl] index out of bounds at i={}", i))
       end
       a
     end
@@ -1022,7 +953,7 @@ class val MPFRep
   fun hash(): USize =>
     """
     Calculate a hash of this `MPFRep` based on the full mantissa, exponent and
-    sign.  Two representations that compare equal will have the same hash.
+    sign. Two representations that compare equal will have the same hash.
     """
     hash64().usize()
 
@@ -1030,10 +961,14 @@ class val MPFRep
   fun hash64(): U64 =>
     """
     Calculate a 64-bit hash of this `MPFRep` based on the full mantissa,
-    exponent and sign.  Two representations that compare equal will have the
+    exponent and sign. Two representations that compare equal will have the
     same hash.
     """
-    var h: U64 = 14695981039346656037  // FNV-1a offset basis
+    // FNV-1a hash: hash = offset_basis; for each byte b: hash = (hash XOR b) * prime.
+    // The offset basis seeds the hash so an empty input doesn't hash to 0 and short
+    // inputs don't cluster near 0. The constant 14695981039346656037 is the standard
+    // 64-bit FNV offset basis, chosen to minimise collisions across the full U64 space.
+    var h: U64 = 14695981039346656037
     let prime: U64 = 1099511628211
 
     // Mix sign, nan, inf, exponent into the hash.
@@ -1053,13 +988,13 @@ class val MPFRep
 
   fun f64(): F64 =>
     """
-    Convert the current `MPFRep` to `F64`.  Overflows are converted to ±∞;
+    Convert the current `MPFRep` to `F64`. Overflows are converted to ±∞;
     underflows to 0.
 
     This always holds: `MPFRep.from_f64(f).f64() == f` for any finite `F64`.
 
     The algorithm limits mantissa accumulation to 16 digits (128 bits, covering
-    F64's 53-bit mantissa) to prevent intermediate overflow.  The exponent
+    F64's 53-bit mantissa) to prevent intermediate overflow. The exponent
     scaling is split into two halves when outside the safe range [−125, 125]
     to avoid intermediate underflow for near-subnormal values.
     """
@@ -1084,7 +1019,7 @@ class val MPFRep
     var result: F64 = 0.0
     let size = _size()
     let p = size.min(16)
-    let base_f64 = _MPFBase.base().f64()
+    let base_f64: F64 = 256.0
     let inv_base = 1.0 / base_f64
 
     try
@@ -1113,13 +1048,13 @@ class val MPFRep
 
   fun f32(): F32 =>
     """
-    Convert the current `MPFRep` to `F32`.  Overflows are converted to ±∞;
+    Convert the current `MPFRep` to `F32`. Overflows are converted to ±∞;
     underflows to 0.
 
     This always holds: `MPFRep.from_f32(f).f32() == f` for any finite `F32`.
 
     The algorithm limits mantissa accumulation to 16 digits to prevent
-    intermediate overflow.  The exponent scaling is split when outside
+    intermediate overflow. The exponent scaling is split when outside
     [−125, 125] to avoid intermediate underflow.
     """
     if _nan then
@@ -1143,7 +1078,7 @@ class val MPFRep
     var result: F64 = 0.0
     let size = _size()
     let p = size.min(16)
-    let base_f64 = _MPFBase.base().f64()
+    let base_f64: F64 = 256.0
     let inv_base = 1.0 / base_f64
 
     try
@@ -1176,8 +1111,8 @@ class val MPFRep
 
   fun i128(): I128 =>
     """
-    Convert `this` to an `I128` value.  Fractional digits are truncated toward
-    zero.  In case of overflow the value is saturated to `I128.max_value()` or
+    Convert `this` to an `I128` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `I128.max_value()` or
     `I128.min_value()`.
 
     - NaN → 0
@@ -1200,7 +1135,7 @@ class val MPFRep
       return 0
     end
 
-    // I128 range is [−2^127, 2^127 − 1].  2^127 = 128 × 256^15.
+    // I128 range is [−2^127, 2^127 − 1]. 2^127 = 128 × 256^15.
     if (_exponent > 16) or
        ((_exponent == 16) and (try _digits(0)? >= 128 else false end))
     then
@@ -1215,12 +1150,12 @@ class val MPFRep
     let n: USize = _exponent.usize().min(_digits.size())
     try
       for i in Range(0, n) do
-        res = (res << _MPFBase.bits().u128()) or _digits(i)?.u128()
+        res = (res << U128(8)) or _digits(i)?.u128()
       end
     end
 
     if _exponent.usize() > n then
-      res = res << (_MPFBase.bits() * (_exponent.usize() - n)).u128()
+      res = res << (8 * (_exponent.usize() - n)).u128()
     end
 
     if _sign then
@@ -1232,8 +1167,8 @@ class val MPFRep
 
   fun i64(): I64 =>
     """
-    Convert `this` to an `I64` value.  Fractional digits are truncated toward
-    zero.  In case of overflow the value is saturated to `I64.max_value()` or
+    Convert `this` to an `I64` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `I64.max_value()` or
     `I64.min_value()`.
 
     - NaN → 0
@@ -1256,7 +1191,7 @@ class val MPFRep
       return 0
     end
 
-    // I64 range is [−2^63, 2^63 − 1].  2^63 = 128 × 256^7.
+    // I64 range is [−2^63, 2^63 − 1]. 2^63 = 128 × 256^7.
     if (_exponent > 8) or
        ((_exponent == 8) and (try _digits(0)? >= 128 else false end))
     then
@@ -1271,12 +1206,12 @@ class val MPFRep
     let n: USize = _exponent.usize().min(_digits.size())
     try
       for i in Range(0, n) do
-        res = (res << _MPFBase.bits().u64()) or _digits(i)?.u64()
+        res = (res << U64(8)) or _digits(i)?.u64()
       end
     end
 
     if _exponent.usize() > n then
-      res = res << (_MPFBase.bits() * (_exponent.usize() - n)).u64()
+      res = res << (8 * (_exponent.usize() - n)).u64()
     end
 
     if _sign then
@@ -1288,8 +1223,8 @@ class val MPFRep
 
   fun i32(): I32 =>
     """
-    Convert `this` to an `I32` value.  Fractional digits are truncated toward
-    zero.  In case of overflow the value is saturated to `I32.max_value()` or
+    Convert `this` to an `I32` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `I32.max_value()` or
     `I32.min_value()`.
 
     - NaN → 0
@@ -1312,7 +1247,7 @@ class val MPFRep
       return 0
     end
 
-    // I32 range is [−2^31, 2^31 − 1].  2^31 = 128 × 256^3.
+    // I32 range is [−2^31, 2^31 − 1]. 2^31 = 128 × 256^3.
     if (_exponent > 4) or
        ((_exponent == 4) and (try _digits(0)? >= 128 else false end))
     then
@@ -1327,12 +1262,12 @@ class val MPFRep
     let n: USize = _exponent.usize().min(_digits.size())
     try
       for i in Range(0, n) do
-        res = (res << _MPFBase.bits().u32()) or _digits(i)?.u32()
+        res = (res << U32(8)) or _digits(i)?.u32()
       end
     end
 
     if _exponent.usize() > n then
-      res = res << (_MPFBase.bits() * (_exponent.usize() - n)).u32()
+      res = res << (8 * (_exponent.usize() - n)).u32()
     end
 
     if _sign then
@@ -1344,8 +1279,8 @@ class val MPFRep
 
   fun i16(): I16 =>
     """
-    Convert `this` to an `I16` value.  Fractional digits are truncated toward
-    zero.  In case of overflow the value is saturated to `I16.max_value()` or
+    Convert `this` to an `I16` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `I16.max_value()` or
     `I16.min_value()`.
 
     - NaN → 0
@@ -1368,7 +1303,7 @@ class val MPFRep
       return 0
     end
 
-    // I16 range is [−2^15, 2^15 − 1].  2^15 = 128 × 256^1.
+    // I16 range is [−2^15, 2^15 − 1]. 2^15 = 128 × 256^1.
     if (_exponent > 2) or
        ((_exponent == 2) and (try _digits(0)? >= 128 else false end))
     then
@@ -1383,12 +1318,12 @@ class val MPFRep
     let n: USize = _exponent.usize().min(_digits.size())
     try
       for i in Range(0, n) do
-        res = (res << _MPFBase.bits().u16()) or _digits(i)?.u16()
+        res = (res << U16(8)) or _digits(i)?.u16()
       end
     end
 
     if _exponent.usize() > n then
-      res = res << (_MPFBase.bits() * (_exponent.usize() - n)).u16()
+      res = res << (8 * (_exponent.usize() - n)).u16()
     end
 
     if _sign then
@@ -1400,8 +1335,8 @@ class val MPFRep
 
   fun i8(): I8 =>
     """
-    Convert `this` to an `I8` value.  Fractional digits are truncated toward
-    zero.  In case of overflow the value is saturated to `I8.max_value()` or
+    Convert `this` to an `I8` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `I8.max_value()` or
     `I8.min_value()`.
 
     - NaN → 0
@@ -1424,7 +1359,7 @@ class val MPFRep
       return 0
     end
 
-    // I8 range is [−2^7, 2^7 − 1].  2^7 = 128.
+    // I8 range is [−2^7, 2^7 − 1]. 2^7 = 128.
     if (_exponent > 1) or
        ((_exponent == 1) and (try _digits(0)? >= 128 else false end))
     then
@@ -1438,7 +1373,7 @@ class val MPFRep
     var res = try _digits(0)?.u8() else 0 end
 
     if _exponent > 1 then
-      res = res << (_MPFBase.bits().u8() * (_exponent.u8() - 1))
+      res = res << (U8(8) * (_exponent.u8() - 1))
     end
 
     if _sign then
@@ -1450,7 +1385,7 @@ class val MPFRep
 
   fun ilong(): ILong =>
     """
-    Convert `this` to an `ILong` value.  On LLP64 and ILP32 platforms that is
+    Convert `this` to an `ILong` value. On LLP64 and ILP32 platforms that is
     a conversion to `I32`; on all other platforms it is a conversion to `I64`.
 
     - NaN → 0
@@ -1472,7 +1407,7 @@ class val MPFRep
 
   fun isize(): ISize =>
     """
-    Convert `this` to an `ISize` value.  On ILP32 platforms that is a
+    Convert `this` to an `ISize` value. On ILP32 platforms that is a
     conversion to `I32`; on all other platforms it is a conversion to `I64`.
 
     - NaN → 0
@@ -1496,7 +1431,7 @@ class val MPFRep
 
   fun i128_unsafe(): I128 =>
     """
-    Convert `this` to an `I128` value.  Fractional digits are truncated.
+    Convert `this` to an `I128` value. Fractional digits are truncated.
     In case of overflow or special value the result is undefined.
     """
     let e = _exponent.usize()
@@ -1533,7 +1468,7 @@ class val MPFRep
 
   fun i64_unsafe(): I64 =>
     """
-    Convert `this` to an `I64` value.  Fractional digits are truncated.
+    Convert `this` to an `I64` value. Fractional digits are truncated.
     In case of overflow or special value the result is undefined.
     """
     let e = _exponent.usize()
@@ -1562,7 +1497,7 @@ class val MPFRep
 
   fun i32_unsafe(): I32 =>
     """
-    Convert `this` to an `I32` value.  Fractional digits are truncated.
+    Convert `this` to an `I32` value. Fractional digits are truncated.
     In case of overflow or special value the result is undefined.
     """
     let e = _exponent.usize()
@@ -1587,7 +1522,7 @@ class val MPFRep
 
   fun i16_unsafe(): I16 =>
     """
-    Convert `this` to an `I16` value.  Fractional digits are truncated.
+    Convert `this` to an `I16` value. Fractional digits are truncated.
     In case of overflow or special value the result is undefined.
     """
     let e = _exponent.usize()
@@ -1610,7 +1545,7 @@ class val MPFRep
 
   fun i8_unsafe(): I8 =>
     """
-    Convert `this` to an `I8` value.  Fractional digits are truncated.
+    Convert `this` to an `I8` value. Fractional digits are truncated.
     In case of overflow or special value the result is undefined.
     """
     let e = _exponent.usize()
@@ -1631,7 +1566,7 @@ class val MPFRep
   fun ilong_unsafe(): ILong =>
     """
     Convert `this` to an `ILong` value without checking for overflow or
-    special values.  On LLP64 and ILP32 platforms that is a conversion to
+    special values. On LLP64 and ILP32 platforms that is a conversion to
     `I32`; on all other platforms it is a conversion to `I64`.
     """
     ifdef lp64 then
@@ -1648,7 +1583,7 @@ class val MPFRep
   fun isize_unsafe(): ISize =>
     """
     Convert `this` to an `ISize` value without checking for overflow or
-    special values.  On ILP32 platforms that is a conversion to `I32`;
+    special values. On ILP32 platforms that is a conversion to `I32`;
     on all other platforms it is a conversion to `I64`.
     """
     ifdef lp64 then
@@ -1662,6 +1597,290 @@ class val MPFRep
     end
 
 
+  //- Conversions: to unsigned integer ----------------------------------------
+
+  fun u128(): U128 =>
+    """
+    Convert `this` to a `U128` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `U128.max_value()` or
+    `U128.min_value()` (0).
+
+    - NaN → 0
+    - −∞ → `U128.min_value()` (0)
+    - +∞ → `U128.max_value()`
+    - `]−1, +1[` → 0
+    - negative values → 0
+    - Other values are saturated to the `U128` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return U128.min_value()
+      else
+        return U128.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+    if _sign then
+      return U128.min_value()
+    end
+
+    // U128 range is [0, 2^128 − 1]. 2^128 = 256^16.
+    if _exponent > 16 then
+      return U128.max_value()
+    end
+
+    var res: U128 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << U128(8)) or _digits(i)?.u128()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (8 * (_exponent.usize() - n)).u128()
+    end
+
+    res
+
+
+  fun u64(): U64 =>
+    """
+    Convert `this` to a `U64` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `U64.max_value()` or
+    `U64.min_value()` (0).
+
+    - NaN → 0
+    - −∞ → `U64.min_value()` (0)
+    - +∞ → `U64.max_value()`
+    - `]−1, +1[` → 0
+    - negative values → 0
+    - Other values are saturated to the `U64` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return U64.min_value()
+      else
+        return U64.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+    if _sign then
+      return U64.min_value()
+    end
+
+    // U64 range is [0, 2^64 − 1]. 2^64 = 256^8.
+    if _exponent > 8 then
+      return U64.max_value()
+    end
+
+    var res: U64 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << U64(8)) or _digits(i)?.u64()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (8 * (_exponent.usize() - n)).u64()
+    end
+
+    res
+
+
+  fun u32(): U32 =>
+    """
+    Convert `this` to a `U32` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `U32.max_value()` or
+    `U32.min_value()` (0).
+
+    - NaN → 0
+    - −∞ → `U32.min_value()` (0)
+    - +∞ → `U32.max_value()`
+    - `]−1, +1[` → 0
+    - negative values → 0
+    - Other values are saturated to the `U32` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return U32.min_value()
+      else
+        return U32.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+    if _sign then
+      return U32.min_value()
+    end
+
+    // U32 range is [0, 2^32 − 1]. 2^32 = 256^4.
+    if _exponent > 4 then
+      return U32.max_value()
+    end
+
+    var res: U32 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << U32(8)) or _digits(i)?.u32()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (8 * (_exponent.usize() - n)).u32()
+    end
+
+    res
+
+
+  fun u16(): U16 =>
+    """
+    Convert `this` to a `U16` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `U16.max_value()` or
+    `U16.min_value()` (0).
+
+    - NaN → 0
+    - −∞ → `U16.min_value()` (0)
+    - +∞ → `U16.max_value()`
+    - `]−1, +1[` → 0
+    - negative values → 0
+    - Other values are saturated to the `U16` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return U16.min_value()
+      else
+        return U16.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+    if _sign then
+      return U16.min_value()
+    end
+
+    // U16 range is [0, 2^16 − 1]. 2^16 = 256^2.
+    if _exponent > 2 then
+      return U16.max_value()
+    end
+
+    var res: U16 = 0
+    let n: USize = _exponent.usize().min(_digits.size())
+    try
+      for i in Range(0, n) do
+        res = (res << U16(8)) or _digits(i)?.u16()
+      end
+    end
+
+    if _exponent.usize() > n then
+      res = res << (8 * (_exponent.usize() - n)).u16()
+    end
+
+    res
+
+
+  fun u8(): U8 =>
+    """
+    Convert `this` to a `U8` value. Fractional digits are truncated toward
+    zero. In case of overflow the value is saturated to `U8.max_value()` or
+    `U8.min_value()` (0).
+
+    - NaN → 0
+    - −∞ → `U8.min_value()` (0)
+    - +∞ → `U8.max_value()`
+    - `]−1, +1[` → 0
+    - negative values → 0
+    - Other values are saturated to the `U8` range.
+    """
+    if _nan then
+      return 0
+    end
+    if _inf then
+      if _sign then
+        return U8.min_value()
+      else
+        return U8.max_value()
+      end
+    end
+    if is_zero() or (_exponent <= 0) then
+      return 0
+    end
+    if _sign then
+      return U8.min_value()
+    end
+
+    // U8 range is [0, 255]. 2^8 = 256.
+    if _exponent > 1 then
+      return U8.max_value()
+    end
+
+    try _digits(0)? else 0 end
+
+
+  fun ulong(): ULong =>
+    """
+    Convert `this` to a `ULong` value. On LLP64 and ILP32 platforms that is
+    a conversion to `U32`; on all other platforms it is a conversion to `U64`.
+
+    - NaN → 0
+    - −∞ → `ULong.min_value()` (0)
+    - +∞ → `ULong.max_value()`
+    - negative values → 0
+    - Other values are saturated to the `ULong` range.
+    """
+    ifdef lp64 then
+      u64().ulong()
+    elseif llp64 then
+      u32().ulong()
+    elseif ilp32 then
+      u32().ulong()
+    else
+      u64().ulong()
+    end
+
+
+  fun usize(): USize =>
+    """
+    Convert `this` to a `USize` value. On ILP32 platforms that is a
+    conversion to `U32`; on all other platforms it is a conversion to `U64`.
+
+    - NaN → 0
+    - −∞ → `USize.min_value()` (0)
+    - +∞ → `USize.max_value()`
+    - negative values → 0
+    - Other values are saturated to the `USize` range.
+    """
+    ifdef lp64 then
+      u64().usize()
+    elseif llp64 then
+      u64().usize()
+    elseif ilp32 then
+      u32().usize()
+    else
+      u64().usize()
+    end
+
+
   //- String output -----------------------------------------------------------
 
   fun _digits_as_mpint(): MPInt =>
@@ -1669,7 +1888,7 @@ class val MPFRep
     Convert `_digits` (the big-endian base-256 significand of this `MPFRep`,
     treated as a non-negative integer) into an `MPInt`.
 
-    The result is always non-negative regardless of `_sign`.  Uses
+    The result is always non-negative regardless of `_sign`. Uses
     `MPInt.from_bytes_be` so no internal `MPInt` detail is exposed.
     """
     MPInt.from_bytes_be(false, _digits)
@@ -1682,9 +1901,9 @@ class val MPFRep
       `|this| = 0.mantissa_digits × 10^exponent`
 
     The mantissa string begins with `"-"` when `this` is negative, followed
-    by decimal digit characters (no decimal point).  The number of digits is
+    by decimal digit characters (no decimal point). The number of digits is
     approximately `⌈_size() × log₁₀(256)⌉ + 2`; trailing zeros are NOT
-    stripped.  The `exponent` is the number of decimal digits to the left of
+    stripped. The `exponent` is the number of decimal digits to the left of
     the decimal point (so `exponent = 1` means the value is in `[0.1, 1)`
     after dividing by `10^(exponent − 1)`).
 
@@ -1696,7 +1915,7 @@ class val MPFRep
 
     Algorithm (exact, no Newton approximation):
     Let `N` be `_digits` interpreted as a base-256 integer and
-    `k = _exponent − _size()`.  Then `|this| = N × 256^k`.
+    `k = _exponent − _size()`. Then `|this| = N × 256^k`.
 
     - Integer case (`k ≥ 0`): `|this| = N × 2^{8k}`.
       Compute `N << (8k)` as an `MPInt` and call `.string()`.
@@ -1729,7 +1948,7 @@ class val MPFRep
     let k_bytes: I64 = _exponent - prec.i64()
 
     if (k_bytes >= 0) and (k_bytes < 150) then
-      let b: USize = k_bytes.usize() * _MPFBase.bits()
+      let b: USize = k_bytes.usize() * 8
       let shifted: MPInt =
         if b > 0 then
           n_int.shl(MPInt.from[ILong](b.ilong()))
@@ -1841,7 +2060,7 @@ class val MPFRep
     """
     Return a decimal string representation of this `MPFRep`, formatted in the
     style of C's `printf` `%g` with `⌈_size() × log₁₀(256)⌉ + 2` significant
-    digits.  Trailing zeros are stripped; at least one digit after the decimal
+    digits. Trailing zeros are stripped; at least one digit after the decimal
     point is always shown.
 
     Special values: `"nan"`, `"+inf"`, `"-inf"`, `"0.0"`, `"-0.0"`.

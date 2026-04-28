@@ -1,38 +1,31 @@
-// Multi-precision float context: precision policy and rounding.
+// Multi-precision float context: precision policy and rounding only.
 
-use "../assertx"
+use "collections"
 
 
 class val MPFContext
   """
-  Execution context for arbitrary-precision floating-point arithmetic.
+  Precision and rounding policy for arbitrary-precision floating-point arithmetic.
 
-  An `MPFContext` binds together two orthogonal pieces of policy:
+  An `MPFContext` is a pure policy record: it holds two orthogonal pieces of
+  policy and provides helpers to derive working precision and apply output
+  rounding. It has **no arithmetic methods** — all computation lives in
+  `_MPFAlgo`.
 
   - **`precision`** — the number of significant bits in any result produced
-    under this context.  Stored in bits (user-facing unit); converted to bytes
+    under this context. Stored in bits (user-facing unit); converted to bytes
     internally via `p_bytes()`.
   - **`rounding`** — the IEEE 754 / MPFR rounding mode applied when a
     computed result is shortened to `precision` bits.
 
   ## Usage pattern
 
-  Every arithmetic operation follows this two-phase discipline:
+  `MPFloat` holds an `MPFContext` and calls `_MPFAlgo.op(_ctx, ...)` directly.
+  Every operation follows this two-phase discipline:
 
   1. Compute at *working precision* `w = working_bytes(op)` bytes — enough
      guard bytes to bound the rounding error of the operation to ≤ 1 ULP.
   2. Round back to *output precision* `p = p_bytes()` bytes via `_round_to`.
-
-  `MPFloat` holds an `MPFContext` and delegates this discipline automatically.
-  Power users can also use `MPFContext` directly with `MPFRep` operands once
-  the `MPFContext` arithmetic API is complete (Step 4 of the architectural
-  split).
-
-  ## Sentinel `tag` values
-
-  `p_bytes()` and `working_bytes` require a live instance.  Any code path that
-  truly needs a context without an instance (e.g. `tag` factory methods) should
-  construct a default `MPFContext` with `MPFContext.create()`.
 
   ## Default precision
 
@@ -40,9 +33,9 @@ class val MPFContext
   giving about 34 significant decimal digits.
   """
 
-  let precision: ULong
+  let precision: USize
   """
-  The output precision in bits.  Converted to bytes via `p_bytes()`.
+  The output precision in bits. Converted to bytes via `p_bytes()`.
   The minimum meaningful value is 8 (one base-256 digit ≈ 2.4 decimal digits).
   """
 
@@ -53,10 +46,10 @@ class val MPFContext
   """
 
 
-  new val create(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val create(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
     """
     Create an `MPFContext` with the given precision `prec` (bits) and rounding
-    mode `rnd`.  The default (no arguments) produces a 112-bit context with
+    mode `rnd`. The default (no arguments) produces a 112-bit context with
     round-to-nearest, which matches IEEE 754 binary128.
     """
     precision = prec
@@ -70,144 +63,112 @@ class val MPFContext
     This is the length of the `_digits` array in any `MPFRep` produced by an
     operation under this context.
     """
-    (precision.usize() + 7) / 8
+    (precision + 7) / 8
 
 
   fun val working_bytes(op: String): USize =>
     """
     Working precision in bytes for the named operation `op`.
 
-    Equals `p_bytes() + guard`, where `guard` is a per-operation constant that
-    gives enough extra digits to keep the rounding error of the full computation
-    ≤ 1 ULP at output precision `p_bytes()`.
-
-    | `op`      | guard | Reason                                                  |
-    |-----------|-------|---------------------------------------------------------|
-    | `"add"`   |   2   | Catastrophic cancellation loses at most 1 ULP           |
-    | `"sub"`   |   2   | Same as `"add"`                                         |
-    | `"mul"`   |   2   | Product has 2× digits; FFT rounding errors              |
-    | `"inv"`   |   2   | Newton error ≤ 1 ULP at convergence                     |
-    | `"sqrt"`  |   2   | Newton error ≤ 1 ULP at convergence                     |
-    | `"ln"`    |   6   | Argument reduction introduces cancellation              |
-    | `"exp"`   |   8   | Argument reduction + Taylor series                      |
-    | `"trig"`  |   8   | Near-cancellation for large arguments                   |
-    | `"pi"`    |   8   | Borwein / BBP / Chudnovsky convergence                  |
-    | default   |   4   | Conservative fallback for unlisted operations           |
+    Delegates to `_MPFAlgo._guard_bytes`, which owns the authoritative
+    guard-byte table next to the algorithms that need it. See that method
+    for the per-operation guard values and their rationale.
     """
-    let p = p_bytes()
-    let guard: USize =
-      if   (op == "add") or (op == "sub") then 2
-      elseif (op == "mul") then 2
-      elseif (op == "inv") then 2
-      elseif (op == "sqrt") then 2
-      elseif (op == "ln") then 6
-      elseif (op == "exp") then 8
-      elseif (op == "trig") then 8
-      elseif (op == "pi") then 8
-      else 4
-      end
-    p + guard
+    _MPFAlgo._guard_bytes(this, op)
 
 
-  fun val _round_to(r: MPFRep, n: USize, mode: RoundingMode): MPFRep =>
+  fun val _round_to(rep: MPFRep, prec: USize, mode: RoundingMode): MPFRep =>
     """
-    Round `r` to `n` most-significant base-256 digits using `mode`.
-
-    This is the keystone operation that gives semantic meaning to
-    `rounding`: it replaces every `._trunc(n)` call at operation output
-    boundaries.  Inside Newton loops `._trunc` (= `RoundingZero`) remains
-    correct and intentional.
+    Round `rep` to `prec` most-significant base-256 digits using `mode`.
 
     ## Algorithm
 
-    Let `p = r._size()`.  If `p ≤ n` the value already fits; return a copy
-    with `_digits` zero-padded to `n` (no rounding needed).
+    Let `p = rep._size()`. If `p ≤ prec` the value already fits; return a copy
+    with `_digits` zero-padded to `prec` (no rounding needed).
 
-    Otherwise, let `d[n]` be the first discarded byte (index `n` in
-    `_digits`), and let *sticky* be `true` when any byte at index `> n` is
-    nonzero.
+    Otherwise, let `d[prec]` be the first discarded byte (index `prec` in
+    `_digits`), and let *sticky* be `true` when any byte at index `> prec` is
+    nonzero (See https://en.wikipedia.org/wiki/Floating-point_arithmetic#Addition_and_subtraction
+    for information on rounding and sticky bit)
 
     ### Mode behaviour when discarded bytes are nonzero
 
-    | Mode              | Action                                                     |
-    |-------------------|------------------------------------------------------------|
-    | `RoundingZero`    | Truncate: keep top `n` bytes unchanged                     |
-    | `RoundingNearest` | Round-half-to-even: increment if `d[n] > 128`, or if      |
-    |                   | `d[n] == 128` and (sticky or `d[n-1]` is odd)             |
-    | `RoundingNegInf`  | If negative, increment magnitude; if positive, truncate    |
-    | `RoundingPosInf`  | If positive, increment magnitude; if negative, truncate    |
-    | `RoundingAwayZ`   | Always increment magnitude if any discarded byte nonzero  |
-    | `RoundingFaithful`| Same as `RoundingNearest` (implementation-defined)        |
+    | Mode              | Action                                                   |
+    |-------------------|----------------------------------------------------------|
+    | `RoundingZero`    | Truncate: keep top `prec` bytes unchanged                |
+    | `RoundingNearest` | Round-half-to-even: increment if `d[prec] > 128`, or if  |
+    |                   | `d[prec] == 128` and (sticky or `d[prec - 1]` is odd)    |
+    | `RoundingNegInf`  | If negative, increment magnitude; if positive, truncate  |
+    | `RoundingPosInf`  | If positive, increment magnitude; if negative, truncate  |
+    | `RoundingAwayZ`   | Always increment magnitude if any discarded byte nonzero |
+    | `RoundingFaithful`| Same as `RoundingNearest` (implementation-defined)       |
 
-    "Increment magnitude" means adding 1 to the last kept digit and
-    propagating the carry, which may shift the exponent by 1 when all `n`
-    digits overflow (e.g. `[255,255,…]` → `[1,0,0,…]` with exponent + 1).
+    "Increment magnitude" means adding 1 to the last kept digit and propagating
+    the carry, which may shift the exponent by 1 when all `prec` digits overflow
+    (e.g. `[255, 255, ...]` → `[1, 0, 0, ...]` with exponent + 1).
     """
-    let p = r._size()
+    let p = rep._size()
+    let midb: U8 = 128
+    let base_max: U8 = 255
 
     // Already fits: zero-pad if needed, no rounding.
-    if p <= n then
-      if p == n then
-        return r
+    if p <= prec then
+      if p == prec then
+        return rep
       end
       let padded: Array[U8] val = recover
-        let d = Array[U8].create(n)
+        let d = Array[U8].create(prec)
         var i: USize = 0
         while i < p do
-          try d.push(r.raw_digits()(i)?) end
+          try d.push(rep.raw_digits()(i)?) end
           i = i + 1
         end
-        while d.size() < n do
+        while d.size() < prec do
           d.push(0)
         end
         d
       end
-      return MPFRep._create(r.sign_bit(), r.is_nan(), r.is_infinite(),
-        r.exponent(), padded)
+      return MPFRep._create(rep.sign_bit(), rep.is_nan(), rep.is_infinite(),
+        rep.exponent(), padded)
     end
 
     // Gather rounding information.
-    let digits: Array[U8] val = r.raw_digits()
-    let first_discarded: U8 = try digits(n)? else 0 end
+    let digits: Array[U8] val = rep.raw_digits()
+    let first_discarded: U8 = try digits(prec)? else 0 end
     var sticky: Bool = false
-    var j: USize = n + 1
-    while j < p do
+    for j in Range(prec + 1, p) do
       if (try digits(j)? else 0 end) != 0 then
         sticky = true
         break
       end
-      j = j + 1
     end
 
-    let last_kept: U8 = try digits(n - 1)? else 0 end
+    let last_kept: U8 = try digits(prec - 1)? else 0 end
 
     // Decide whether to increment the magnitude.
-    let increment: Bool =
-      match mode
-      | RoundingZero    => false
-      | RoundingNearest =>
-        if first_discarded > 128 then
+    let increment: Bool = match \exhausitve\ mode
+      | RoundingZero => false
+      | RoundingNearest => if first_discarded > midb then
           true
-        elseif first_discarded == 128 then
+        elseif first_discarded == midb then
           sticky or ((last_kept and 1) == 1)
         else
           false
         end
-      | RoundingFaithful =>
-        if first_discarded > 128 then
+      | RoundingFaithful => if first_discarded > midb then
           true
-        elseif first_discarded == 128 then
+        elseif first_discarded == midb then
           sticky or ((last_kept and 1) == 1)
         else
           false
         end
-      | RoundingNegInf  => r.sign_bit() and ((first_discarded != 0) or sticky)
-      | RoundingPosInf  => (not r.sign_bit()) and ((first_discarded != 0) or sticky)
+      | RoundingNegInf  => rep.sign_bit() and ((first_discarded != 0) or sticky)
+      | RoundingPosInf  => (not rep.sign_bit()) and ((first_discarded != 0) or sticky)
       | RoundingAwayZ   => (first_discarded != 0) or sticky
       end
 
-    // Truncate to n digits.
-    var truncated: MPFRep = r._trunc(n)
+    // Truncate to prec digits.
+    var truncated: MPFRep = rep._trunc(prec)
 
     if not increment then
       return truncated
@@ -218,40 +179,35 @@ class val MPFContext
     let new_exp: I64 = truncated.exponent()
     let new_digits: Array[U8] val = truncated.raw_digits()
 
-    // Check if we overflow (all n digits are 255).
+    // Check if we overflow (all prec digits are 255).
     var all_max: Bool = true
-    var k: USize = 0
-    while k < n do
-      if (try new_digits(k)? else 0 end) != 255 then
+    for k in Range(0, prec) do
+      if (try new_digits(k)? else 0 end) != base_max then
         all_max = false
         break
       end
-      k = k + 1
     end
 
     if all_max then
-      // Overflow: result is 1.000…0 × 256^(new_exp+1).
+      // Overflow: result is 1.000...0 × 256^(new_exp+1).
       let overflow_digits: Array[U8] val = recover
-        let d = Array[U8].init(0, n)
+        let d = Array[U8].init(0, prec)
         try d(0)? = 1 end
         d
       end
-      MPFRep._create(truncated.sign_bit(), false, false,
-        new_exp + 1, overflow_digits)
+      MPFRep._create(truncated.sign_bit(), false, false, new_exp + 1, overflow_digits)
     else
       // Normal carry propagation from the last digit toward the first.
       let incremented: Array[U8] val = recover
-        let d = Array[U8].create(n)
-        var i: USize = 0
-        while i < n do
+        let d = Array[U8].create(prec)
+        for i in Range(0, prec) do
           try d.push(new_digits(i)?) end
-          i = i + 1
         end
-        var pos: USize = n - 1
+        var pos: USize = prec - 1
         var carry: Bool = true
         while carry do
           let cur: U8 = try d(pos)? else 0 end
-          if cur == 255 then
+          if cur == base_max then
             try d(pos)? = 0 end
           else
             try d(pos)? = cur + 1 end
@@ -266,6 +222,6 @@ class val MPFContext
         end
         d
       end
-      MPFRep._create(truncated.sign_bit(), false, false,
-        new_exp, incremented)
+      MPFRep._create(truncated.sign_bit(), false, false, new_exp, incremented)
     end
+

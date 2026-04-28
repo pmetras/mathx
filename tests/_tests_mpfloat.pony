@@ -334,7 +334,7 @@ class iso _TestMPFloatFromF32 is UnitTest
   fun name(): String => "MPFloat/from_f32"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 32
+    let p: USize = 32
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -422,7 +422,7 @@ class iso _TestMPFloatFromF64 is UnitTest
   fun name(): String => "MPFloat/from_f64"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 64
+    let p: USize = 64
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -609,7 +609,7 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
   fun name(): String => "MPFloat/from_string/decimal"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 112
+    let p: USize = 112
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -751,7 +751,7 @@ class iso _TestMPFloatAdd is UnitTest
   fun name(): String => "MPFloat/add"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 160
+    let p: USize = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -808,7 +808,7 @@ class iso _TestMPFloatSub is UnitTest
   fun name(): String => "MPFloat/sub"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 136
+    let p: USize = 136
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -835,7 +835,7 @@ class iso _TestMPFloatMul is UnitTest
   fun name(): String => "MPFloat/mul"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 144
+    let p: USize = 144
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -939,7 +939,7 @@ class iso _TestMPFloatInv is UnitTest
   fun name(): String => "MPFloat/inv"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 80
+    let p: USize = 80
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -981,7 +981,7 @@ class iso _TestMPFloatDiv is UnitTest
   fun name(): String => "MPFloat/div"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 104
+    let p: USize = 104
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1037,7 +1037,7 @@ class iso _TestMPFloatSqrt is UnitTest
   fun name(): String => "MPFloat/sqrt"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 96
+    let p: USize = 96
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1088,7 +1088,7 @@ class iso _TestMPFloatCmp is UnitTest
   fun name(): String => "MPFloat/cmp"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 120
+    let p: USize = 120
     let nan  = MPFloat.nan_val()
     let pinf = MPFloat.inf_val(true)
     let ninf = MPFloat.inf_val(false)
@@ -1206,7 +1206,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
   fun name(): String => "MPFloat/from_mpint"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 192
+    let p: USize = 192
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1260,27 +1260,26 @@ class iso _TestMPFloatFromMPInt is UnitTest
 
     // 10^20 > U64.max (≈1.8×10^19): requires MPInt arithmetic to construct.
     //
-    // With p=64 bits (≈19.3 significant decimal digits), 10^20 (21 digits) cannot
-    // be held exactly; the best 8-byte approximation is just below 10^20 and
-    // its string representation starts with "9".  We only verify finiteness,
-    // positiveness, and that the leading digit is "9" or "1" (order-of-
-    // magnitude correct).
+    // With p=64 bits (8 bytes ≈ 19.3 significant decimal digits), 10^20 (21
+    // digits) cannot be held exactly.  We verify the rounded result is within
+    // epsilon of from_string("1e20") computed at the same precision.
     let e20: MPInt = try MPInt.from_string("100000000000000000000")? else MPInt.from[ILong](0) end
-    let fe20 = MPFloat.from_mpint(e20, p)
-    h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=64 bits) is finite")
-    h.assert_false(fe20.is_negative(), "from_mpint(10^20, p=64 bits) is positive")
-    h.assert_true(
-      fe20.string().at("9") or fe20.string().at("1"),
-      "from_mpint(10^20, p=64 bits) leading digit is 9 or 1")
+    let fe20 = MPFloat.from_mpint(e20, 64)
+    let fe20_ref = try MPFloat.from_string("100000000000000000000", 64)? else MPFloat.nan_val() end
+    let tol64: MPFloat = MPFloat.epsilon(64).sqrt()
+    h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=64) is finite")
+    h.assert_false(fe20.is_negative(), "from_mpint(10^20, p=64) is positive")
+    h.assert_true(fe20.almost_eq(fe20_ref, tol64, tol64),
+      "from_mpint(10^20, p=64) ≈ from_string(\"1e20\", 64)")
 
-    // With p=96 bits (≈29 significant decimal digits), 10^20 (21 digits) fits
-    // comfortably and the string should represent "1e+20".
-    let fe20p12 = MPFloat.from_mpint(e20, 96)
-    h.assert_true(fe20p12.is_finite(),    "from_mpint(10^20, p=96) is finite")
-    h.assert_false(fe20p12.is_negative(), "from_mpint(10^20, p=96) is positive")
-    h.assert_true(
-      fe20p12.string().at("1e+20") or fe20p12.string().at("100000000000000000000"),
-      "from_mpint(10^20, p=96) string represents 10^20")
+    // With p=96 bits (12 bytes ≈ 28.9 significant decimal digits), 10^20 (21
+    // digits) fits exactly.  The result must equal from_string at the same
+    // precision to within rounding error.
+    let fe20p96 = MPFloat.from_mpint(e20, 96)
+    let fe20p96_ref = try MPFloat.from_string("100000000000000000000", 96)? else MPFloat.nan_val() end
+    let tol96: MPFloat = MPFloat.epsilon(96).sqrt()
+    h.assert_true(fe20p96.almost_eq(fe20p96_ref, tol96, tol96),
+      "from_mpint(10^20, p=96) ≈ from_string(\"1e20\", 96)")
 
     // 29-digit positive: precision must be ≥ ceil(29 / log10(2)) ≈ 96 bits
     // to represent all digits. With p=128 bits all 29 digits survive.
@@ -1288,34 +1287,28 @@ class iso _TestMPFloatFromMPInt is UnitTest
       try MPInt.from_string("12345678901234567890123456789")?
       else MPInt.from[ILong](0) end
     let fd29 = MPFloat.from_mpint(d29, 128)
-    h.assert_true(fd29.is_finite(),    "from_mpint(29-digit) is finite")
-    h.assert_false(fd29.is_negative(), "from_mpint(29-digit) is positive")
-    h.assert_true(
-      fd29.string().at("12345678901234567890"),
-      "from_mpint(29-digit) first 20 digits preserved with prec=128")
+    let fd29_ref = try MPFloat.from_string("12345678901234567890123456789", 128)? else MPFloat.nan_val() end
+    let tol128: MPFloat = MPFloat.epsilon(128).sqrt()
+    h.assert_true(fd29.almost_eq(fd29_ref, tol128, tol128),
+      "from_mpint(29-digit, p=128) ≈ from_string(same, 128)")
 
     // Negative large: -10^20 with p=96 for sufficient precision.
     let ne20: MPInt =
       try MPInt.from_string("-100000000000000000000")? else MPInt.from[ILong](0) end
     let fne20 = MPFloat.from_mpint(ne20, 96)
-    h.assert_true(fne20.is_finite(),    "from_mpint(-10^20) is finite")
-    h.assert_true(fne20.is_negative(),  "from_mpint(-10^20) is negative")
-    h.assert_true(
-      fne20.string().at("-1e+20") or fne20.string().at("-100000000000000000000"),
-      "from_mpint(-10^20, p=96) string represents -10^20")
+    let fne20_ref = try MPFloat.from_string("-100000000000000000000", 96)? else MPFloat.nan_val() end
+    h.assert_true(fne20.almost_eq(fne20_ref, tol96, tol96),
+      "from_mpint(-10^20, p=96) ≈ from_string(\"-1e20\", 96)")
 
-    // 39-digit positive with precision of 400 bits
+    // 39-digit positive with precision of 400 bits: all digits must survive.
     let d39: MPInt =
       try MPInt.from_string("123456789012345678901234567890123456789")?
       else MPInt.from[ILong](0) end
     let fd39 = MPFloat.from_mpint(d39, 400)
-    h.assert_true(fd39.is_finite(),    "from_mpint(39-digit) is finite")
-    h.assert_false(fd39.is_negative(), "from_mpint(39-digit) is positive")
-    h.assert_true(
-      fd39.string().at("12345678901234567890"),
-      "from_mpint(39-digit) first 20 digits preserved with prec=400")
-    // Digits before decimal point are the same
-    h.assert_eq[String](fd39.string().substring(0, try fd39.string().find(".")? else 0 end), d39.string(), "fd39 and d39 have same string representation")
+    let fd39_ref = try MPFloat.from_string("123456789012345678901234567890123456789", 400)? else MPFloat.nan_val() end
+    let tol400: MPFloat = MPFloat.epsilon(400).sqrt()
+    h.assert_true(fd39.almost_eq(fd39_ref, tol400, tol400),
+      "from_mpint(39-digit, p=400) ≈ from_string(same, 400)")
 
 
 // ── divrem / rem / fld / mod ──────────────────────────────────────────────────
@@ -1338,7 +1331,7 @@ class iso _TestMPFloatDivRem is UnitTest
     "MPFloat/divrem"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 240
+    let p: USize = 240
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1504,7 +1497,7 @@ class iso _TestMPFloatRounding is UnitTest
     "MPFloat/rounding"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 72
+    let p: USize = 72
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
@@ -1587,7 +1580,7 @@ class iso _TestMPFloatIsInteger is UnitTest
   fun name(): String => "MPFloat/is_integer"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 168
+    let p: USize = 168
 
     // Finite exact integers.
     h.assert_true(MPFloat.from_f64(0.0,   p).is_integer(), "0 is integer")
@@ -1620,7 +1613,7 @@ class iso _TestMPFloatLn is UnitTest
   fun name(): String => "MPFloat/ln"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 160
+    let p: USize = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     // F64-reference comparisons need tolerance bounded by F64 precision (~52 bits).
     let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
@@ -1675,7 +1668,7 @@ class iso _TestMPFloatExp is UnitTest
   fun name(): String => "MPFloat/exp"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 112
+    let p: USize = 112
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1724,7 +1717,7 @@ class iso _TestMPFloatLog2 is UnitTest
   fun name(): String => "MPFloat/log2"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 144
+    let p: USize = 144
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1769,7 +1762,7 @@ class iso _TestMPFloatLog10 is UnitTest
   fun name(): String => "MPFloat/log10"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 200
+    let p: USize = 200
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     // from_f64(0.1) is only F64-accurate; log10 of that approximation differs from -1
     // by ~4.3 × F64_eps, so we need F64-compatible tolerance for that one test.
@@ -1818,7 +1811,7 @@ class iso _TestMPFloatExp2 is UnitTest
   fun name(): String => "MPFloat/exp2"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 160
+    let p: USize = 160
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1860,7 +1853,7 @@ class iso _TestMPFloatPowi is UnitTest
   fun name(): String => "MPFloat/powi"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 152
+    let p: USize = 152
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1904,7 +1897,7 @@ class iso _TestMPFloatPow is UnitTest
   fun name(): String => "MPFloat/pow"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 136
+    let p: USize = 136
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
 
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -1963,7 +1956,7 @@ class iso _TestMPFloatHighPrec is UnitTest
   fun name(): String => "MPFloat/high_precision"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 800
+    let p: USize = 800
     // 100-byte precision → ~240 decimal digits.  We demand 100-digit accuracy.
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -2058,7 +2051,7 @@ class iso _TestMPFloatTrig is UnitTest
   fun name(): String => "MPFloat/trig"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 224
+    let p: USize = 224
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     // F64-derived references need tolerance bounded by F64 precision (~52 bits).
     let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
@@ -2161,7 +2154,7 @@ class iso _TestMPFloatHyp is UnitTest
   fun name(): String => "MPFloat/hyp"
 
   fun apply(h: TestHelper) =>
-    let p: ULong = 192
+    let p: USize = 192
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -2474,7 +2467,7 @@ class iso _TestMPFloatPi is UnitTest
   fun name(): String => "MPFloat/pi"
 
   fun apply(h: TestHelper) =>
-    var p: ULong = 800
+    var p: USize = 800
     // 100-byte precision → ~240 decimal digits.  We demand accuracy to first 30 digits.
     let tol: MPFloat = MPFloat.epsilon(p).sqrt()
     let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
@@ -2600,7 +2593,6 @@ class iso _TestMPFloatConversions is UnitTest
       end
     end
 
-/* TODO RESTORE
 class iso _TestMPFloatU8 is UnitTest
   """
   Verify u8 conversion methods.
@@ -2780,4 +2772,3 @@ class iso _TestMPFloatU128 is UnitTest
       let t = rand.u128()
       h.assert_eq[U128](t, MPFloat.from[U128](t).u128(), "Random [" + i.string() + "] u128(" + t.string() + ")")
     end
-*/

@@ -1,20 +1,9 @@
-// Multi-precision float algorithms: all computation, no policy.
-//
-// Each method takes `MPFRep` operands and a working-precision `w: USize`
-// (in bytes), performs the computation at that precision using `MPFRep`
-// structural operations, and returns an `MPFRep` at precision `w` (unrounded).
-//
-// Rounding from `w` to the output precision `p` is the responsibility of
-// `MPFContext._round_to`; it is NOT done here.  Internal truncation to `w`
-// inside loops (e.g. Newton iterations) uses `MPFRep._trunc(w)` directly —
-// this bounds intermediate growth at *working* precision, which is distinct
-// from the output rounding done by the caller.
-//
-// This primitive is private (`_` prefix) — power users go through `MPFContext`
-// or `MPFloat`.
+// Multi-precision float algorithms
 
 use "../assertx"
+use "../formatx"
 
+use "debug"
 use "collections"
 
 
@@ -22,187 +11,70 @@ primitive _MPFAlgo
   """
   All arithmetic and transcendental algorithms for `MPFRep` values.
 
-  Methods are pure functions: no state, no policy decisions.  They receive the
-  working precision `w` from the caller and return a result at that precision.
+  ## Two layers of methods
 
-  This is a stub file.  Algorithms will be migrated here one group at a time
-  (Steps 4a–4h of the architectural split), keeping `mpfloat.pony` unchanged
-  until Step 5.
+  **Public (context-aware)**: `add`, `sub`, `mul`, `div`, `inv`, `sqrt`,
+  `divrem`, `fld`, `rem`, `mod`, `ln`, `log`, `log2`, `log10`, `logb`,
+  `exp`, `exp2`, `powi`, `pow`, `sin`, `cos`, `tan`, `sinh`, `cosh`, `tanh`,
+  `sech`, `csch`, `coth`, `pi`, `pi_bbp`, `pi_chudnovsky`, `from_string`.
+
+  Each takes `ctx: MPFContext` as its first argument. It handles **all**
+  special values (NaN, ±∞, ±0) with early returns before touching `_*`
+  methods, runs the computation at working precision `ctx.working_bytes(op)`,
+  then rounds to output precision via `ctx._round_to`. `MPFloat` calls these
+  directly — there is no dispatch layer in `MPFContext`.
+
+  **Internal (precision-explicit)**: `_add`, `_sub`, `_mul`, `_inv`, `_sqrt`,
+  `_divrem`, `_ln`, `_exp`, etc., and series helpers `_atanh_series`,
+  `_exp_taylor`, `_sin_taylor`, `_cos_taylor`, `_ln2_const`.
+
+  Each takes `w: USize` (working precision in bytes), performs the computation,
+  and returns an `MPFRep` at that precision (unrounded). Internal loop bodies
+  call `MPFRep._trunc(w)` to bound intermediate growth; this is distinct from
+  the final output rounding applied by the public layer.
+
+  ## Invariant: special-value handling belongs exclusively to public methods
+
+  Internal `_*` methods are pure computation kernels. They assume their
+  inputs are **finite, non-zero, and non-NaN**. They make no guarantees for
+  any other input and must not contain NaN/inf/zero guard clauses.
+
+  When adding a new operation:
+  1. Implement the algorithm in a `_foo(a, w)` method with no special-value
+     checks. Document the finite/non-zero precondition in its docstring.
+  2. Add a public `foo(ctx, a)` method that dispatches all special values
+     (NaN, ±∞, ±0, sign edge cases) before calling `_foo`.
+  3. Never add guards to `_foo` as a shortcut — that duplicates logic and
+     silently breaks the contract for callers that rely on the kernel being
+     a pure computation.
   """
 
   // ── Addition / Subtraction ─────────────────────────────────────────────────
-
-  fun _add_mag(a: MPFRep, b: MPFRep, sgn: Bool): MPFRep =>
-    """
-    Add the magnitudes `|a|` and `|b|` and return the sum with sign `sgn`.
-    Both operands must be finite.  `a` must have the larger (or equal) exponent.
-
-    The result precision is `max(|a._digits|, shift + |b._digits|)` where
-    `shift = a.exponent() − b.exponent()`, so no precision is lost.  A one-byte
-    carry guard is prepended; when the guard is zero it is stripped and the
-    exponent stays `a.exponent()`; when it is nonzero the full array (with
-    the carry byte) is used and the exponent becomes `a.exponent() + 1`.
-    """
-    let ea: I64 = a.exponent()
-    let eb: I64 = b.exponent()
-    let ad: Array[U8] val = a.raw_digits()
-    let bd: Array[U8] val = b.raw_digits()
-    let na: USize = a._size()
-    let nb: USize = b._size()
-    let shift: USize = (ea - eb).usize()
-
-    // When `b` lies entirely below `a`'s precision, the sum is `a`.
-    if shift >= na then
-      return MPFRep._create(sgn, false, false, ea, ad)
-    end
-
-    let prec: USize = na.max(shift + nb)
-    let result_size: USize = prec + 1
-    let base = _MPFBase
-    let raw: Array[U8] val = recover
-      let res = Array[U8].init(0, result_size)
-      try
-        var carry: U16 = 0
-        var col: USize = prec
-        repeat
-          col = col - 1
-          let ai: U8 = if col < na then ad(col)? else 0 end
-          let bi: U8 =
-            if (col >= shift) and ((col - shift) < nb) then bd(col - shift)?
-            else 0
-            end
-          (let sum, let c2) = base.addc(ai, bi, carry)
-          carry = c2
-          res.update(col + 1, sum)?
-        until col == 0 end
-        res.update(0, base.lowb(carry))?
-      end
-      res
-    end
-
-    let carry_digit: U8 = try raw(0)? else 0 end
-    if carry_digit == 0 then
-      let d: Array[U8] val = recover
-        let a2 = Array[U8].init(0, prec)
-        raw.copy_to(a2, 1, 0, prec)
-        a2
-      end
-      MPFRep._create(sgn, false, false, ea, d)
-    else
-      MPFRep._create(sgn, false, false, ea + 1, raw)
-    end
-
-
-  fun _sub_mag(a: MPFRep, b: MPFRep, sgn: Bool): MPFRep =>
-    """
-    Subtract `|b|` from `|a|`, where `|a| >= |b|` (enforced by the caller).
-    Returns the difference with sign `sgn`.  Both operands must be finite.
-
-    The result is normalised: leading zero bytes are stripped and the exponent
-    adjusted accordingly.  When the result is exactly zero a zero `MPFRep` at
-    precision `a._size()` is returned.
-    """
-    let ea: I64 = a.exponent()
-    let eb: I64 = b.exponent()
-    let shift: USize = (ea - eb).usize()
-    let na: USize = a._size()
-    let nb: USize = b._size()
-    let result_size: USize = na.max(shift + nb)
-    let ad: Array[U8] val = a.raw_digits()
-    let bd: Array[U8] val = b.raw_digits()
-    let max_b: U16 = U8.max_value().u16()
-    let bbase = _MPFBase
-    let raw: Array[U8] val = recover
-      let res = Array[U8].init(0, result_size)
-      try
-        var carry: U16 = max_b + 1
-        var col: USize = result_size
-        repeat
-          col = col - 1
-          let ai: U16 = if col < na then ad(col)?.u16() else 0 end
-          let bi: U16 =
-            if (col >= shift) and ((col - shift) < nb) then bd(col - shift)?.u16()
-            else 0
-            end
-          carry = ((max_b + ai) - bi) + bbase.highb(carry).u16()
-          res.update(col, bbase.lowb(carry))?
-        until col == 0 end
-      end
-      res
-    end
-
-    // Normalise: strip leading zero bytes and adjust the exponent.
-    let raw_size: USize = raw.size()
-    var leading: USize = 0
-    try
-      while (leading < raw_size) and (raw(leading)? == 0) do
-        leading = leading + 1
-      end
-    end
-    if leading == raw_size then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, na))
-    end
-    let new_size: USize = raw_size - leading
-    let new_exp: I64 = ea - leading.i64()
-    let d: Array[U8] val = recover
-      let a2 = Array[U8].init(0, new_size)
-      raw.copy_to(a2, leading, 0, new_size)
-      a2
-    end
-    MPFRep._create(sgn, false, false, new_exp, d)
-
 
   fun _add(a: MPFRep, b: MPFRep, w: USize): MPFRep =>
     """
     Add `a + b` at working precision `w` bytes.
 
-    Special-value rules:
-    - NaN propagates: `NaN + x = NaN`.
-    - `+∞ + (−∞) = NaN`.
-    - `±∞ + finite = ±∞`.
-    - Zero is the additive identity.
+    Assumes both operands are finite and non-zero. Special-value handling
+    (NaN, ±∞, zero) belongs to the public `add` method.
 
-    When operand signs agree, magnitudes are added (`_add_mag`).  When they
+    When operand signs agree, magnitudes are added (`_add_mag`). When they
     differ, the smaller magnitude is subtracted from the larger and the result
-    takes the sign of the larger.  The result is truncated to `w` bytes
-    (working precision) before being returned; the caller rounds to output
-    precision via `MPFContext._round_to`.
+    takes the sign of the larger. The result is truncated to `w` bytes.
     """
-    if a.is_nan() or b.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if a.is_infinite() and b.is_infinite() then
-      if a.sign_bit() == b.sign_bit() then
-        return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
-      end
-      return MPFRep.nan_val()
-    end
-    if a.is_infinite() then
-      return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
-    end
-    if b.is_infinite() then
-      return MPFRep._create(b.sign_bit(), false, true, 0, Array[U8].create())
-    end
-    if a.is_zero() then
-      return b._trunc(w)
-    end
-    if b.is_zero() then
-      return a._trunc(w)
-    end
-
     let res: MPFRep =
       if a.sign_bit() == b.sign_bit() then
         // Same sign: add magnitudes.
         if a.exponent() >= b.exponent() then
-          _add_mag(a, b, a.sign_bit())
+          a._add_mag(b, a.sign_bit())
         else
-          _add_mag(b, a, a.sign_bit())
+          b._add_mag(a, a.sign_bit())
         end
       else
         // Different signs: subtract smaller magnitude from larger.
         match a._cmp_mag(b)
-        | Greater => _sub_mag(a, b, a.sign_bit())
-        | Less    => _sub_mag(b, a, b.sign_bit())
+        | Greater => a._sub_mag(b, a.sign_bit())
+        | Less    => b._sub_mag(a, b.sign_bit())
         else
           MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
         end
@@ -212,12 +84,10 @@ primitive _MPFAlgo
 
   fun _sub(a: MPFRep, b: MPFRep, w: USize): MPFRep =>
     """
-    Subtract `a − b` at working precision `w` bytes.  Delegates to `_add`
+    Subtract `a − b` at working precision `w` bytes. Delegates to `_add`
     after negating `b`, inheriting all sign and special-value handling.
     """
-    let neg_b = MPFRep._create(
-      not b.sign_bit(), b.is_nan(), b.is_infinite(), b.exponent(), b.raw_digits())
-    _add(a, neg_b, w)
+    _add(a, _neg_rep(b), w)
 
 
   // ── Multiplication ─────────────────────────────────────────────────────────
@@ -226,7 +96,7 @@ primitive _MPFAlgo
     """
     Multiply `a × b` at working precision `w` bytes via FFT convolution.
 
-    The result sign is `a.sign_bit() XOR b.sign_bit()`.  The raw convolution
+    The result sign is `a.sign_bit() XOR b.sign_bit()`. The raw convolution
     product has `a._size() + b._size()` digits; it is normalised by stripping
     leading zeros and adjusting the exponent, then truncated to `w` bytes.
 
@@ -278,7 +148,7 @@ primitive _MPFAlgo
 
         // Convert back to U8 digits with carry propagation (high to low).
         var carry: F64 = 0.0
-        let base_f: F64 = _MPFBase.base().f64()
+        let base_f: F64 = 256.0
         i = pow2
         repeat
           i = i - 1
@@ -296,10 +166,7 @@ primitive _MPFAlgo
           i = i + 1
         end
       else
-        try
-          Assert(false,
-            "[_MPFAlgo._mul] index out of bounds at i=" + err_i.string(), true)?
-        end
+        Fail(Format("[_MPFAlgo._mul] Index out of bounds at i={}", err_i))
       end
       res
     end
@@ -331,7 +198,7 @@ primitive _MPFAlgo
     Compute `1 / a` via Newton's method at working precision `w` bytes.
 
     Algorithm: `x_{n+1} = x_n × (2 − G × x_n)` where `G = |a|` reinterpreted
-    with exponent 1, so `G ∈ [1, 256)`.  The iteration converges to `y = 1/G`;
+    with exponent 1, so `G ∈ [1, 256)`. The iteration converges to `y = 1/G`;
     the final result exponent is `(y._exponent + 1) − a.exponent()`.
 
     A safety limit of `(w + 1) × 4` iterations prevents non-convergence in
@@ -363,32 +230,18 @@ primitive _MPFAlgo
     let max_iters: USize = size * 4
     while iters < max_iters do
       iters = iters + 1
-      let gy   = _mul(g, res, size)._trunc(size)
-      let delta = _sub(two, gy, size)._trunc(size)
-      let new_res = _mul(res, delta, size)._trunc(size)
+      let gy = _mul(g, res, size)
+      let delta = _sub(two, gy, size)
+      let new_res = _mul(res, delta, size)
 
-      // Converged when all leading `w` digits agree with previous iterate.
-      var changed: Bool = false
-      let new_rd = new_res.raw_digits()
-      let res_rd = res.raw_digits()
-      let ns: USize = new_res._size().min(res._size()).min(w)
-      var ci: USize = 0
-      try
-        while ci < ns do
-          if new_rd(ci)? != res_rd(ci)? then
-            changed = true
-            break
-          end
-          ci = ci + 1
-        end
-      end
+      let converged = _digits_eq(new_res, res)
       res = new_res
-      if not changed then
+      if converged then
         break
       end
     end
 
-    // 1/|a| = res × 256^{1−e}.  Adjust sign and exponent.
+    // 1/|a| = res × 256^{1−e}. Adjust sign and exponent.
     MPFRep._create(
       a.sign_bit(), false, false,
       (res.exponent() + 1) - a.exponent(),
@@ -397,7 +250,7 @@ primitive _MPFAlgo
 
   fun _div(a: MPFRep, b: MPFRep, w: USize): MPFRep =>
     """
-    Divide `a / b` at working precision `w` bytes.  Computes `a × inv(b)`.
+    Divide `a / b` at working precision `w` bytes. Computes `a × inv(b)`.
 
     Both operands must be finite and non-zero (special-value handling belongs
     to the public API in `MPFContext`).
@@ -415,8 +268,8 @@ primitive _MPFAlgo
     converging to `1/√H`; the final result is `√H = H × (1/√H)`.
 
     Parity split: for odd `a.exponent()` use `H` with exponent 1 so
-    `H ∈ [1, 256)`.  For even `a.exponent()` use exponent 2 so
-    `H ∈ [256, 65536)`.  With this split `a.exponent() − h_exp` is always
+    `H ∈ [1, 256)`. For even `a.exponent()` use exponent 2 so
+    `H ∈ [256, 65536)`. With this split `a.exponent() − h_exp` is always
     even, so the result exponent is always an integer.
 
     A safety limit of `(w + 1) × 4` iterations prevents non-convergence.
@@ -433,7 +286,7 @@ primitive _MPFAlgo
     // F64 initial estimate.
     let ng: USize = prec.min(4)
     var fg: F64 = 0.0
-    let base_f: F64 = _MPFBase.base().f64()
+    let base_f: F64 = 256.0
     try
       var k: USize = ng
       repeat
@@ -449,77 +302,27 @@ primitive _MPFAlgo
     let max_iters: USize = size * 4
     while iters < max_iters do
       iters = iters + 1
-      let y2        = _mul(res, res, size)._trunc(size)
-      let hy2       = _mul(h, y2, size)._trunc(size)
-      let delta     = _sub(three, hy2, size)._trunc(size)
-      let new_full  = _mul(res, delta, size)._trunc(size)
+      let y2 = _mul(res, res, size)
+      let hy2 = _mul(h, y2, size)
+      let delta = _sub(three, hy2, size)
+      let new_full = _mul(res, delta, size)
       (let halved, _) = new_full._short_div(2)
       let nr = halved._trunc(size)
 
-      // Converged when all leading `w` digits agree with previous iterate.
-      var changed: Bool = false
-      let nr_rd = nr.raw_digits()
-      let res_rd = res.raw_digits()
-      let ns: USize = nr._size().min(res._size()).min(w)
-      var i: USize = 0
-      try
-        while i < ns do
-          if nr_rd(i)? != res_rd(i)? then
-            changed = true
-            break
-          end
-          i = i + 1
-        end
-      end
+      let converged = _digits_eq(nr, res)
       res = nr
-      if not changed then
+      if converged then
         break
       end
     end
 
     // √H = H × (1/√H); exponent adjusted for the parity split.
-    let sqrt_h = _mul(h, res, size)._trunc(size)
+    let sqrt_h = _mul(h, res, size)
     let result_exp: I64 = sqrt_h.exponent() + ((a_exp - h_exp) / 2)
     MPFRep._create(false, false, false, result_exp, sqrt_h.raw_digits())
 
 
   // ── Division with Remainder ────────────────────────────────────────────────
-
-  fun _trunc_frac(a: MPFRep): MPFRep =>
-    """
-    Return `a` with its fractional base-256 bytes zeroed out (truncation toward
-    zero).  Equivalent to the integer part of `a`.
-
-    - NaN or ±∞ → returned unchanged.
-    - Zero → returned as-is.
-    - `a.exponent() ≤ 0` (purely fractional) → zero with the same precision.
-    - `a.exponent() ≥ a._size()` (purely integer) → `a` unchanged.
-    - Mixed → zero out bytes at indices `a.exponent()` and beyond.
-    """
-    if (not a.is_finite()) or a.is_zero() then
-      return a
-    end
-    let e: I64 = a.exponent()
-    let p: USize = a._size()
-    if e <= 0 then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
-    end
-    let int_bytes: USize = e.usize().min(p)
-    if int_bytes == p then
-      return a
-    end
-    let d: Array[U8] val = a.raw_digits()
-    let trunc_d: Array[U8] val = recover
-      let arr = Array[U8].init(0, p)
-      var i: USize = 0
-      while i < int_bytes do
-        try arr(i)? = d(i)? end
-        i = i + 1
-      end
-      arr
-    end
-    MPFRep._create(a.sign_bit(), false, false, e, trunc_d)
-
 
   fun _one(w: USize): MPFRep =>
     """
@@ -544,7 +347,7 @@ primitive _MPFAlgo
     - `a` is 0 → `(0, 0)`.
 
     Post-correction: Newton's `_inv` always undershoots by up to 1 ULP.
-    When `|r| ≥ |b|`, increment `|q|` by 1 and recompute `r`.  At most one
+    When `|r| ≥ |b|`, increment `|q|` by 1 and recompute `r`. At most one
     step is needed.
     """
     let nan = MPFRep.nan_val()
@@ -576,7 +379,7 @@ primitive _MPFAlgo
       return (z, z)
     end
 
-    var q: MPFRep = _trunc_frac(_div(a, b, w))
+    var q: MPFRep = _div(a, b, w)._trunc_frac()
     var r: MPFRep = _sub(a, _mul(q, b, w), w)
 
     // Post-correction: if |r| ≥ |b|, q was off by 1.
@@ -596,7 +399,7 @@ primitive _MPFAlgo
     """
     Floored division `floor(a / b)` at working precision `w` bytes.
 
-    The result is the largest integer `q` such that `q × b ≤ a`.  When the
+    The result is the largest integer `q` such that `q × b ≤ a`. When the
     truncated remainder is non-zero and `a` and `b` have opposite signs, the
     truncated quotient is decremented by 1.
 
@@ -616,7 +419,7 @@ primitive _MPFAlgo
     """
     Floored remainder `a − floor(a / b) × b` at working precision `w` bytes.
 
-    The result has the same sign as `b`.  Special cases are inherited from
+    The result has the same sign as `b`. Special cases are inherited from
     `_divrem`; when `_rem` returns NaN, `_mod` also returns NaN.
     """
     let r: MPFRep = _rem(a, b, w)
@@ -633,7 +436,7 @@ primitive _MPFAlgo
     """
     Truncated remainder `a − trunc(a / b) × b` at working precision `w` bytes.
 
-    The result has the same sign as `a`.  Special cases are inherited from
+    The result has the same sign as `a`. Special cases are inherited from
     `_divrem`.
     """
     _divrem(a, b, w)._2
@@ -644,7 +447,7 @@ primitive _MPFAlgo
   fun _digits_eq(a: MPFRep, b: MPFRep): Bool =>
     """
     Return `true` when `a` and `b` have the same exponent and the same leading
-    digits (compared byte by byte up to the shorter array).  Used for
+    digits (compared byte by byte up to the shorter array). Used for
     convergence detection in series loops — two values are considered "equal"
     for convergence purposes when adding one to the other does not change any
     stored digit.
@@ -655,13 +458,11 @@ primitive _MPFAlgo
     let ad: Array[U8] val = a.raw_digits()
     let bd: Array[U8] val = b.raw_digits()
     let n: USize = ad.size().min(bd.size())
-    var i: USize = 0
     try
-      while i < n do
+      for i in Range(0, n) do
         if ad(i)? != bd(i)? then
           return false
         end
-        i = i + 1
       end
     end
     true
@@ -669,7 +470,7 @@ primitive _MPFAlgo
 
   fun _neg_rep(a: MPFRep): MPFRep =>
     """
-    Return a copy of `a` with its sign flipped.  Equivalent to arithmetic
+    Return a copy of `a` with its sign flipped. Equivalent to arithmetic
     negation but operates purely on the representation (no allocation of new
     digits).
     """
@@ -685,29 +486,28 @@ primitive _MPFAlgo
     Compute `arctanh(x)` via the Taylor series
     `Σ_{k=0}^∞ x^{2k+1} / (2k+1)` at working precision `w` bytes.
 
-    The caller must ensure `|x| < 1` for convergence.  The loop terminates
+    The caller must ensure `|x| < 1` for convergence. The loop terminates
     when the current addend no longer changes the running sum at precision `w`.
 
     Uses `MPFRep._short_div` (exact U8 division) for denominators up to 255;
     falls back to `_div` for larger denominators (only for very high `w`).
     """
     let p2: USize = w + 2
-    let x2: MPFRep = _mul(x, x, p2)._trunc(p2)
-    var term: MPFRep = x._trunc(p2)
+    let x2: MPFRep = _mul(x, x, p2)
+    var term: MPFRep = x
     var sum:  MPFRep = term
     var k: USize = 3
     var iters: USize = 0
     let max_iters: USize = p2 * 30
     while iters < max_iters do
-      term = _mul(term, x2, p2)._trunc(p2)
-      let addend: MPFRep =
-        if k <= 255 then
+      term = _mul(term, x2, p2)
+      let addend: MPFRep = if k <= 255 then
           (let q, _) = term._short_div(k.u8())
           q
         else
-          _div(term, MPFRep.from_f64(k.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(k.f64(), p2), p2)
         end
-      let new_sum: MPFRep = _add(sum, addend, p2)._trunc(p2)
+      let new_sum: MPFRep = _add(sum, addend, p2)
       if _digits_eq(new_sum, sum) then
         break
       end
@@ -739,26 +539,25 @@ primitive _MPFAlgo
     precision `w` bytes.
 
     Uses the recurrence `term_k = term_{k-1} × r / k` to avoid computing
-    factorials.  Works best for `|r| ≤ ln(2)/2 ≈ 0.347`.
+    factorials. Works best for `|r| ≤ ln(2)/2 ≈ 0.347`.
     """
     let p2: USize = w + 2
-    let one = MPFRep.from_f64(1.0, p2)
+    let one = _one(p2)
     var term: MPFRep = one
     var sum:  MPFRep = one
     var k: USize = 1
     var iters: USize = 0
     let max_iters: USize = p2 * 30
     while iters < max_iters do
-      term = _mul(term, r, p2)._trunc(p2)
-      let divided: MPFRep =
-        if k <= 255 then
+      term = _mul(term, r, p2)
+      let divided: MPFRep = if k <= 255 then
           (let q, _) = term._short_div(k.u8())
           q
         else
-          _div(term, MPFRep.from_f64(k.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(k.f64(), p2), p2)
         end
       term = divided
-      let new_sum: MPFRep = _add(sum, divided, p2)._trunc(p2)
+      let new_sum: MPFRep = _add(sum, divided, p2)
       if _digits_eq(new_sum, sum) then
         break
       end
@@ -775,34 +574,33 @@ primitive _MPFAlgo
     at working precision `w` bytes.
 
     The recurrence `term_{k+1} = term_k × (−r²) / ((2k)(2k+1))` advances
-    two factorial positions at once.  Works best for `|r| ≤ π/4 ≈ 0.785`.
+    two factorial positions at once. Works best for `|r| ≤ π/4 ≈ 0.785`.
     """
     let p2: USize = w + 2
-    let neg_r2: MPFRep = _neg_rep(_mul(r, r, p2)._trunc(p2))
-    var term: MPFRep = r._trunc(p2)
+    let neg_r2: MPFRep = _neg_rep(_mul(r, r, p2))
+    var term: MPFRep = r
     var sum:  MPFRep = term
     var k: USize = 1
     var iters: USize = 0
     let max_iters: USize = p2 * 30
     while iters < max_iters do
-      term = _mul(term, neg_r2, p2)._trunc(p2)
+      term = _mul(term, neg_r2, p2)
       let d1: USize = 2 * k
       let d2: USize = (2 * k) + 1
-      term =
-        if d1 <= 255 then
+      term = if d1 <= 255 then
           (let q, _) = term._short_div(d1.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)
         end
       term =
         if d2 <= 255 then
           (let q, _) = term._short_div(d2.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)
         end
-      let new_sum: MPFRep = _add(sum, term, p2)._trunc(p2)
+      let new_sum: MPFRep = _add(sum, term, p2)
       if _digits_eq(new_sum, sum) then
         break
       end
@@ -819,35 +617,33 @@ primitive _MPFAlgo
     at working precision `w` bytes.
 
     The recurrence `term_{k+1} = term_k × (−r²) / ((2k−1)(2k))` advances
-    two factorial positions at once.  Works best for `|r| ≤ π/4 ≈ 0.785`.
+    two factorial positions at once. Works best for `|r| ≤ π/4 ≈ 0.785`.
     """
     let p2: USize = w + 2
-    let neg_r2 = _neg_rep(_mul(r, r, p2)._trunc(p2))
-    let one = MPFRep.from_f64(1.0, p2)
+    let neg_r2 = _neg_rep(_mul(r, r, p2))
+    let one = _one(p2)
     var term: MPFRep = one
     var sum:  MPFRep = term
     var k: USize = 1
     var iters: USize = 0
     let max_iters: USize = p2 * 30
     while iters < max_iters do
-      term = _mul(term, neg_r2, p2)._trunc(p2)
+      term = _mul(term, neg_r2, p2)
       let d1: USize = (2 * k) - 1
       let d2: USize = 2 * k
-      term =
-        if d1 <= 255 then
+      term = if d1 <= 255 then
           (let q, _) = term._short_div(d1.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)
         end
-      term =
-        if d2 <= 255 then
+      term = if d2 <= 255 then
           (let q, _) = term._short_div(d2.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)._trunc(p2)
+          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)
         end
-      let new_sum: MPFRep = _add(sum, term, p2)._trunc(p2)
+      let new_sum: MPFRep = _add(sum, term, p2)
       if _digits_eq(new_sum, sum) then
         break
       end
@@ -862,23 +658,36 @@ primitive _MPFAlgo
 
   fun _round_to_ilong(a: MPFRep): ILong =>
     """
-    Extract the nearest integer value of `a` as an `ILong` by first rounding
-    `a` toward the nearest integer and then converting via `MPInt`.
+    Extract the nearest integer value of `a` as an `ILong` by first truncating
+    the fractional part and then converting via `MPInt`.
 
-    Returns 0 when `a` is NaN, ±∞, or zero.  Used internally in argument
+    Returns 0 when `a` is NaN, ±∞, or zero. Used internally in argument
     reduction steps for `_exp`, `_sin`, and `_cos`.
+
+    Only the first `exponent()` bytes of the digit array are the integer part;
+    the rest are fractional and must be excluded before passing to `MPInt`.
     """
     if (not a.is_finite()) or a.is_zero() then
       return 0
     end
-    let rounded: MPFRep = _trunc_frac(a)
-    MPInt.from_bytes_be(rounded.sign_bit(), rounded.raw_digits()).ilong()
+    let rounded: MPFRep = a._trunc_frac()
+    let e: USize = rounded.exponent().usize().min(rounded._size())
+    if e == 0 then
+      return 0
+    end
+    let int_bytes: Array[U8] val = recover
+      let src = rounded.raw_digits()
+      let dst = Array[U8].init(0, e)
+      src.copy_to(dst, 0, 0, e)
+      dst
+    end
+    MPInt.from_bytes_be(rounded.sign_bit(), int_bytes).ilong()
 
 
   fun _extend(a: MPFRep, w: USize): MPFRep =>
     """
     Return `a` extended (or truncated) to `w` bytes by zero-padding the tail
-    or calling `_trunc(w)`.  The sign, exponent, and leading digits are
+    or calling `_trunc(w)`. The sign, exponent, and leading digits are
     preserved.
     """
     let p: USize = a._size()
@@ -903,33 +712,17 @@ primitive _MPFAlgo
     """
     Compute `ln(a)` at working precision `w` bytes.
 
-    Special cases:
-    - NaN → NaN.
-    - `+∞` → `+∞`.
-    - `a ≤ 0` → NaN.
-    - `0` → `−∞`.
+    Assumes `a` is finite, positive, and non-zero. Special-value handling
+    belongs to the public `ln` method.
 
     Algorithm: two-level argument reduction then `_atanh_series`:
-    1. `a = 0.d₀d₁… × 256^e`.  Set `k = e − 1`, `m = 0.d₀d₁… × 256 ∈ [1, 256)`.
+    1. `a = 0.d₀d₁… × 256^e`. Set `k = e − 1`, `m = 0.d₀d₁… × 256 ∈ [1, 256)`.
        `ln(a) = k × ln(256) + ln(m)`.
     2. Find `n = ⌊log₂(d₀)⌋ ∈ {0,…,7}`, `u = m / 2^n ∈ [1, 2)`.
        `ln(m) = n × ln(2) + ln(u)`.
-    3. `t = (u−1)/(u+1) ∈ [0, 1/3)`.  `ln(u) = 2 × arctanh(t)`.
+    3. `t = (u−1)/(u+1) ∈ [0, 1/3)`. `ln(u) = 2 × arctanh(t)`.
     Combined: `ln(a) = (8k + n) × ln(2) + 2 × arctanh(t)`.
     """
-    if a.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if a.is_infinite() and (not a.sign_bit()) then
-      return MPFRep._create(false, false, true, 0, Array[U8].create())
-    end
-    if a.sign_bit() then
-      return MPFRep.nan_val()
-    end
-    if a.is_zero() then
-      return MPFRep._create(true, false, true, 0, Array[U8].create())
-    end
-
     let p2: USize = w + 6
 
     let ln2: MPFRep = _ln2_const(p2)
@@ -952,18 +745,17 @@ primitive _MPFAlgo
     let divisor: U8 = U8(1).shl(n_inner.u8())
     (let u, _) = m._short_div(divisor)
 
-    let one = MPFRep.from_f64(1.0, p2)
+    let one = _one(p2)
     let two = MPFRep.from_f64(2.0, p2)
-    let t: MPFRep = _div(_sub(u, one, p2)._trunc(p2), _add(u, one, p2)._trunc(p2), p2)
-    let ln_u: MPFRep = _mul(_atanh_series(t, p2), two, p2)._trunc(p2)
+    let t: MPFRep = _div(_sub(u, one, p2), _add(u, one, p2), p2)
+    let ln_u: MPFRep = _mul(_atanh_series(t, p2), two, p2)
 
     let ln2_factor: I64 = (8 * k) + n_inner
-    let correction: MPFRep =
-      if ln2_factor == 0 then
+    let correction: MPFRep = if ln2_factor == 0 then
         MPFRep._create(false, false, false, 0, Array[U8].init(0, p2))
       else
         let fac = MPFRep.from_f64(ln2_factor.f64(), p2)
-        _mul(fac, ln2, p2)._trunc(p2)
+        _mul(fac, ln2, p2)
       end
     _add(correction, ln_u, p2)._trunc(w)
 
@@ -972,8 +764,8 @@ primitive _MPFAlgo
     """
     Compute `e^a` at working precision `w` bytes.
 
-    Special cases:
-    - NaN → NaN.  `+∞` → `+∞`.  `−∞` → `+0`.  `0` → `1`.
+    Assumes `a` is finite and non-zero. Special-value handling belongs to the
+    public `exp` method.
 
     Algorithm: two-level argument reduction then `_exp_taylor`:
     1. `a = n₂₅₆ × ln(256) + r₁`, `n₂₅₆ = round(a / ln(256))`.
@@ -982,46 +774,33 @@ primitive _MPFAlgo
        Scale by `2^n₂` (exact).
     3. Compute `e^r` via `_exp_taylor`.
     """
-    if a.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if a.is_infinite() and (not a.sign_bit()) then
-      return MPFRep._create(false, false, true, 0, Array[U8].create())
-    end
-    if a.is_infinite() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
-    end
-    if a.is_zero() then
-      return MPFRep.from_f64(1.0, w)
-    end
-
     let p2: USize = w + 8
 
     let ln2: MPFRep = _ln2_const(p2)
     let eight = MPFRep._create(false, false, false, 1, recover [U8(8)] end)
-    let ln256: MPFRep = _mul(ln2, eight, p2)._trunc(p2)
+    let ln256: MPFRep = _mul(ln2, eight, p2)
 
     let x: MPFRep = _extend(a, p2)
 
-    let n256_f: MPFRep = _trunc_frac(_div(x, ln256, p2)._trunc(p2))
+    let n256_f: MPFRep = _div(x, ln256, p2)._trunc_frac()
     let n256: ILong = _round_to_ilong(n256_f)
     let n256_mpf = MPFRep.from_f64(n256.f64(), p2)
-    let r1: MPFRep = _sub(x, _mul(n256_mpf, ln256, p2)._trunc(p2), p2)._trunc(p2)
+    let r1: MPFRep = _sub(x, _mul(n256_mpf, ln256, p2), p2)
 
-    let n2_f: MPFRep = _trunc_frac(_div(r1, ln2, p2)._trunc(p2))
+    let n2_f: MPFRep = _div(r1, ln2, p2)._trunc_frac()
     let n2: ILong = _round_to_ilong(n2_f)
     let n2_mpf = MPFRep.from_f64(n2.f64(), p2)
     // r = r1 − n2 × ln2.
-    let r: MPFRep = _sub(r1, _mul(n2_mpf, ln2, p2)._trunc(p2), p2)._trunc(p2)
+    let r: MPFRep = _sub(r1, _mul(n2_mpf, ln2, p2), p2)
 
     var result: MPFRep = _exp_taylor(r, p2)
 
     if n2 > 0 then
       let pow2 = MPFRep._create(false, false, false, 1, recover [U8(1).shl(n2.u8())] end)
-      result = _mul(result, pow2, p2)._trunc(p2)
+      result = _mul(result, pow2, p2)
     elseif n2 < 0 then
       let pow2 = MPFRep._create(false, false, false, 0, recover [U8(128).shr((-n2 - 1).u8())] end)
-      result = _mul(result, pow2, p2)._trunc(p2)
+      result = _mul(result, pow2, p2)
     end
 
     MPFRep._create(result.sign_bit(), false, false,
@@ -1032,33 +811,28 @@ primitive _MPFAlgo
     """
     Compute `log₂(a)` at working precision `w` bytes.
     `log₂(a) = ln(a) / ln(2)`.
+    Assumes `a` is finite, positive, and non-zero.
     """
-    let ln_x = _ln(a, w)
-    if ln_x.is_nan() or ln_x.is_infinite() then
-      return ln_x
-    end
-    _div(ln_x, _ln2_const(w + 4), w)._trunc(w)
+    _div(_ln(a, w), _ln2_const(w + 4), w)
 
 
   fun _log10(a: MPFRep, w: USize): MPFRep =>
     """
     Compute `log₁₀(a)` at working precision `w` bytes.
     `ln(10) = 2 × arctanh(1/3) + 2 × arctanh(2/3)`.
+    Assumes `a` is finite, positive, and non-zero.
     """
     let ln_x = _ln(a, w)
-    if ln_x.is_nan() or ln_x.is_infinite() then
-      return ln_x
-    end
     let p3: USize = w + 6
     let d3:  Array[U8] val = recover Array[U8].init(0x55, p3) end
     let d23: Array[U8] val = recover Array[U8].init(0xAA, p3) end
     let third     = MPFRep._create(false, false, false, 0, d3)
     let two_third = MPFRep._create(false, false, false, 0, d23)
     let two       = MPFRep.from_f64(2.0, p3)
-    let ln2_v  = _mul(_atanh_series(third, p3), two, p3)._trunc(p3)
-    let ln5_v  = _mul(_atanh_series(two_third, p3), two, p3)._trunc(p3)
+    let ln2_v  = _mul(_atanh_series(third, p3), two, p3)
+    let ln5_v  = _mul(_atanh_series(two_third, p3), two, p3)
     let ln10_v = _add(ln2_v, ln5_v, p3)._trunc(w + 4)
-    _div(ln_x, ln10_v, w)._trunc(w)
+    _div(ln_x, ln10_v, w)
 
 
   fun _logb(a: MPFRep, b: MPFRep, w: USize): MPFRep =>
@@ -1066,29 +840,18 @@ primitive _MPFAlgo
     Compute `log_b(a)` at working precision `w` bytes.
     `log_b(a) = ln(a) / ln(b)`.
     """
-    _div(_ln(a, w), _ln(b, w), w)._trunc(w)
+    _div(_ln(a, w), _ln(b, w), w)
 
 
   fun _exp2(a: MPFRep, w: USize): MPFRep =>
     """
     Compute `2^a` at working precision `w` bytes.
     `2^a = exp(a × ln(2))`.
+    Assumes `a` is finite and non-zero.
     """
-    if a.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if a.is_infinite() and (not a.sign_bit()) then
-      return MPFRep._create(false, false, true, 0, Array[U8].create())
-    end
-    if a.is_infinite() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
-    end
-    if a.is_zero() then
-      return MPFRep.from_f64(1.0, w)
-    end
     let p2: USize = w + 4
     let ln2: MPFRep = _ln2_const(p2)
-    _exp(_mul(a, ln2, p2)._trunc(p2), w)._trunc(w)
+    _exp(_mul(a, ln2, p2), w)
 
 
   // ── Powers ─────────────────────────────────────────────────────────────────
@@ -1098,25 +861,18 @@ primitive _MPFAlgo
     Compute `a^n` for integer `n` via binary exponentiation at working
     precision `w` bytes.
 
-    - `a^0 = 1` for any finite `a`.
-    - `a^n` for `n < 0` is `(1/a)^|n|`.
-    - NaN → NaN.
+    Assumes `a` is finite and non-NaN, and `n ≠ 0`. Special-value handling
+    belongs to the public `powi` method.
+    `a^n` for `n < 0` is `(1/a)^|n|`.
     """
-    if a.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if n == 0 then
-      return MPFRep.from_f64(1.0, w)
-    end
-    var base_r: MPFRep =
-      if n < 0 then _inv(a, w) else a end
+    var base_r: MPFRep = if n < 0 then _inv(a, w) else a end
     var exp_n: ILong = if n < 0 then -n else n end
-    var result: MPFRep = MPFRep.from_f64(1.0, w)
+    var result: MPFRep = _one(w)
     while exp_n > 0 do
       if (exp_n and 1) == 1 then
-        result = _mul(result, base_r, w)._trunc(w)
+        result = _mul(result, base_r, w)
       end
-      base_r = _mul(base_r, base_r, w)._trunc(w)
+      base_r = _mul(base_r, base_r, w)
       exp_n = exp_n / 2
     end
     result
@@ -1126,34 +882,15 @@ primitive _MPFAlgo
     """
     Compute `a^b` at working precision `w` bytes.
 
-    - `a > 0`: `exp(b × ln(a))`.
-    - `a < 0` and `b` integer: delegates to `_powi`.
-    - `a < 0` and `b` non-integer: NaN.
-    - NaN in either → NaN.
+    Assumes both operands are finite and non-NaN, `b ≠ 0`, `a ≠ 0`, and
+    that negative-base/non-integer-exponent has already been rejected.
+    Special-value handling belongs to the public `pow` method.
+    `a > 0`: `exp(b × ln(a))`. `a < 0` with integer `b`: delegates to `_powi`.
     """
-    if a.is_nan() or b.is_nan() then
-      return MPFRep.nan_val()
-    end
-    if b.is_zero() then
-      return MPFRep.from_f64(1.0, w)
-    end
-    if a.is_zero() then
-      if b.sign_bit() then
-        return MPFRep.nan_val()
-      end
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
-    end
     if not a.sign_bit() then
-      let ln_a: MPFRep = _ln(a, w)
-      if ln_a.is_nan() then
-        return MPFRep.nan_val()
-      end
-      return _exp(_mul(b, ln_a, w + 4)._trunc(w + 4), w)._trunc(w)
+      return _exp(_mul(b, _ln(a, w + 4), w + 4), w)
     end
-    // Negative base: only valid for integer exponents.
-    if b._has_frac() then
-      return MPFRep.nan_val()
-    end
+    // Negative base with integer exponent (non-integer already rejected by caller).
     let ni: ILong = _round_to_ilong(b)
     _powi(a, ni, w)
 
@@ -1170,13 +907,15 @@ primitive _MPFAlgo
     let x: MPFRep = _extend(a, w)
     let pi_val: MPFRep = _pi(w)
     let two: MPFRep = MPFRep.from_f64(2.0, w)
-    let pi_half: MPFRep = _div(pi_val, two, w)._trunc(w)
-    let n_f: MPFRep = _trunc_frac(_div(x, pi_half, w)._trunc(w))
+    let half: MPFRep = MPFRep.from_f64(0.5, w)
+    let pi_half: MPFRep = _div(pi_val, two, w)
+    // round-to-nearest: n = floor(x/pi_half + 0.5)
+    let ratio: MPFRep = _div(x, pi_half, w)
+    let n_f: MPFRep = _add(ratio, half, w)._trunc_frac()
     let n: ILong = _round_to_ilong(n_f)
     let n_mpf: MPFRep = MPFRep.from_f64(n.f64(), w)
-    // r = (a − n) × pi_half — same formula as in the original mpfloat.pony.
-    let diff: MPFRep = _sub(x, n_mpf, w)._trunc(w)
-    let r: MPFRep = _mul(diff, pi_half, w)._trunc(w)
+    // r = x − n × pi_half  (NOT (x−n) × pi_half — that is a bug).
+    let r: MPFRep = _sub(x, _mul(n_mpf, pi_half, w), w)
     let k: ILong = ((n % 4) + 4) % 4
     (r, k)
 
@@ -1185,23 +924,16 @@ primitive _MPFAlgo
     """
     Compute `sin(a)` at working precision `w` bytes (argument in radians).
 
-    - NaN or `±∞` → NaN.  `0` → `0`.
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `sin`.
 
     Argument reduction: `n = round(a / (π/2))`, `r = a − n × (π/2)`,
-    `|r| ≤ π/4`.  Based on `k = n mod 4`:
+    `|r| ≤ π/4`. Based on `k = n mod 4`:
     - `k=0`: `sin(r)`,  `k=1`: `cos(r)`,
     - `k=2`: `−sin(r)`, `k=3`: `−cos(r)`.
     """
-    if a.is_nan() or a.is_infinite() then
-      return MPFRep.nan_val()
-    end
-    if a.is_zero() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
-    end
     let p2: USize = w + 8
     (let r, let k) = _sin_cos_reduce(a, p2)
-    let result: MPFRep =
-      if (k == 0) or (k == 2) then
+    let result: MPFRep = if (k == 0) or (k == 2) then
         let sr = _sin_taylor(r, p2)
         if k == 0 then sr else _neg_rep(sr) end
       else
@@ -1215,22 +947,16 @@ primitive _MPFAlgo
     """
     Compute `cos(a)` at working precision `w` bytes (argument in radians).
 
-    - NaN or `±∞` → NaN.  `0` → `1`.
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `cos`.
 
-    Uses the same argument reduction as `_sin`:
+    Argument reduction: `n = round(a / (π/2))`, `r = a − n × (π/2)`,
+    `|r| ≤ π/4`. Based on `k = n mod 4`:
     - `k=0`: `cos(r)`,  `k=1`: `−sin(r)`,
     - `k=2`: `−cos(r)`, `k=3`: `sin(r)`.
     """
-    if a.is_nan() or a.is_infinite() then
-      return MPFRep.nan_val()
-    end
-    if a.is_zero() then
-      return MPFRep.from_f64(1.0, w)
-    end
     let p2: USize = w + 8
     (let r, let k) = _sin_cos_reduce(a, p2)
-    let result: MPFRep =
-      if (k == 0) or (k == 2) then
+    let result: MPFRep = if (k == 0) or (k == 2) then
         let cr = _cos_taylor(r, p2)
         if k == 0 then cr else _neg_rep(cr) end
       else
@@ -1244,20 +970,14 @@ primitive _MPFAlgo
     """
     Compute `tan(a) = sin(a) / cos(a)` at working precision `w` bytes.
 
-    - NaN or `±∞` → NaN.  `0` → `0`.
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `tan`.
     When `cos(a)` is zero at the working precision, returns NaN.
     """
-    if a.is_nan() or a.is_infinite() then
-      return MPFRep.nan_val()
-    end
-    if a.is_zero() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
-    end
     let c: MPFRep = _cos(a, w)
     if c.is_zero() then
       return MPFRep.nan_val()
     end
-    _div(_sin(a, w), c, w)._trunc(w)
+    _div(_sin(a, w), c, w)
 
 
   // ── Hyperbolic ─────────────────────────────────────────────────────────────
@@ -1266,7 +986,990 @@ primitive _MPFAlgo
     """
     Compute `sinh(a) = (e^a − e^{−a}) / 2` at working precision `w` bytes.
 
-    - NaN → NaN.  `±∞` → `±∞`.  `0` → `0`.
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `sinh`.
+    """
+    let p2: USize = w + 4
+    let ex: MPFRep  = _exp(a, p2)
+    let emx: MPFRep = _exp(_neg_rep(a), p2)
+    let two: MPFRep = MPFRep.from_f64(2.0, p2)
+    _div(_sub(ex, emx, p2), two, p2)._trunc(w)
+
+
+  fun _cosh(a: MPFRep, w: USize): MPFRep =>
+    """
+    Compute `cosh(a) = (e^a + e^{−a}) / 2` at working precision `w` bytes.
+
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `cosh`.
+    """
+    let p2: USize = w + 4
+    let ex: MPFRep  = _exp(a, p2)
+    let emx: MPFRep = _exp(_neg_rep(a), p2)
+    let two: MPFRep = MPFRep.from_f64(2.0, p2)
+    _div(_add(ex, emx, p2), two, p2)._trunc(w)
+
+
+  fun _tanh(a: MPFRep, w: USize): MPFRep =>
+    """
+    Compute `tanh(a) = (e^a − e^{−a}) / (e^a + e^{−a})` at working precision
+    `w` bytes.
+
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `tanh`.
+    """
+    let p2: USize = w + 4
+    let ex: MPFRep  = _exp(a, p2)
+    let emx: MPFRep = _exp(_neg_rep(a), p2)
+    _div(_sub(ex, emx, p2), _add(ex, emx, p2), p2)._trunc(w)
+
+
+  fun _sech(a: MPFRep, w: USize): MPFRep =>
+    """
+    Compute `sech(a) = 1 / cosh(a)` at working precision `w` bytes.
+
+    Assumes `a` is finite. Special-value handling belongs to `sech`.
+    """
+    _inv(_cosh(a, w), w)
+
+
+  fun _csch(a: MPFRep, w: USize): MPFRep =>
+    """
+    Compute `csch(a) = 1 / sinh(a)` at working precision `w` bytes.
+
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `csch`.
+    """
+    _inv(_sinh(a, w), w)
+
+
+  fun _coth(a: MPFRep, w: USize): MPFRep =>
+    """
+    Compute `coth(a) = cosh(a) / sinh(a)` at working precision `w` bytes.
+
+    Assumes `a` is finite and non-zero. Special-value handling belongs to `coth`.
+    """
+    _div(_cosh(a, w), _sinh(a, w), w)
+
+
+  // ── Constants ──────────────────────────────────────────────────────────────
+
+  fun _pi(w: USize): MPFRep =>
+    """
+    Compute `π` at working precision `w` bytes via the Machin formula
+    `π = 16·arctan(1/5) − 4·arctan(1/239)`.
+
+    Uses Taylor `arctan(x) = x − x³/3 + x⁵/5 − ...`
+    """
+    let p: USize = w + 4
+    let one: MPFRep = _one(p)
+    let five: MPFRep = MPFRep.from_f64(5.0, p)
+    let two39: MPFRep = MPFRep.from_f64(239.0, p)
+    let x5: MPFRep = _inv(five, p)
+    let x239: MPFRep = _inv(two39, p)
+
+    // arctan(1/5) via Taylor series
+    let neg_x52: MPFRep = _neg_rep(_mul(x5, x5, p))
+    var pow5: MPFRep = x5
+    var atan5: MPFRep = x5
+    var k5: USize = 1
+    var iters5: USize = 0
+    let max_iters: USize = p * 30
+    while iters5 < max_iters do
+      pow5 = _mul(pow5, neg_x52, p)
+      let d5: USize = (2 * k5) + 1
+      let term5: MPFRep = if d5 <= 255 then
+          (let q5, _) = pow5._short_div(d5.u8())
+          q5
+        else
+          _div(pow5, MPFRep.from_f64(d5.f64(), p), p)
+        end
+      let new_a5: MPFRep = _add(atan5, term5, p)
+      if _digits_eq(new_a5, atan5) then break end
+      atan5 = new_a5
+      k5 = k5 + 1
+      iters5 = iters5 + 1
+    end
+
+    // arctan(1/239) via Taylor series
+    let neg_x2392: MPFRep = _neg_rep(_mul(x239, x239, p))
+    var pow239: MPFRep = x239
+    var atan239: MPFRep = x239
+    var k239: USize = 1
+    var iters239: USize = 0
+    while iters239 < max_iters do
+      pow239 = _mul(pow239, neg_x2392, p)
+      let d239: USize = (2 * k239) + 1
+      let term239: MPFRep = if d239 <= 255 then
+          (let q239, _) = pow239._short_div(d239.u8())
+          q239
+        else
+          _div(pow239, MPFRep.from_f64(d239.f64(), p), p)
+        end
+      let new_a239: MPFRep = _add(atan239, term239, p)
+      if _digits_eq(new_a239, atan239) then break end
+      atan239 = new_a239
+      k239 = k239 + 1
+      iters239 = iters239 + 1
+    end
+
+    // π = 16·arctan(1/5) − 4·arctan(1/239)
+    let sixteen: MPFRep = MPFRep.from_f64(16.0, p)
+    let four: MPFRep = MPFRep.from_f64(4.0, p)
+    _sub(_mul(sixteen, atan5, p), _mul(four, atan239, p), p)._trunc(w)
+
+
+  fun _pi_bbp(w: USize): MPFRep =>
+    """
+    Compute `π` at working precision `w` bytes via the BBP formula:
+    `π = Σ_{k=0}^∞ (1/16^k) × [4/(8k+1) − 2/(8k+4) − 1/(8k+5) − 1/(8k+6)]`.
+
+    The `1/16^k` factor is maintained as a running product to avoid `powi`.
+    """
+    let p: USize = w + 4
+    let k_1: MPFRep = _one(p)
+    let k_2: MPFRep = MPFRep.from_f64(2.0, p)
+    let k_4: MPFRep = MPFRep.from_f64(4.0, p)
+    let k_5: MPFRep = MPFRep.from_f64(5.0, p)
+    let k_6: MPFRep = MPFRep.from_f64(6.0, p)
+    let k_8: MPFRep = MPFRep.from_f64(8.0, p)
+    let inv16: MPFRep = _inv(MPFRep.from_f64(16.0, p), p)
+    var k: USize = 0
+    var result: MPFRep = MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
+    var prev_res: MPFRep = result
+    var pow16k: MPFRep = k_1
+    repeat
+      let t0: MPFRep = _mul(k_8, MPFRep.from_ulong(k.ulong(), p), p)
+      let t1: MPFRep = _div(k_4, _add(t0, k_1, p), p)
+      let t2: MPFRep = _div(k_2, _add(t0, k_4, p), p)
+      let t3: MPFRep = _div(k_1, _add(t0, k_5, p), p)
+      let t4: MPFRep = _div(k_1, _add(t0, k_6, p), p)
+      let inner: MPFRep = _sub(_sub(_sub(t1, t2, p), t3, p), t4, p)
+      let term: MPFRep = _mul(pow16k, inner, p)
+      prev_res = result
+      result = _add(result, term, p)
+      pow16k = _mul(pow16k, inv16, p)
+      k = k + 1
+    until _digits_eq(result, prev_res) or (k > p) end
+    result._trunc(w)
+
+
+  fun _pi_chudnovsky(w: USize): MPFRep =>
+    """
+    Compute `π` at working precision `w` bytes via the Chudnovsky algorithm.
+
+    TODO: Correct following bug,
+    ⚠ Warning: gives only ~4 correct digits — the algorithm has a known bug in
+    `640320^(3k+1.5)` computed via `pow` (transcendental path) losing precision.
+    """
+    let p: USize = w + 4
+    let one: MPFRep = _one(p)
+    let minus_one: MPFRep = _neg_rep(one)
+    let k_3: MPFRep = MPFRep.from_f64(3.0, p)
+    let k_1_5: MPFRep = _div(k_3, MPFRep.from_f64(2.0, p), p)
+    let k_640320: MPFRep = MPFRep.from_ulong(640320, p)
+    let k_13591409: MPFRep = MPFRep.from_ulong(13591409, p)
+    let k_545140134: MPFRep = MPFRep.from_ulong(545140134, p)
+    let k_12: MPFRep = MPFRep.from_f64(12.0, p)
+    var result: MPFRep = MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
+    var prev_res: MPFRep = result
+    var k: USize = 0
+    repeat
+      (let fact_k, let fact_3k, let fact_6k) = _fact_chudnovsky(k.ulong(), p)
+      let sgn: MPFRep = if (k %% 2) == 0 then one else minus_one end
+      let num: MPFRep = _add(k_13591409,
+        _mul(k_545140134, MPFRep.from_ulong(k.ulong(), p), p), p)
+      let exp_arg: MPFRep = _add(
+        _mul(k_3, MPFRep.from_ulong(k.ulong(), p), p), k_1_5, p)
+      let den_pow: MPFRep = _pow(k_640320, exp_arg, p)
+      let fact_k3: MPFRep = _powi(fact_k, 3, p)
+      let den: MPFRep = _mul(_mul(fact_3k, fact_k3, p), den_pow, p)
+      let term: MPFRep = _mul(_mul(sgn, fact_6k, p), _div(num, den, p), p)
+      prev_res = result
+      result = _add(result, term, p)
+      k = k + 1
+    until _digits_eq(result, prev_res) or (k > p) end
+    _inv(_mul(k_12, result, p), p)._trunc(w)
+
+
+  fun _fact_chudnovsky(n: ULong, p: USize): (MPFRep, MPFRep, MPFRep) =>
+    """
+    Compute `n!`, `(3n)!`, `(6n)!` as `MPFRep` at precision `p` bytes for the
+    Chudnovsky algorithm.
+    """
+    var fact_n: MPInt = MPInt.from[ULong](1)
+    for i in Range[ULong](1, n + 1) do
+      fact_n = fact_n * MPInt.from[ULong](i)
+    end
+    var fact_3n: MPInt = fact_n
+    for i in Range[ULong](n + 1, (3 * n) + 1) do
+      fact_3n = fact_3n * MPInt.from[ULong](i)
+    end
+    var fact_6n: MPInt = fact_3n
+    for i in Range[ULong]((3 * n) + 1, (6 * n) + 1) do
+      fact_6n = fact_6n * MPInt.from[ULong](i)
+    end
+    ( MPFRep.from_mpint(fact_n, p),
+      MPFRep.from_mpint(fact_3n, p),
+      MPFRep.from_mpint(fact_6n, p) )
+
+
+  // ── String conversion ──────────────────────────────────────────────────────
+
+  fun _from_string(s: String, w: USize): MPFRep ? =>
+    """
+    Parse the decimal string `s` into an `MPFRep` at working precision `w`
+    bytes using the same multi-precision decimal algorithm as `MPFloat.from_string`.
+    """
+    let p_digits: USize = w
+    let st: String = s.clone() .> strip()
+
+    if st.size() == 0 then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, p_digits))
+    end
+    if (st == "nan") or (st == "NaN") or (st == "@NaN@") then
+      return MPFRep.nan_val()
+    end
+    if (st == "+inf") or (st == "@Inf@") or (st == "inf") then
+      return MPFRep.inf_val(true)
+    end
+    if (st == "-inf") or (st == "-@Inf@") then
+      return MPFRep.inf_val(false)
+    end
+    if (st == "0") or (st == "0.0") or (st == "+0") or (st == "+0.0") then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, p_digits))
+    end
+    if (st == "-0") or (st == "-0.0") then
+      return MPFRep._create(true, false, false, 0, Array[U8].init(0, p_digits))
+    end
+
+    let sig_limit: USize = ((p_digits.f64() * 2.41).usize() + 4).max(1)
+    var pos: USize = 0
+    let sz: USize = st.size()
+    var fsign: Bool = false
+    if st(pos)? == '-' then
+      fsign = true ; pos = pos + 1
+    elseif st(pos)? == '+' then
+      pos = pos + 1
+    end
+
+    let ten_int: MPInt = MPInt.from[ILong](10)
+    var n_int: MPInt = MPInt.from[ILong](0)
+    var sig_count: USize = 0
+    var int_exp: I64 = 0
+    var frac_count: I64 = 0
+    var has_digit: Bool = false
+    var sep_seen: Bool = false
+
+    while (pos < sz) and
+          (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_'))
+    do
+      if st(pos)? == '_' then
+        if not sep_seen then
+          sep_seen = true
+          pos = pos + 1
+          continue
+        else
+          Debug("[_MPFAlgo._from_string] consecutive '_' separators")
+        end
+      end
+      sep_seen = false
+      let d: U8 = st(pos)? - '0'
+      has_digit = true
+      if (d != 0) or (sig_count > 0) then
+        if sig_count < sig_limit then
+          n_int = (n_int * ten_int) + MPInt.from[ILong](d.ilong())
+          sig_count = sig_count + 1
+        else
+          int_exp = int_exp + 1
+        end
+      end
+      pos = pos + 1
+    end
+
+    if (pos < sz) and (st(pos)? == '.') then
+      pos = pos + 1
+      sep_seen = false
+      while (pos < sz) and
+            (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_'))
+      do
+        if st(pos)? == '_' then
+          if not sep_seen then
+            sep_seen = true
+            pos = pos + 1
+            continue
+          else
+            Debug("[_MPFAlgo._from_string] consecutive '_' separators in fractional part")
+          end
+        end
+        sep_seen = false
+        let d: U8 = st(pos)? - '0'
+        has_digit = true
+        if (d != 0) or (sig_count > 0) then
+          if sig_count < sig_limit then
+            n_int = (n_int * ten_int) + MPInt.from[ILong](d.ilong())
+            sig_count = sig_count + 1
+            frac_count = frac_count + 1
+          end
+        else
+          frac_count = frac_count + 1
+        end
+        pos = pos + 1
+      end
+    end
+
+    if not has_digit then
+      error
+    end
+
+    var str_exp: I64 = 0
+    if (pos < sz) and
+       ((st(pos)? == 'e') or (st(pos)? == 'E') or (st(pos)? == '@'))
+    then
+      pos = pos + 1
+      var esign: Bool = false
+      if (pos < sz) and (st(pos)? == '-') then
+        esign = true ; pos = pos + 1
+      elseif (pos < sz) and (st(pos)? == '+') then
+        pos = pos + 1
+      end
+      var ehas_digit: Bool = false
+      sep_seen = false
+      while (pos < sz) and
+            (((st(pos)? >= '0') and (st(pos)? <= '9')) or (st(pos)? == '_'))
+      do
+        if st(pos)? == '_' then
+          if not sep_seen then
+            sep_seen = true
+            pos = pos + 1
+            continue
+          else
+            Debug("[_MPFAlgo._from_string] consecutive '_' in exponent")
+          end
+        end
+        sep_seen = false
+        str_exp = (str_exp * 10) + (st(pos)? - '0').i64()
+        ehas_digit = true
+        pos = pos + 1
+      end
+      if not ehas_digit then
+        error
+      end
+      if esign then str_exp = -str_exp end
+    end
+
+    if pos != sz then
+      error
+    end
+
+    let dec_exp: I64 = (int_exp - frac_count) + str_exp
+    if n_int.is_zero() then
+      return MPFRep._create(fsign, false, false, 0, Array[U8].init(0, p_digits))
+    end
+
+    let p2: USize = p_digits + 2
+    let n_max_exact: USize = ((p2.f64() * 14.0).usize() + 50).min(300)
+    let ten_mp: MPFRep = MPFRep.from_f64(10.0, p2)
+
+    let scaled: MPFRep =
+      if dec_exp >= 0 then
+        var n_mp: MPFRep = MPFRep.from_mpint(n_int, p2)
+        if dec_exp > 0 then
+          var scale: MPFRep = _one(p2)
+          var sbase: MPFRep = ten_mp
+          var sn: I64 = dec_exp
+          while sn > 0 do
+            if (sn and 1) == 1 then
+              scale = _mul(scale, sbase, p2)
+            end
+            sbase = _mul(sbase, sbase, p2)
+            sn = sn / 2
+          end
+          n_mp = _mul(n_mp, scale, p2)
+        end
+        n_mp._trunc(p_digits)
+      else
+        let n: USize = (-dec_exp).usize()
+        if n <= n_max_exact then
+          let extra: USize = (((n * 5) + 11) / 12) + p_digits + 4
+          let shift_bits: USize = (extra * 8) - n
+          let five_pow: MPInt = MPInt.from[ILong](5).pow(MPInt.from[ILong](n.ilong()))
+          let n_shifted: MPInt = n_int.shl(MPInt.from[ILong](shift_bits.ilong()))
+          (let q, let r) = n_shifted.divrem(five_pow)
+          let q_rounded: MPInt = if (r + r) >= five_pow then
+              q + MPInt.from[ILong](1)
+            else
+              q
+            end
+          let qbytes: Array[U8] val = q_rounded.raw_digits()
+          let qlen: USize = qbytes.size()
+          let new_exp: I64 = qlen.i64() - extra.i64()
+          let keep: USize = p_digits.min(qlen)
+          let new_digits: Array[U8] val = recover
+            let d = Array[U8].create(keep)
+            for i in Range(0, keep) do
+              try d.push(qbytes(i)?) end
+            end
+            d
+          end
+          MPFRep._create(false, false, false, new_exp, new_digits)
+        else
+          var n_mp: MPFRep = MPFRep.from_mpint(n_int, p2)
+          var scale: MPFRep = _one(p2)
+          var sbase: MPFRep = ten_mp
+          var sn: I64 = (-dec_exp)
+          while sn > 0 do
+            if (sn and 1) == 1 then
+              scale = _mul(scale, sbase, p2)
+            end
+            sbase = _mul(sbase, sbase, p2)
+            sn = sn / 2
+          end
+          _div(n_mp, scale, p2)._trunc(p_digits)
+        end
+      end
+
+    MPFRep._create(fsign, scaled.is_nan(), scaled.is_infinite(),
+      scaled.exponent(), scaled.raw_digits())
+
+
+  // ── Guard-byte table ──────────────────────────────────────────────────────
+
+  fun _guard_bytes(ctx: MPFContext, op: String): USize =>
+    """
+    Working precision in bytes for the named operation `op` under context `ctx`.
+
+    Returns `ctx.p_bytes() + guard`, where `guard` is a per-operation constant
+    chosen to keep the rounding error of the full computation ≤ 1 ULP at
+    output precision.
+
+    The guard values are derived from the analysis in the MPFR thesis
+    (C. Lauter, https://www.christoph-lauter.org/these.pdf) for exact rounding
+    at F64 precision, and generalised conservatively to arbitrary precision:
+
+    | `op`                        | guard | Reason                                  |
+    |-----------------------------|-------|-----------------------------------------|
+    | `"add"`, `"sub"`, `"mul"`   |   2   | Cancellation / FFT rounding ≤ 1 ULP     |
+    | `"inv"`, `"sqrt"`           |   2   | Newton error ≤ 1 ULP at convergence     |
+    | `"ln"`                      |   6   | Argument reduction cancellation         |
+    | `"exp"`, `"trig"`, `"pi"`   |   8   | Reduction + Taylor / Machin series      |
+    | (default)                   |   4   | Conservative fallback                   |
+
+    This method is the single authoritative source for guard bytes. Adding a
+    new operation requires only extending this match — no other file changes.
+    `MPFContext.working_bytes` delegates here.
+    """
+    let guard: USize = match op
+      | "add" | "sub" | "mul" | "inv" | "sqrt" => 2
+      | "ln" => 6
+      | "exp" | "trig" | "pi" => 8
+      else 4
+    end
+    ctx.p_bytes() + guard
+
+
+  // ── Public context-aware API ───────────────────────────────────────────────
+  //
+  // Each method below takes `ctx: MPFContext` as its first argument, handles
+  // special values (NaN, ±∞, ±0), calls the corresponding internal `_*` method
+  // at working precision `ctx.working_bytes(op)`, then rounds the result to
+  // output precision via `ctx._round_to`.
+  //
+  // `MPFloat` calls these directly — there is no dispatch layer in `MPFContext`.
+
+  fun add(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Compute `a + b` at output precision `ctx.p_bytes()` using rounding
+    `ctx.rounding`.
+
+    Special value rules:
+    - NaN propagates: `NaN + x = NaN`.
+    - `+∞ + (−∞) = NaN`.
+    - `±∞ + finite = ±∞`.
+    - Zero is the additive identity.
+
+    Finite non-zero operands are added via `_add` at working precision, then
+    rounded to output precision via `ctx._round_to`.
+    """
+    if a.is_nan() or b.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() and b.is_infinite() then
+      if a.sign_bit() == b.sign_bit() then
+        return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
+      end
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
+    end
+    if b.is_infinite() then
+      return MPFRep._create(b.sign_bit(), false, true, 0, Array[U8].create())
+    end
+    if a.is_zero() then
+      return ctx._round_to(b, ctx.p_bytes(), ctx.rounding)
+    end
+    if b.is_zero() then
+      return ctx._round_to(a, ctx.p_bytes(), ctx.rounding)
+    end
+    let w = ctx.working_bytes("add")
+    ctx._round_to(_add(a, b, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun sub(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Compute `a − b` at output precision `ctx.p_bytes()` using rounding
+    `ctx.rounding`.
+
+    Delegates to `add` after negating `b`, inheriting all special-value
+    handling from `add`.
+    """
+    add(ctx, a, _neg_rep(b))
+
+
+  fun mul(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Compute `a × b` at output precision `ctx.p_bytes()` using rounding
+    `ctx.rounding`.
+
+    Special value rules: NaN propagates; `∞ × 0 = NaN`; `∞ × finite = ±∞`;
+    `0 × finite = ±0`. Finite non-zero operands are multiplied via FFT
+    convolution at working precision, then rounded to output precision.
+    """
+    if a.is_nan() or b.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() or b.is_infinite() then
+      if a.is_zero() or b.is_zero() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, true, 0,
+        Array[U8].create())
+    end
+    if a.is_zero() or b.is_zero() then
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, false, 0,
+        Array[U8].init(0, ctx.p_bytes()))
+    end
+    let w = ctx.working_bytes("mul")
+    ctx._round_to(_mul(a, b, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun inv(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `1 / a` at output precision `ctx.p_bytes()`.
+
+    Returns NaN for NaN input, ±0 for ±∞ input, ±∞ for zero input, and
+    delegates to `_inv` (Newton's method) for finite non-zero inputs.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      return MPFRep._create(a.sign_bit(), false, false, 0,
+        Array[U8].init(0, ctx.p_bytes()))
+    end
+    if a.is_zero() then
+      return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
+    end
+    let w = ctx.working_bytes("inv")
+    ctx._round_to(_inv(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun div(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Compute `a / b` at output precision `ctx.p_bytes()`.
+
+    Handles all IEEE 754 special cases: NaN propagation, ±∞/±∞ = NaN,
+    finite/±∞ = ±0, ±∞/finite = ±∞, finite/0 = ±∞, 0/0 = NaN.
+    """
+    if a.is_nan() or b.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() and b.is_infinite() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, true, 0,
+        Array[U8].create())
+    end
+    if b.is_infinite() then
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, false, 0,
+        Array[U8].init(0, ctx.p_bytes()))
+    end
+    if b.is_zero() then
+      if a.is_zero() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, true, 0,
+        Array[U8].create())
+    end
+    if a.is_zero() then
+      return MPFRep._create(a.sign_bit() != b.sign_bit(), false, false, 0,
+        Array[U8].init(0, ctx.p_bytes()))
+    end
+    let w = ctx.working_bytes("inv")
+    ctx._round_to(_div(a, b, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun sqrt(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `√a` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. Negative finite → NaN. +∞ → +∞. ±0 → ±0.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return MPFRep._create(a.sign_bit(), false, false, 0,
+        Array[U8].init(0, ctx.p_bytes()))
+    end
+    if a.sign_bit() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("sqrt")
+    ctx._round_to(_sqrt(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun divrem(ctx: MPFContext, a: MPFRep, b: MPFRep): (MPFRep, MPFRep) =>
+    """
+    Truncated division with remainder: `(q, r)` such that
+    `a = q × b + r`, `q = trunc(a / b)`, `r` has the same sign as `a`.
+
+    All results are calculated at working precision and rounded at `ctx.p_bytes()`
+    using `ctx.rounding`. Special cases follow IEEE 754 conventions.
+    """
+    let p = ctx.p_bytes()
+    let w = ctx.working_bytes("inv")
+    let nan = MPFRep.nan_val()
+    if a.is_nan() or b.is_nan() then
+      return (nan, nan)
+    end
+    if a.is_infinite() and b.is_infinite() then
+      return (nan, nan)
+    end
+    if a.is_infinite() then
+      return (MPFRep._create(a.sign_bit() != b.sign_bit(), false, true, 0, Array[U8].create()),
+              nan)
+    end
+    if b.is_infinite() then
+      return (MPFRep._create(false, false, false, 0, Array[U8].init(0, p)),
+        MPFRep._create(a.sign_bit(), false, false, a.exponent(), a.raw_digits()))
+    end
+    if b.is_zero() then
+      if a.is_zero() then
+        return (nan, nan)
+      end
+      return (MPFRep._create(a.sign_bit() != b.sign_bit(), false, true, 0, Array[U8].create()),
+              nan)
+    end
+    if a.is_zero() then
+      let z = MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
+      return (z, z)
+    end
+    (let q, let r) = _divrem(a, b, w)
+    (ctx._round_to(q, p, ctx.rounding), ctx._round_to(r, p, ctx.rounding))
+
+
+  fun fld(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Floored division: `floor(a / b)` at output precision `ctx.p_bytes()`.
+
+    The result is the largest integer `q` such that `q × b ≤ a`. When the
+    truncated remainder is non-zero and `a` and `b` have opposite signs, the
+    truncated quotient is decremented by 1.
+
+    Special cases are inherited from `divrem`.
+    """
+    let w = ctx.working_bytes("inv")
+    let p = ctx.p_bytes()
+    (let q, let r) = divrem(ctx, a, b)
+    if r.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if r._has_frac() or (not r.is_zero()) then
+      if a.sign_bit() != b.sign_bit() then
+        let one = _one(p)
+        return ctx._round_to(_sub(q, one, w), p, ctx.rounding)
+      end
+    end
+    q
+
+
+  fun rem(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Truncated remainder: `a − trunc(a/b) × b`. Sign of result = sign of `a`.
+
+    Special cases are inherited from `divrem`.
+    """
+    divrem(ctx, a, b)._2
+
+
+  fun mod(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Floored remainder: `a − fld(a,b) × b`. Sign of result = sign of `b`.
+
+    Special cases are inherited from `rem`; when `rem` returns NaN the result
+    is NaN.
+    """
+    let r = rem(ctx, a, b)
+    if r.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if (not r.is_zero()) and (a.sign_bit() != b.sign_bit()) then
+      let w = ctx.working_bytes("add")
+      return ctx._round_to(_add(r, b, w), ctx.p_bytes(), ctx.rounding)
+    end
+    r
+
+
+  fun ln(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `ln(a)` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return MPFRep.inf_val(false)
+    end
+    if a.sign_bit() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("ln")
+    ctx._round_to(_ln(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun log(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Natural logarithm alias — same as `ln`.
+    """
+    ln(ctx, a)
+
+
+  fun log2(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `log₂(a)` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return MPFRep.inf_val(false)
+    end
+    if a.sign_bit() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("ln")
+    ctx._round_to(_log2(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun log10(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `log₁₀(a)` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return MPFRep.inf_val(false)
+    end
+    if a.sign_bit() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("ln")
+    ctx._round_to(_log10(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun logb(ctx: MPFContext, a: MPFRep, base: MPFRep): MPFRep =>
+    """
+    Compute `log_base(a)` at output precision `ctx.p_bytes()`.
+
+    NaN in either operand → NaN.
+    """
+    if a.is_nan() or base.is_nan() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("ln")
+    ctx._round_to(_logb(a, base, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun exp(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `eᵃ` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return _one(ctx.p_bytes())
+    end
+    let w = ctx.working_bytes("exp")
+    ctx._round_to(_exp(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun exp2(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `2ᵃ` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if a.sign_bit() then
+        return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+      end
+      return MPFRep.inf_val(true)
+    end
+    if a.is_zero() then
+      return _one(ctx.p_bytes())
+    end
+    let w = ctx.working_bytes("exp")
+    ctx._round_to(_exp2(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun powi(ctx: MPFContext, a: MPFRep, n: ILong): MPFRep =>
+    """
+    Compute `aⁿ` for integer exponent `n` at output precision `ctx.p_bytes()`.
+
+    - NaN → NaN.
+    - ±∞, n > 0 → ±∞ (sign = sign of a when n is odd, positive otherwise).
+    - ±∞, n < 0 → ±0.
+    - ±∞, n = 0 → 1 (by convention).
+    """
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      if n == 0 then
+        return _one(ctx.p_bytes())
+      elseif n > 0 then
+        let result_sign = a.sign_bit() and ((n and 1) != 0)
+        return MPFRep._create(result_sign, false, true, 0, Array[U8].create())
+      else
+        return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+      end
+    end
+    let w = ctx.working_bytes("exp")
+    ctx._round_to(_powi(a, n, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun pow(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
+    """
+    Compute `aᵇ` at output precision `ctx.p_bytes()`.
+
+    NaN in either → NaN. b = 0 → 1. a = 0 and b > 0 → 0. a = 0 and b ≤ 0 → NaN.
+    Negative base with non-integer exponent → NaN.
+    For positive base: `exp(b × ln(a))`. For negative integer base: delegates to `powi`.
+    """
+    if a.is_nan() or b.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if b.is_zero() then
+      return _one(ctx.p_bytes())
+    end
+    if a.is_zero() then
+      if b.sign_bit() then
+        return MPFRep.nan_val()
+      end
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+    end
+    if a.sign_bit() and b._has_frac() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("exp")
+    ctx._round_to(_pow(a, b, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun sin(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `sin(a)` at output precision `ctx.p_bytes()`.
+
+    NaN or ±∞ → NaN. 0 → 0.
+    """
+    if a.is_nan() or a.is_infinite() then
+      return MPFRep.nan_val()
+    end
+    if a.is_zero() then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+    end
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_sin(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun cos(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `cos(a)` at output precision `ctx.p_bytes()`.
+
+    NaN or ±∞ → NaN. 0 → 1.
+    """
+    if a.is_nan() or a.is_infinite() then
+      return MPFRep.nan_val()
+    end
+    if a.is_zero() then
+      return _one(ctx.p_bytes())
+    end
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_cos(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun tan(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `tan(a)` at output precision `ctx.p_bytes()`.
+
+    NaN or ±∞ → NaN. 0 → 0.
+    """
+    if a.is_nan() or a.is_infinite() then
+      return MPFRep.nan_val()
+    end
+    if a.is_zero() then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+    end
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_tan(a, w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun sinh(ctx: MPFContext, a: MPFRep): MPFRep =>
+    """
+    Compute `sinh(a)` at output precision `ctx.p_bytes()`.
+
+    NaN → NaN. ±∞ → ±∞. 0 → 0.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1275,145 +1978,140 @@ primitive _MPFAlgo
       return MPFRep._create(a.sign_bit(), false, true, 0, Array[U8].create())
     end
     if a.is_zero() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
     end
-    let p2: USize = w + 4
-    let ex: MPFRep  = _exp(a, p2)
-    let emx: MPFRep = _exp(_neg_rep(a), p2)
-    let two: MPFRep = MPFRep.from_f64(2.0, p2)
-    _div(_sub(ex, emx, p2)._trunc(p2), two, p2)._trunc(w)
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_sinh(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _cosh(a: MPFRep, w: USize): MPFRep =>
+  fun cosh(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Compute `cosh(a) = (e^a + e^{−a}) / 2` at working precision `w` bytes.
+    Compute `cosh(a)` at output precision `ctx.p_bytes()`.
 
-    - NaN → NaN.  `±∞` → `+∞`.  `0` → `1`.
+    NaN → NaN. ±∞ → +∞. 0 → 1.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
     end
     if a.is_infinite() then
-      return MPFRep._create(false, false, true, 0, Array[U8].create())
+      return MPFRep.inf_val(true)
     end
     if a.is_zero() then
-      return MPFRep.from_f64(1.0, w)
+      return _one(ctx.p_bytes())
     end
-    let p2: USize = w + 4
-    let ex: MPFRep  = _exp(a, p2)
-    let emx: MPFRep = _exp(_neg_rep(a), p2)
-    let two: MPFRep = MPFRep.from_f64(2.0, p2)
-    _div(_add(ex, emx, p2)._trunc(p2), two, p2)._trunc(w)
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_cosh(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _tanh(a: MPFRep, w: USize): MPFRep =>
+  fun tanh(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Compute `tanh(a) = (e^a − e^{−a}) / (e^a + e^{−a})` at working precision
-    `w` bytes.
+    Compute `tanh(a)` at output precision `ctx.p_bytes()`.
 
-    - NaN → NaN.  `+∞` → `+1`.  `−∞` → `−1`.  `0` → `0`.
+    NaN → NaN. +∞ → +1. −∞ → −1. 0 → 0.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
     end
     if a.is_infinite() then
-      let sign: Bool = a.sign_bit()
-      return MPFRep.from_f64(if sign then -1.0 else 1.0 end, w)
+      return MPFRep._create(a.sign_bit(), false, false, 1,
+        Array[U8].init(1, 1))
     end
     if a.is_zero() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
     end
-    let p2: USize = w + 4
-    let ex: MPFRep  = _exp(a, p2)
-    let emx: MPFRep = _exp(_neg_rep(a), p2)
-    _div(
-      _sub(ex, emx, p2)._trunc(p2),
-      _add(ex, emx, p2)._trunc(p2),
-      p2)._trunc(w)
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_tanh(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _sech(a: MPFRep, w: USize): MPFRep =>
+  fun sech(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Compute `sech(a) = 1 / cosh(a)` at working precision `w` bytes.
+    Compute `sech(a) = 1/cosh(a)` at output precision `ctx.p_bytes()`.
 
-    - NaN → NaN.  `±∞` → `0`.
+    NaN → NaN. ±∞ → +0.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
     end
     if a.is_infinite() then
-      return MPFRep._create(false, false, false, 0, Array[U8].init(0, w))
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
     end
-    _inv(_cosh(a, w), w)._trunc(w)
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_sech(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _csch(a: MPFRep, w: USize): MPFRep =>
+  fun csch(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Compute `csch(a) = 1 / sinh(a)` at working precision `w` bytes.
+    Compute `csch(a) = 1/sinh(a)` at output precision `ctx.p_bytes()`.
 
-    - NaN, `±∞`, or `a = 0` → NaN.
+    NaN → NaN. ±∞ → +0. 0 → NaN.
     """
-    if a.is_nan() or a.is_infinite() or a.is_zero() then
+    if a.is_nan() then
       return MPFRep.nan_val()
     end
-    _inv(_sinh(a, w), w)._trunc(w)
-
-
-  fun _coth(a: MPFRep, w: USize): MPFRep =>
-    """
-    Compute `coth(a) = cosh(a) / sinh(a)` at working precision `w` bytes.
-
-    - NaN, `±∞`, or `a = 0` → NaN.
-    """
-    if a.is_nan() or a.is_infinite() or a.is_zero() then
+    if a.is_infinite() then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
+    end
+    if a.is_zero() then
       return MPFRep.nan_val()
     end
-    _div(_cosh(a, w), _sinh(a, w), w)._trunc(w)
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_csch(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  // ── Constants ──────────────────────────────────────────────────────────────
-
-  fun _pi(w: USize): MPFRep =>
+  fun coth(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Compute `π` at working precision `w` bytes via the Borwein quartic
-    iteration.
+    Compute `coth(a) = cosh(a)/sinh(a)` at output precision `ctx.p_bytes()`.
 
-    Uses the same algorithm as `MPFloat.pi`: starts from an F64 seed, then
-    applies the quartic convergence recurrence until convergence.
+    NaN → NaN. +∞ → +1. −∞ → −1. 0 → NaN.
     """
-    let size: USize = w + 2
-    let prec_bits: ULong = (size * 8).ulong()
-    let pi_f = MPFloat.pi(prec_bits)
-    MPFRep.from_f64(pi_f.f64(), w)
+    if a.is_nan() then
+      return MPFRep.nan_val()
+    end
+    if a.is_infinite() then
+      return MPFRep._create(a.sign_bit(), false, false, 1,
+        Array[U8].init(1, 1))
+    end
+    if a.is_zero() then
+      return MPFRep.nan_val()
+    end
+    let w = ctx.working_bytes("trig")
+    ctx._round_to(_coth(a, w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _pi_bbp(w: USize): MPFRep =>
+  fun pi(ctx: MPFContext): MPFRep =>
     """
-    Compute `π` at working precision `w` bytes via the BBP formula.
-    Delegates to `MPFloat.pi_bbp` for now.
+    Compute π at output precision `ctx.p_bytes()`.
     """
-    let pi_f = MPFloat.pi_bbp((w * 8).ulong())
-    MPFRep.from_f64(pi_f.f64(), w)
+    let w = ctx.working_bytes("pi")
+    ctx._round_to(_pi(w), ctx.p_bytes(), ctx.rounding)
 
 
-  fun _pi_chudnovsky(w: USize): MPFRep =>
+  fun pi_bbp(ctx: MPFContext): MPFRep =>
     """
-    Compute `π` at working precision `w` bytes via the Chudnovsky algorithm.
-    Delegates to `MPFloat.pi` for now.
+    Compute π using the Bailey–Borwein–Plouffe formula at output precision
+    `ctx.p_bytes()`.
     """
-    let pi_f = MPFloat.pi((w * 8).ulong())
-    MPFRep.from_f64(pi_f.f64(), w)
+    let w = ctx.working_bytes("pi")
+    ctx._round_to(_pi_bbp(w), ctx.p_bytes(), ctx.rounding)
 
 
-  // ── String conversion ──────────────────────────────────────────────────────
+  fun pi_chudnovsky(ctx: MPFContext): MPFRep =>
+    """
+    Compute π using the Chudnovsky algorithm at output precision `ctx.p_bytes()`.
 
-  fun _from_string(s: String, w: USize): MPFRep ? =>
+    ⚠ Warning: this implementation currently gives only ~4 correct digits —
+    see `_pi_chudnovsky` for the known bug description.
     """
-    Parse the decimal string `s` into an `MPFRep` at working precision `w`
-    bytes.  Delegates to `MPFloat.from_string` during the transition period.
+    let w = ctx.working_bytes("pi")
+    ctx._round_to(_pi_chudnovsky(w), ctx.p_bytes(), ctx.rounding)
+
+
+  fun from_string(ctx: MPFContext, s: String): MPFRep ? =>
     """
-    let prec_bits: ULong = (w * 8).ulong()
-    let f = MPFloat.from_string(s, prec_bits)?
-    MPFRep._create(
-      f.is_negative(), f.is_nan(), f.is_infinite(),
-      f.exponent(), f.raw_digits())
+    Parse `s` as a floating-point number at output precision `ctx.p_bytes()`.
+
+    Raises an error if `s` is not a valid floating-point representation.
+    Only base 10 is currently implemented.
+    """
+    let w = ctx.working_bytes("add")
+    ctx._round_to(_from_string(s, w)?, ctx.p_bytes(), ctx.rounding)

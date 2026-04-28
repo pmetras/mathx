@@ -114,7 +114,7 @@ actor Main
     
     try
       // Use high precision for the series (128 bytes ≈ 308 decimal digits)
-      let prec: ULong = 1024
+      let prec: USize = 1024
       var x = MPFloat.from_string(x0_str, prec)?
       let collector = StatCollector(5)
       
