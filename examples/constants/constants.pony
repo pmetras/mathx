@@ -63,9 +63,9 @@ actor Main
     """
     var i: ULong = 0
     let precision: ULong = 10000 // binary digits for the calculations, and result
-    let zero = MPFloat.from_f64(0.0, precision)
-    let one = MPFloat.from_f64(1.0, precision)
-    let two = MPFloat.from_f64(2.0, precision)
+    let zero = MPFloat.from[F64](0.0, precision)
+    let one = MPFloat.from[F64](1.0, precision)
+    let two = MPFloat.from[F64](2.0, precision)
     let two_sqrt = two.sqrt()
 
     let x_0 = two_sqrt
@@ -252,7 +252,7 @@ actor Main
     //
     // e = 1 + 1/1! + 1/2! + ... + 1/1000!
     //
-    let one = MPFloat.from_f64(1.0, 1000)
+    let one = MPFloat.from[F64](1.0, 1000)
     var res = one
     var prev_fact = one
     var old_res = res
@@ -261,7 +261,7 @@ actor Main
     env.out.print("-------------")
 
     for i in Range(1, 1001) do
-      let fact = prev_fact * MPFloat.from_f64(F64.from[USize](i), 1000)
+      let fact = prev_fact * MPFloat.from[F64](F64.from[USize](i), 1000)
       res = res + (one / fact)
       prev_fact = fact
 

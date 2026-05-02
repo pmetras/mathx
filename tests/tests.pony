@@ -90,6 +90,8 @@ actor Main is TestList
     test(_TestComplexLogBases[F64])
     test(_TestComplexInverseTrig[F64])
     test(_TestComplexInverseHyp[F64])
+    test(_TestComplexFromString[F32])
+    test(_TestComplexFromString[F64])
 
     // Miscellaneous fonctions for unsigned
     test(_TestUnsignedComplementPow[U8])
@@ -271,4 +273,26 @@ actor Main is TestList
     test(_TestMPIntKaratsubaAsymmetric)
     test(_TestMPIntFromStringLargeExponent)
     test(_TestMPFloatConversions)
+
+    // Formattable: MPFloat and MPInt
+    test(_TestMPFloatFormatDefault)
+    test(_TestMPFloatFormatE)
+    test(_TestMPFloatFormatF)
+    test(_TestMPFloatFormatG)
+    test(_TestMPFloatFormatPct)
+    test(_TestMPFloatFormatIntCodes)
+    test(_TestMPFloatFormatWidth)
+    test(_TestMPFloatFormatSpecial)
+    test(_TestMPIntFormatDefault)
+    test(_TestMPIntFormatBases)
+    test(_TestMPIntFormatWidth)
+    test(_TestMPIntFormatGrouping)
+    test(_TestMPIntFormatPrecision)
+    test(_TestMPFloatFormatInFormat)
+    test(_TestComplexFormatCartesian[F32])
+    test(_TestComplexFormatPolar[F32])
+    test(_TestComplexFormatWidth[F32])
+    test(_TestComplexFormatCartesian[F64])
+    test(_TestComplexFormatPolar[F64])
+    test(_TestComplexFormatWidth[F64])
 

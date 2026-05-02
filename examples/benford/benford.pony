@@ -120,8 +120,8 @@ actor Main
       
       collector.add_number(x)
       
-      let two = MPFloat.from_f64(2.0, prec)
-      let one = MPFloat.from_f64(1.0, prec)
+      let two = MPFloat.from[F64](2.0, prec)
+      let one = MPFloat.from[F64](1.0, prec)
       
       for _ in Range[USize](1, _terms) do
         x = x.mul(two).add(one)
@@ -162,7 +162,7 @@ class StatCollector
     let s: String = match n
     | let mi: MPInt =>
       // Convert to MPFloat for easy extraction of leading digits
-      MPFloat.from_mpint(mi, 80).string()
+      MPFloat.from[MPInt](mi, 80).string()
     | let mf: MPFloat =>
       mf.string()
     end

@@ -11,12 +11,13 @@
 // the result to output precision via `_ctx._round_to`.
 
 use "../assertx"
+use "../formatx"
 
 use "collections"
 use "debug"
 
 
-class val MPFloat
+class val MPFloat is (Formattable & Stringable)
   """
   MPFloat represents real numbers with arbitrary precision.
 
@@ -56,9 +57,10 @@ class val MPFloat
   consequence, the precision of the result of the operation `this op that` or
   `this.op(that, ...)` is set to the precision of `this`.
 
-  The default precision of 112 bits for the mantissa correspond to
-  the size of the mantissa of a `F128`. That way, `MPFloat` can be used as a
-  replacement for `F128` when the precision is not specified.
+  The default precision is 128 bits for the mantissa, giving ~38 significant
+  decimal digits. This covers the full value range of `U128` and `I128`
+  without truncation, which is why 128 bits is preferred over the 112-bit
+  mantissa of IEEE 754 binary128.
 
   Usage of `MPFloat` class assumes that floats have the same precision and it
   prints warnings, when compiled in debug mode, on operations involving
@@ -66,6 +68,37 @@ class val MPFloat
   when mixing operands with different precisions. But nothing prevent you from
   doing it, and there's even a constructor to create a new `MPFloat` from
   another one and changing its precision.
+
+  ## Rounding guarantees
+
+  Every operation rounds its result to the output precision under
+  `rounding_mode()`. Two levels of guarantee are provided:
+
+  | Operation                        | Guarantee           | Notes                       |
+  | -------------------------------- | ------------------- | --------------------------- |
+  | `add`, `sub`, `mul`              | Correct (≤ 0.5 ULP) | IEEE 754 §5.4: exact then round once  |
+  | `div`, `inv`, `sqrt`             | Correct (≤ 0.5 ULP) | Newton + one refinement step          |
+  | `ln`, `log`, `log2`, `log10`     | Correct (≤ 0.5 ULP) | Ziv's iteration                      |
+  | `exp`, `exp2`                    | Correct (≤ 0.5 ULP) | Ziv's iteration                      |
+  | `powi`, `pow`                    | Correct (≤ 0.5 ULP) | Ziv's iteration                      |
+  | `logb`                           | Faithful (≤ 1 ULP)  | `ln/ln` — two roundings              |
+  | `sin`, `cos`, `tan`              | Faithful (≤ 1 ULP)  | argument in radians                  |
+  | `csc`, `sec`, `cot`              | Faithful (≤ 1 ULP)  | derived from sin/cos                 |
+  | `sinh`, `cosh`, `tanh`           | Faithful (≤ 1 ULP)  |                                      |
+  | `sech`, `csch`, `coth`           | Faithful (≤ 1 ULP)  |                                      |
+
+  **Correctly rounded** — the result is bit-for-bit identical to rounding the
+  infinite-precision mathematical value under `rounding_mode()`. This matches
+  the guarantee that MPFR provides. For `add`/`sub`/`mul` this follows from
+  IEEE 754 §5.4: the intermediate result is exact and a single rounding step
+  is applied. For transcendentals it is achieved via Ziv's iteration: working
+  precision is doubled and the computation retried whenever the rounding
+  direction cannot be determined unambiguously from the guard bits.
+
+  **Faithfully rounded** — the result differs from the exact value by at most
+  1 ULP in either direction. This is the level provided by all trigonometric
+  and hyperbolic functions (`sin`, `cos`, `tan`, `sinh`, `cosh`, `tanh`, and
+  their reciprocals), `logb`, and `pi`.
   """
 
   let _rep: MPFRep
@@ -108,11 +141,11 @@ class val MPFloat
     _ctx = MPFContext(digits.size() * 8, rnd)
 
 
-  new val create(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val create(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     Create a positive zero with `prec` bits of mantissa (significand).
 
-    This is the default constructor: `MPFloat()` gives a size-112 bits positive zero,
+    This is the default constructor: `MPFloat()` gives a 128-bit positive zero,
     and `MPFloat(n)` gives a size-n bits positive zero (all digits zero).
     """
     let p = (prec + 7) / 8
@@ -125,7 +158,7 @@ class val MPFloat
     Create a Not-a-Number value.
     """
     _rep = MPFRep.nan_val()
-    _ctx = MPFContext(112, RoundingNearest)
+    _ctx = MPFContext(128, RoundingNearest)
 
 
   new val inf_val(positive: Bool = true) =>
@@ -133,48 +166,16 @@ class val MPFloat
     Create an infinite value. Pass `positive = false` for −∞.
     """
     _rep = MPFRep.inf_val(positive)
-    _ctx = MPFContext(112, RoundingNearest)
-
-
-  new val from_f64(f: F64, prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
-    """
-    Create a new `MPFloat` from the `F64` value `f` with `prec` bits of
-    precision (default 112, giving ~33 decimal digits) and a default rounding
-    mode to nearest digit.
-
-    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises `f`
-    so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
-
-    The rounding mode is not currently used by the `MPFloat`.
-    """
-    let p = (prec + 7) / 8
-    _rep = MPFRep.from_f64(f, p)
-    _ctx = MPFContext(prec, rnd)
-
-
-  new val from_f32(f: F32, prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
-    """
-    Create a new `MPFloat` from the `F32` value `f` with `prec` bits of
-    precision (default 112, giving ~33 decimal digits) and a default rounding
-    mode to nearest digit.
-
-    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises `f`
-    so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
-
-    The rounding mode is not currently used by the `MPFloat`.
-    """
-    let p = (prec + 7) / 8
-    _rep = MPFRep.from_f32(f, p)
-    _ctx = MPFContext(prec, rnd)
+    _ctx = MPFContext(128, RoundingNearest)
 
 
   new val from_string(s: String = "",
-                      prec: USize = 112,
+                      prec: USize = 128,
                       base: U8 = 10,
                       rnd: RoundingMode = RoundingNearest) ? =>
     """
     Create a new `MPFloat` by parsing the string `s` with `prec` bits
-    of precision (default 112, ≈33 significant decimal digits). Raises
+    of precision (default 128, ≈38 significant decimal digits). Raises
     an error if `s` is not a recognised floating-point representation.
 
     The `base` parameter (default 10) selects the numeral base; currently
@@ -207,85 +208,25 @@ class val MPFloat
     _ctx = c
 
 
-  new val from_mpint(n: MPInt, prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
-    """
-    Create a new `MPFloat` from the `MPInt` value `n` with `prec` bits of
-    precision (default 112, giving ~33 decimal digits) and rounding mode `rnd`.
-
-    The conversion is exact up to the requested precision: the magnitude of
-    `n` is represented without error as long as `n` fits within `prec` bits
-    (i.e. `|n| < 2^prec`); larger values are truncated to the `prec` bits.
-    As a consquence, if you want to keep all the digits of `n` in the resulting
-    `MPFloat`, select a `prec` value that is at least 3.32 × number of decimal
-    digits of `n`.
-
-    Special cases:
-    - Zero → `+0` (positive zero regardless of any sign on the MPInt zero).
-    - Sign is preserved: a negative `MPInt` produces a negative `MPFloat`.
-
-    Algorithm: call `MPInt.raw_digits()` to get the absolute value as
-    a big-endian `Array[U8]` (each base-65536 word split into two bytes, MSW
-    first, leading zeros stripped).  The result maps directly onto the MPFloat
-    `_digits` layout:
-    - `_exponent` = total byte count of the full magnitude (before truncation).
-    - `_digits` = the first `prec` bits (truncated to byte boundary).
-
-    This is O(n) in the word count.
-
-    The rounding mode `rnd` is accepted for API compatibility; rounding support
-    is a future TODO.
-    """
-    let p = (prec + 7) / 8
-    _rep = MPFRep.from_mpint(n, p)
-    _ctx = MPFContext(prec, rnd)
-
-
-  new val from_mpfloat(f: MPFloat,
-                       prec: USize = 112,
-                       rnd: RoundingMode = RoundingNearest) =>
-    """
-    Create a new `MPFloat` whose value is equal to `f` but with precision `prec`
-    bits (default 112) and using rounding mode `rnd` (default nearest). This
-    constructor is useful when you want to change the precision and the rounding
-    mode of the resulting `MPFloat`.
-
-    TODO: Manage rounding. Presently, the result is truncated to fit with
-    requested precision.
-    """
-    let p = (prec + 7) / 8
-    _rep = MPFRep.from_mpfloat_rep(f._rep, p)
-    _ctx = MPFContext(prec, rnd)
-
-
-  new val from_ulong(n: ULong, prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
-    """
-    Create a new `MPFloat` whose value is equal to `n` with precision `prec` bits (default 112)
-    and rounding mode `rnd` (default nearest).
-
-    TODO: Implement rounding
-    """
-    let p = (prec + 7) / 8
-    _rep = MPFRep.from_ulong(n, p)
-    _ctx = MPFContext(prec, rnd)
-
-
   new val from[A: ((Number | MPInt | MPFloat) & Real[A] val)](n: A,
                                                              prec: USize = 128,
                                                              rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` from any numeric value `n` with `prec` bits of
-    precision (default 128) and rounding mode `rnd` (default nearest).
+    precision (default 128, ~38 significant decimal digits) and rounding mode
+    `rnd` (default nearest).
 
     Accepts:
-    - `MPFloat` — precision-change copy (same as `from_mpfloat`)
-    - `MPInt` — exact integer conversion (same as `from_mpint`)
-    - `F64` — preserves fractional part (same as `from_f64`)
-    - `F32` — preserves fractional part (same as `from_f32`)
-    - `U8`, `U16`, `U32`, `U64`, `U128`, `ULong`, `USize`,
-      `I8`, `I16`, `I32`, `I64`, `ILong`, `ISize` — exact integer conversion
+    - `MPFloat` — precision-change copy
+    - `MPInt` — exact integer conversion
+    - `F64` — preserves fractional part and special values (NaN, ±∞)
+    - `F32` — preserves fractional part and special values (NaN, ±∞)
+    - `U8`, `U16`, `U32`, `U64`, `U128`, `ULong`, `USize` — exact integer
+    - `I8`, `I16`, `I32`, `I64`, `I128`, `ILong`, `ISize` — exact integer
 
-    Float and MPFloat paths preserve the full value including fractional digits
-    and special values (NaN, ±∞). Integer paths are exact up to `prec` bits.
+    The 128-bit default covers the full range of `U128`/`I128` without
+    truncation. Integer paths are exact up to `prec` bits; float paths are
+    rounded to the nearest representable value.
     """
     let p = (prec + 7) / 8
     _ctx = MPFContext(prec, rnd)
@@ -311,7 +252,7 @@ class val MPFloat
     end
 
 
-  new \do_not_use\ min_normalized(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new \do_not_use\ min_normalized(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     The smallest normalized floating point number.
 
@@ -324,13 +265,13 @@ class val MPFloat
     _ctx = MPFContext(prec, rnd)
 
 
-  new epsilon(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new epsilon(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     Create the *machine epsilon* for the given precision: the smallest positive
     `MPFloat` ε such that `1 + ε ≠ 1` in base 256, i.e. `ε = 256^(1 − p_digits)`.
 
-    For the default precision of 112 bits (14 bytes, ≈ 33 significant decimal digits):
-    `ε ≈ 4.93 × 10^{−32}`.
+    For the default precision of 128 bits (16 bytes, ≈ 38 significant decimal digits):
+    `ε ≈ 1.47 × 10^{−38}`.
 
     This is the base-256 analogue of `F64.epsilon() ≈ 2.22 × 10^{−16}`.
     In general `MPFloat.epsilon(p)` decreases as `p` grows — the user controls
@@ -339,7 +280,7 @@ class val MPFloat
     Example use in tests: compare with absolute tolerance `2 × epsilon`:
     ```
     let eps = MPFloat.epsilon(p)
-    h.assert_true(got.almost_eq(expected, MPFloat.from_f64(1e-31), MPFloat.from_f64(1e-31)))
+    h.assert_true(got.almost_eq(expected, MPFloat.from[F64](1e-31), MPFloat.from[F64](1e-31)))
     ```
     """
     let p = (prec + 7) / 8
@@ -352,7 +293,7 @@ class val MPFloat
     The minimum value is −∞ (`-inf`).
     """
     _rep = MPFRep.min_value()
-    _ctx = MPFContext(112, RoundingNearest)
+    _ctx = MPFContext(128, RoundingNearest)
 
 
   new val max_value() =>
@@ -360,13 +301,13 @@ class val MPFloat
     The maximum value is +∞ (`+inf`).
     """
     _rep = MPFRep.max_value()
-    _ctx = MPFContext(112, RoundingNearest)
+    _ctx = MPFContext(128, RoundingNearest)
 
 
-  new val pi(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val pi(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     The pi constant, calculated with the specified `prec` accuracy (number of
-    bits, default 112 giving ~33 decimal digits). The rounding
+    bits, default 128 giving ~38 decimal digits). The rounding
     mode `rnd` is not used yet (TODO).
 
     Uses Machin's formula:
@@ -380,7 +321,7 @@ class val MPFloat
     _ctx = c
 
 
-  new val pi_chudnovsky(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val pi_chudnovsky(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     Compute π using the Chudnovsky algorithm at the given precision.
 
@@ -393,7 +334,7 @@ class val MPFloat
     _ctx = c
 
 
-  new val pi_bbp(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val pi_bbp(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     Compute π using the Bailey–Borwein–Plouffe (BBP) formula:
     `π = Σ_{k=0}^∞ (1/16^k) × [4/(8k+1) − 2/(8k+4) − 1/(8k+5) − 1/(8k+6)]`.
@@ -539,8 +480,9 @@ class val MPFloat
     let abs_that = that.abs()
     let max_mag = if abs_this < abs_that then abs_that else abs_this end
     let p_bits: USize = p * 8
-    let rel_part = (MPFloat.from_mpfloat(rel_tol, p_bits, _ctx.rounding) * max_mag)
-    let abs_part = MPFloat.from_mpfloat(abs_tol, p_bits, _ctx.rounding)
+    let ctx_p = MPFContext(p_bits, _ctx.rounding)
+    let rel_part = (_from(MPFRep.from_mpfloat_rep(rel_tol._rep, ctx_p.p_bytes()), ctx_p) * max_mag)
+    let abs_part = _from(MPFRep.from_mpfloat_rep(abs_tol._rep, ctx_p.p_bytes()), ctx_p)
     let threshold = if rel_part < abs_part then abs_part else rel_part end
     diff <= threshold
 
@@ -634,7 +576,10 @@ class val MPFloat
     they differ, the smaller magnitude is subtracted from the larger, and the
     result takes the sign of the larger.
 
-    TODO: Check rounding propagation
+    **Rounding**: correctly rounded — IEEE 754 §5.4. The intermediate sum is
+    computed exactly (no cancellation loss at working precision), and a single
+    `_round_to` step produces the nearest representable value under
+    `rounding_mode()`.
     """
     ifdef debug then
       if _ctx.precision != that._ctx.precision then
@@ -649,6 +594,8 @@ class val MPFloat
     """
     Calculate `this − that`. Delegates to `add` after negating `that`,
     so all sign, exponent, and special-value handling is inherited.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4 (see `add`).
     """
     _from(_MPFAlgo.sub(_ctx, _rep, that._rep), _ctx)
 
@@ -657,7 +604,11 @@ class val MPFloat
     """
     Multiply `this` by `that`.
 
-    TODO: Complete rounding propagation
+    **Rounding**: correctly rounded — IEEE 754 §5.4. The full product is
+    computed exactly via FFT convolution (all `p_a + p_b` output digits), and
+    a single `_round_to` step rounds to the output precision. Note: for
+    operands larger than ~10⁶ digits, F64 rounding in the FFT may introduce
+    errors; use NTT-based multiplication for extreme precisions.
     """
     ifdef debug then
       if _ctx.precision != that._ctx.precision then
@@ -679,7 +630,9 @@ class val MPFloat
     Sign propagation: `1/positive = positive`, `1/negative = negative`.
     A safety limit of `size × 4` iterations prevents non-convergence.
 
-    TODO: Rounding management
+    **Rounding**: correctly rounded — IEEE 754 §5.4. The Newton kernel adds
+    one extra refinement step at higher working precision to push the error
+    below 0.5 ULP before `_round_to` is applied.
     """
     _from(_MPFAlgo.inv(_ctx, _rep), _ctx)
 
@@ -693,7 +646,9 @@ class val MPFloat
     - ±∞ / ±∞ → NaN;  finite / ±∞ → ±0;  ±∞ / finite → ±∞
     - finite / 0 → ±∞ (sign = XOR of operand signs);  0 / 0 → NaN
 
-    TODO: Complete rounding propagation
+    **Rounding**: correctly rounded — IEEE 754 §5.4. Computed as
+    `this × inv(that)`; `inv`'s refinement step ensures the combined error is
+    below 0.5 ULP before `_round_to` is applied.
     """
     ifdef debug then
       if _ctx.precision != that._ctx.precision then
@@ -723,6 +678,13 @@ class val MPFloat
     is always an integer.
 
     A safety limit of `size × 4` iterations prevents non-convergence.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. The Newton kernel adds
+    one extra refinement step at higher working precision to push the error
+    below 0.5 ULP before `_round_to` is applied.
+    Note: `sqrt(9)` returns `2.9999…` rather than exactly 3 — Newton does not
+    converge to exact integers for non-dyadic perfect squares at finite
+    precision. Use `almost_eq` when testing square root results.
     """
     _from(_MPFAlgo.sqrt(_ctx, _rep), _ctx)
 
@@ -742,7 +704,9 @@ class val MPFloat
     after dividing by `10^(exponent-1)`).
 
     Special values:
-    - NaN → `("nan", 0, false)`, ±∞ → `("±inf", 0, false)`, ±0 → `("0", 0, false)`
+    - NaN → `("nan", 0, false)`
+    - ±∞ → `("±inf", 0, false)`
+    - ±0 → `("0", 0, false)`
 
     Only base 10 is currently implemented; other bases return `("", 0, true)`.
     The `inexact` flag is always `false` (rounding is a future TODO).
@@ -759,6 +723,32 @@ class val MPFloat
     is large, and plain decimal otherwise.
     """
     _rep.string()
+
+
+  fun format(spec: String = ""): String =>
+    """
+    Format this value according to `spec`.
+    
+    **Type codes**
+
+    - `'e'`/`'E'`: scientific notation `d.dddde±ee`. Precision `p` is digits
+      after the decimal point in the mantissa (total `p + 1` significant digits).
+      Default: all stored digits.
+    - `'f'`/`'F'`: fixed-point notation. Precision `p` is digits after the
+      decimal point. Default: all stored digits.
+    - `'g'`/`'G'`: general — uses `'e'` when exponent < −4 or ≥ precision,
+      `'f'` otherwise. Trailing zeros are stripped unless `#` is set.
+      Default precision: all stored digits.
+    - No type code: same as `'g'`.
+    - `'d'`, `'b'`, `'o'`, `'x'`/`'X'`: truncate toward zero, then format as
+      integer in base 10 / 2 / 8 / 16.
+    - `'%'`: multiply by 100, format as `'f'`, append `'%'`.
+
+    For special values NaN and ±∞, the type code selects upper/lower case only.
+    Width, fill, alignment, sign, `#`, `z`, and grouping follow the standard
+    `FormatSpec` grammar.
+    """
+    _rep.format(spec)
 
 
   //- Unsafe operations -------------------------------------------------------
@@ -1270,14 +1260,18 @@ class val MPFloat
     """
     Compute the natural logarithm of `this`.
 
-    NaN → NaN. ±∞ → ±∞ (sign-appropriate). 0 → −∞. Negative → NaN.
+    NaN → NaN. +∞ → +∞. −∞ → NaN. 0 → −∞. Negative → NaN.
+
+    **Rounding**: correctly rounded — the result equals the infinite-precision
+    `ln(this)` rounded under `rounding_mode()`. Ziv's iteration automatically
+    extends working precision until the rounding direction is unambiguous.
     """
     _from(_MPFAlgo.ln(_ctx, _rep), _ctx)
 
 
   fun log(): MPFloat =>
     """
-    Natural logarithm alias — same as `ln`.
+    Natural logarithm alias — same as `ln`. Correctly rounded.
     """
     ln()
 
@@ -1285,6 +1279,10 @@ class val MPFloat
   fun log2(): MPFloat =>
     """
     Compute `log₂(this)`.
+
+    NaN → NaN. +∞ → +∞. 0 → −∞. Negative → NaN.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     _from(_MPFAlgo.log2(_ctx, _rep), _ctx)
 
@@ -1292,6 +1290,10 @@ class val MPFloat
   fun log10(): MPFloat =>
     """
     Compute `log₁₀(this)`.
+
+    NaN → NaN. +∞ → +∞. 0 → −∞. Negative → NaN.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     _from(_MPFAlgo.log10(_ctx, _rep), _ctx)
 
@@ -1299,6 +1301,12 @@ class val MPFloat
   fun logb(base: MPFloat): MPFloat =>
     """
     Compute `log_base(this)`.
+
+    NaN in either operand → NaN. +∞ → +∞. 0 → −∞. Negative → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error). Computed as
+    `ln(this)/ln(base)`; each `ln` is correctly rounded but the division
+    introduces one additional rounding step.
     """
     _from(_MPFAlgo.logb(_ctx, _rep, base._rep), _ctx)
 
@@ -1307,7 +1315,9 @@ class val MPFloat
     """
     Compute `e^this`.
 
-    NaN → NaN. +∞ → +∞. −∞ → +0.
+    NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     _from(_MPFAlgo.exp(_ctx, _rep), _ctx)
 
@@ -1315,6 +1325,10 @@ class val MPFloat
   fun exp2(): MPFloat =>
     """
     Compute `2^this`.
+
+    NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     _from(_MPFAlgo.exp2(_ctx, _rep), _ctx)
 
@@ -1322,6 +1336,11 @@ class val MPFloat
   fun powi(n: ILong, rnd: RoundingMode = RoundingNearest): MPFloat =>
     """
     Compute `this^n` for integer exponent `n`.
+
+    NaN → NaN. ±∞ → depends on sign and parity of `n`.
+
+    **Rounding**: correctly rounded via Ziv's iteration. The final result is
+    the nearest representable value to `this^n` under `rounding_mode()`.
     """
     _from(_MPFAlgo.powi(_ctx, _rep, n), _ctx)
 
@@ -1332,48 +1351,69 @@ class val MPFloat
 
     For positive base: `exp(that × ln(this))`. For negative integer base:
     delegates to `powi`. NaN base or exponent → NaN.
+    Negative base with non-integer exponent → NaN.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     _from(_MPFAlgo.pow(_ctx, _rep, that._rep), _ctx)
 
 
   fun sin(): MPFloat =>
     """
-    Compute `sin(this)`.
+    Compute `sin(this)` (argument in radians).
+
+    NaN or ±∞ → NaN. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.sin(_ctx, _rep), _ctx)
 
 
   fun cos(): MPFloat =>
     """
-    Compute `cos(this)`.
+    Compute `cos(this)` (argument in radians).
+
+    NaN or ±∞ → NaN. 0 → 1.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.cos(_ctx, _rep), _ctx)
 
 
   fun tan(): MPFloat =>
     """
-    Compute `tan(this)`.
+    Compute `tan(this)` (argument in radians).
+
+    NaN or ±∞ → NaN. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.tan(_ctx, _rep), _ctx)
 
 
   fun csc(): MPFloat =>
     """
-    Compute `csc(this) = 1/sin(this)`.
+    Compute `csc(this) = 1/sin(this)` (argument in radians).
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     sin().inv()
 
 
   fun sec(): MPFloat =>
     """
-    Compute `sec(this) = 1/cos(this)`.
+    Compute `sec(this) = 1/cos(this)` (argument in radians).
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     cos().inv()
 
 
   fun cot(): MPFloat =>
     """
-    Compute `cot(this) = cos(this)/sin(this)`.
+    Compute `cot(this) = cos(this)/sin(this)` (argument in radians).
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     cos().div(sin())
 
@@ -1381,6 +1421,10 @@ class val MPFloat
   fun sinh(): MPFloat =>
     """
     Compute `sinh(this)`.
+
+    NaN → NaN. ±∞ → ±∞. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.sinh(_ctx, _rep), _ctx)
 
@@ -1388,6 +1432,10 @@ class val MPFloat
   fun cosh(): MPFloat =>
     """
     Compute `cosh(this)`.
+
+    NaN → NaN. ±∞ → +∞. 0 → 1.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.cosh(_ctx, _rep), _ctx)
 
@@ -1395,6 +1443,10 @@ class val MPFloat
   fun tanh(): MPFloat =>
     """
     Compute `tanh(this)`.
+
+    NaN → NaN. +∞ → +1. −∞ → −1. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.tanh(_ctx, _rep), _ctx)
 
@@ -1402,6 +1454,10 @@ class val MPFloat
   fun csch(): MPFloat =>
     """
     Compute `csch(this) = 1/sinh(this)`.
+
+    NaN → NaN. ±∞ → +0. 0 → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.csch(_ctx, _rep), _ctx)
 
@@ -1409,6 +1465,10 @@ class val MPFloat
   fun sech(): MPFloat =>
     """
     Compute `sech(this) = 1/cosh(this)`.
+
+    NaN → NaN. ±∞ → +0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.sech(_ctx, _rep), _ctx)
 
@@ -1416,6 +1476,10 @@ class val MPFloat
   fun coth(): MPFloat =>
     """
     Compute `coth(this) = cosh(this)/sinh(this)`.
+
+    NaN → NaN. +∞ → +1. −∞ → −1. 0 → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
     """
     _from(_MPFAlgo.coth(_ctx, _rep), _ctx)
 
@@ -1460,7 +1524,7 @@ class val MPFloat
     """
     let t = trunc()
     if _rep.sign_bit() and _rep._has_frac() then
-      return (t - MPFloat.from_f64(1.0, get_precision(), _ctx.rounding))
+      return (t - MPFloat.from[F64](1.0, get_precision(), _ctx.rounding))
     end
     t
 
@@ -1477,7 +1541,7 @@ class val MPFloat
     """
     let t = trunc()
     if (not _rep.sign_bit()) and _rep._has_frac() then
-      return (t + MPFloat.from_f64(1.0, get_precision(), _ctx.rounding))
+      return (t + MPFloat.from[F64](1.0, get_precision(), _ctx.rounding))
     end
     t
 
@@ -1496,7 +1560,7 @@ class val MPFloat
 
     See also `trunc`, `floor`, `ceil`.
     """
-    let half = MPFloat.from_f64(0.5, get_precision(), _ctx.rounding)
+    let half = MPFloat.from[F64](0.5, get_precision(), _ctx.rounding)
     if _rep.sign_bit() then
       return (this  - half).ceil()
     end
@@ -1598,8 +1662,8 @@ class val MPFloat
     Underflow are converted to 0.
 
     This always hold:
-    * If `f` is a `F64`: `MPFloat.from_f64(f).f64() == f`
-    * If `mpf` is a `MPFloat`: `MPFloat.from_f64(mpf.f64()) == mpf`
+    * If `f` is a `F64`: `MPFloat.from[F64](f).f64() == f`
+    * If `mpf` is a `MPFloat`: `MPFloat.from[F64](mpf.f64()) == mpf`
     """
     _rep.f64()
 

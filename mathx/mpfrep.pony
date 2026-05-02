@@ -7,7 +7,7 @@ use "collections"
 use "debug"
 
 
-class val MPFRep
+class val MPFRep is (Formattable & Stringable)
   """
   The pure representation of an arbitrary-precision floating-point number.
 
@@ -31,6 +31,26 @@ class val MPFRep
   significant digits. Construction routines accept a byte count `p_bytes`
   rather than a bit count; the caller is responsible for the conversion
   `p_bytes = ceil(prec_bits / 8)`.
+
+  ## Rounding guarantees (via `_MPFAlgo`)
+
+  | Operation                        | Guarantee          | Method                    |
+  | -------------------------------- | ------------------ | ------------------------- |
+  | `add`, `sub`, `mul`              | Correct (≤ 0.5 ULP) | IEEE 754 §5.4: exact intermediate + one round |
+  | `div`, `inv`, `sqrt`             | Correct (≤ 0.5 ULP) | Newton + one refinement step                  |
+  | `ln`, `log2`, `log10`            | Correct (≤ 0.5 ULP) | Ziv's iteration                               |
+  | `exp`, `exp2`                    | Correct (≤ 0.5 ULP) | Ziv's iteration                               |
+  | `powi`, `pow`                    | Correct (≤ 0.5 ULP) | Ziv's iteration                               |
+  | `logb`                           | Faithful (≤ 1 ULP)  | `ln/ln` — two roundings                       |
+  | `sin`, `cos`, `tan`              | Faithful (≤ 1 ULP)  | Taylor + arg. reduction                       |
+  | `sinh`, `cosh`, `tanh`           | Faithful (≤ 1 ULP)  | Taylor series                                 |
+  | `sech`, `csch`, `coth`           | Faithful (≤ 1 ULP)  | composed from above                           |
+  | `pi`, `pi_bbp`                   | Faithful (≤ 1 ULP)  | iterative formula                             |
+
+  **Correctly rounded** means the result equals the infinite-precision value
+  rounded under the requested `RoundingMode` — identical to what MPFR
+  guarantees. **Faithfully rounded** means the error is at most 1 ULP in
+  either direction.
   """
 
   let _sign: Bool
@@ -1908,7 +1928,9 @@ class val MPFRep
     after dividing by `10^(exponent − 1)`).
 
     Special values:
-    - NaN → `("nan", 0, false)`, ±∞ → `("±inf", 0, false)`, ±0 → `("0", 0, false)`
+    - NaN → `("nan", 0, false)`
+    - ±∞ → `("±inf", 0, false)`
+    - ±0 → `("0", 0, false)`
 
     Only base 10 is currently implemented; other bases return `("", 0, true)`.
     The `inexact` flag is always `false` (rounding is a future TODO).
@@ -1962,10 +1984,8 @@ class val MPFRep
         let s = String.create(sign_prefix.size() + total)
         s.append(sign_prefix)
         s.append(consume dec_str_iso)
-        var i: USize = dec_exp.usize()
-        while i < n_dec do
+        for i in Range(dec_exp.usize(), n_dec) do
           s.push('0')
-          i = i + 1
         end
         s
       end
@@ -1983,21 +2003,17 @@ class val MPFRep
         let s = String.create(sign_prefix.size() + total)
         s.append(sign_prefix)
         s.append(consume num_str_iso)
-        var i: USize = num_len
-        while i < n_dec do
+        for i in Range(num_len, n_dec) do
           s.push('0')
-          i = i + 1
         end
         s
       end
       (consume result, dec_exp, false)
     else
       // Extreme values: use approximate path via F64 to avoid OOM in MPInt/String.
-      ifdef debug then
-        Debug(
-          "[MPFRep.exact_string] Extreme value (k_bytes=" + k_bytes.string() +
-          "). Using approximate F64 path.")
-      end
+      // This is a DoS counter-measure.
+        Debug("[MPFRep.exact_string] Extreme value (k_bytes=" + k_bytes.string() +
+              "). Using approximate F64 path.")
 
       let f = f64()
       if f.nan() then
@@ -2144,3 +2160,704 @@ class val MPFRep
       end
       s
     end
+
+
+  fun format(spec: String = ""): String =>
+    """
+    Format this value according to a `FormatSpec`.
+
+    **Type codes**
+
+    - `'e'`/`'E'`: scientific notation `d.dddde±ee`. Precision `p` is digits
+      after the decimal point in the mantissa (total `p + 1` significant digits).
+      Default: all stored digits.
+    - `'f'`/`'F'`: fixed-point notation. Precision `p` is digits after the
+      decimal point. Default: all stored digits.
+    - `'g'`/`'G'`: general — uses `'e'` when exponent < −4 or ≥ precision,
+      `'f'` otherwise. Trailing zeros are stripped unless `#` is set.
+      Default precision: all stored digits.
+    - No type code: same as `'g'`.
+    - `'d'`, `'b'`, `'o'`, `'x'`/`'X'`: truncate toward zero, then format as
+      integer in base 10 / 2 / 8 / 16.
+    - `'%'`: multiply by 100, format as `'f'`, append `'%'`.
+
+    For special values NaN and ±∞, the type code selects upper/lower case only.
+    Width, fill, alignment, sign, `#`, `z`, and grouping follow the standard
+    `FormatSpec` grammar.
+    """
+    let fspec = FormatSpec(spec)
+
+    // ---- special values ----
+    if _nan then
+      let upper = (fspec.type_char == 'E') or (fspec.type_char == 'F')
+        or (fspec.type_char == 'G')
+      let s: String val = if upper then "NAN" else "nan" end
+      return _fmt_pad(s, fspec)
+    end
+    if _inf then
+      let upper = (fspec.type_char == 'E') or (fspec.type_char == 'F')
+        or (fspec.type_char == 'G')
+      let inf_s: String val = if upper then "INF" else "inf" end
+      let sgn: String val =
+        if _sign then "-"
+        elseif fspec.sign is SignPlus then "+"
+        elseif fspec.sign is SignSpace then " "
+        else "" end
+      return _fmt_pad(sgn + inf_s, fspec)
+    end
+
+    // ---- integer type codes: truncate then delegate ----
+    let tc = fspec.type_char
+    if (tc == 'd') or (tc == 'b') or (tc == 'o') or (tc == 'x') or (tc == 'X') then
+      // Truncate toward zero: keep only bytes at positive exponent positions.
+      let int_digits: Array[U8] val =
+        if _exponent <= 0 then
+          recover [U8(0)] end
+        elseif _exponent.usize() >= _size() then
+          _digits
+        else
+          _digits.trim(0, _exponent.usize())
+        end
+      // Build a temporary MPFRep with no fractional part and format via MPInt path.
+      let int_rep = MPFRep._create(_sign, false, false,
+        int_digits.size().i64(), int_digits)
+      return int_rep._fmt_int(fspec)
+    end
+
+    // ---- floating-point formatting ----
+    if is_zero() then
+      let zero_s: String val = if _sign then "-0" else "0" end
+      let zero_rep: String val = recover
+        let s = String
+        let neg: Bool = _sign and not (fspec.z)
+        if neg then s.push('-')
+        elseif fspec.sign is SignPlus then s.push('+')
+        elseif fspec.sign is SignSpace then s.push(' ')
+        end
+        s.append("0")
+        if (tc == 'f') or (tc == 'F') then
+          let p: USize = match fspec.precision | let p2: USize => p2 else 1 end
+          if p > 0 then
+            s.push('.')
+            for i in Range(0, p) do
+              s.push('0')
+            end
+          elseif fspec.hash then
+            s.push('.')
+          end
+        elseif (tc == 'e') or (tc == 'E') then
+          let p: USize = match fspec.precision | let p2: USize => p2 else 1 end
+          s.push('.')
+          for i in Range(0, p) do
+            s.push('0')
+          end
+          s.append(if (tc == 'E') then "E+00" else "e+00" end)
+        elseif (tc == '%') then
+          let p: USize = match fspec.precision | let p2: USize => p2 else 6 end
+          s.push('.')
+          for i in Range(0, p) do
+            s.push('0')
+          end
+          s.push('%')
+        else
+          // Default (no type code) and 'g'/'G': show "0.0".
+          s.append(".0")
+        end
+        s
+      end
+      return _fmt_num_pad("", zero_rep, fspec)
+    end
+
+    // Get the full exact decimal mantissa and exponent.
+    (let mant_iso, let dec_exp, _) = exact_string(10)
+    let mant_val: String val = consume mant_iso
+
+    // Strip sign from mantissa; record separately.
+    var dig_start: USize = 0
+    let neg: Bool = (mant_val.size() > 0) and
+      (try mant_val(0)? == '-' else false end)
+    if neg then
+      dig_start = 1
+    end
+    let all_digits: String val = mant_val.trim(dig_start)
+
+    let sign_str: String val = if neg then
+        "-"
+      elseif fspec.sign is SignPlus then
+        "+"
+      elseif fspec.sign is SignSpace then
+        " "
+      else
+        ""
+      end
+
+    let upper = (tc == 'E') or (tc == 'F') or (tc == 'G')
+
+    // Determine output precision: explicit spec, or full stored precision.
+    let full_prec: USize = all_digits.size()
+
+    match tc
+    | 'f' | 'F' =>
+      let p: USize = match fspec.precision
+        | let p2: USize => p2
+        else
+          full_prec
+        end
+      let digits: String val = _fmt_fixed(all_digits, dec_exp, p, fspec.hash)
+      let grouped: String val = _fmt_group_fixed(digits, fspec.grouping)
+      _fmt_num_pad(sign_str, grouped, fspec)
+
+    | 'e' | 'E' =>
+      let p: USize = match fspec.precision
+        | let p2: USize => p2
+        else
+          full_prec - 1
+        end
+      let digits: String val = _fmt_sci(all_digits, dec_exp, p, upper, fspec.hash)
+      _fmt_num_pad(sign_str, digits, fspec)
+
+    | 'g' | 'G' =>
+      let p: USize = match fspec.precision
+        | let p2: USize => if p2 == 0 then 1 else p2 end
+        else
+          full_prec
+        end
+      // Use scientific if exp < -4 or exp >= p.
+      let use_sci: Bool = (dec_exp < -4) or (dec_exp >= p.i64())
+      let digits: String val = if use_sci then
+          let sci_p: USize = if p > 0 then p - 1 else 0 end
+          let s = _fmt_sci(all_digits, dec_exp, sci_p, upper, fspec.hash)
+          if fspec.hash then
+            s
+          else
+            _fmt_trim_zeros_sci(s, upper)
+          end
+        else
+          let fix_p_i: ISize = (p.isize() - dec_exp.isize()).max(0)
+          let fix_p: USize = fix_p_i.usize()
+          let s = _fmt_fixed(all_digits, dec_exp, fix_p, fspec.hash)
+          if fspec.hash then
+            _fmt_ensure_dot(s)
+          else
+            _fmt_trim_zeros_fixed(s)
+          end
+        end
+      _fmt_num_pad(sign_str, digits, fspec)
+
+    | '%' =>
+      // Shift dec_exp by 2 (multiply by 100) and format as 'f'.
+      let p: USize = match fspec.precision
+        | let p2: USize => p2
+        else
+          6
+        end
+      let digits: String val = _fmt_fixed(all_digits, dec_exp + 2, p, fspec.hash)
+      let grouped: String val = _fmt_group_fixed(digits, fspec.grouping)
+      let with_pct: String val = recover
+        let s = String(grouped.size() + 1)
+        s.append(grouped)
+        s.push('%')
+        s
+      end
+      _fmt_num_pad(sign_str, with_pct, fspec)
+
+    else
+      // Default: general with full precision, no trailing zeros.
+      let p: USize = full_prec
+      let use_sci: Bool = (dec_exp < -4) or (dec_exp >= p.i64())
+      let digits: String val = if use_sci then
+          _fmt_trim_zeros_sci(_fmt_sci(all_digits, dec_exp, p - 1, false, false), false)
+        else
+          let fix_p_i: ISize = (p.isize() - dec_exp.isize()).max(0)
+          let fix_p: USize = fix_p_i.usize()
+          _fmt_trim_zeros_fixed(_fmt_fixed(all_digits, dec_exp, fix_p, false))
+        end
+      _fmt_num_pad(sign_str, digits, fspec)
+    end
+
+
+  // ---- private formatting helpers -------------------------------------------
+
+  fun _fmt_round(digits: String val, keep: USize): (String val, Bool) =>
+    """
+    Round-to-nearest on `digits` (decimal digit chars), keeping `keep` digits.
+    Returns `(rounded_digits, carry_out)` where `carry_out` is true when
+    rounding propagates past the first digit (e.g. "999" rounded to 1 digit
+    gives ("000", true), meaning the caller should add 1 to the integer part).
+    When `keep >= digits.size()` no rounding is needed; returns `(digits, false)`
+    with the original string (caller pads with zeros as needed).
+    """
+    if keep >= digits.size() then
+      return (digits, false)
+    end
+    // Check the digit just after the last kept position.
+    let next: U8 = try digits(keep)? else '0' end
+    if next < '5' then
+      // Truncate.
+      return (digits.trim(0, keep), false)
+    end
+    // Round up: copy kept digits into a mutable string, then propagate carry.
+    let rounded: String ref = String(keep)
+    for i in Range(0, keep) do
+      rounded.push(try digits(i)? else '0' end)
+    end
+    var carry: Bool = true
+    var pos: ISize = keep.isize() - 1
+    while carry and (pos >= 0) do
+      let d = try rounded(pos.usize())? else '0' end
+      if d < '9' then
+        try rounded(pos.usize())? = d + 1 end
+        carry = false
+      else
+        try rounded(pos.usize())? = '0' end
+        pos = pos - 1
+      end
+    end
+    (rounded.clone(), carry)
+
+
+  fun _fmt_fixed(digits: String val, dec_exp: I64, prec: USize,
+    alt: Bool): String val =>
+    """
+    Build a fixed-point string from `digits` (unsigned decimal mantissa),
+    `dec_exp` (digits left of decimal point), and `prec` (digits after point).
+    `alt` is the `#` flag — forces a decimal point even with zero fractional digits.
+    `digits` may be shorter or longer than needed; missing digits are zeros.
+    The last fractional digit is rounded to nearest.
+    """
+    // Total digits we need: e integer digits + prec fractional digits.
+    // Round the source digits to (max(e,0) + prec) significant positions.
+    let e = dec_exp.isize()
+    let int_digits: USize = if e > 0 then e.usize() else 0 end
+    let total_needed: USize = int_digits + prec
+    (let rd, let carry) = _fmt_round(digits, total_needed)
+
+    // If rounding carried out of all digits, adjust dec_exp effectively by +1.
+    let actual_exp: I64 = if carry then dec_exp + 1 else dec_exp end
+    let ae = actual_exp.isize()
+    let nd = rd.size()
+
+    recover
+      let s = String
+
+      // Integer part.
+      if ae <= 0 then
+        s.append("0")
+      else
+        for i in Range[ISize](0, ae) do
+          s.push(if (not carry) and (i < nd.isize()) then
+              try rd(i.usize())? else '0' end
+            elseif carry then
+              // carry means the rounded string is all zeros with a leading 1.
+              if i == 0 then '1' else '0' end
+            else '0' end)
+        end
+      end
+
+      // Fractional part.
+      if prec > 0 then
+        s.push('.')
+        for i in Range(0, prec) do
+          let src_pos: ISize = ae + i.isize()
+          let c: U8 =
+            if carry then
+              '0'
+            elseif (src_pos >= 0) and (src_pos < nd.isize()) then
+              try rd(src_pos.usize())? else '0' end
+            else
+              '0'
+            end
+          s.push(c)
+        end
+      elseif alt then
+        s.push('.')
+      end
+      s
+    end
+
+
+  fun _fmt_sci(digits: String val, dec_exp: I64, prec: USize,
+    upper: Bool, alt: Bool = false): String val =>
+    """
+    Build a scientific-notation string: `d.dddde±ee`.
+    `prec` is the number of digits after the decimal point in the mantissa.
+    `alt` is the `#` flag — forces a decimal point even with zero fractional digits.
+    The last mantissa digit is rounded to nearest.
+    """
+    // We need 1 + prec significant digits total.
+    let keep = prec + 1
+    (let rd, let carry) = _fmt_round(digits, keep)
+    // carry means mantissa rounded up to 10.0... → adjust exponent by 1.
+    let actual_exp: I64 = if carry then dec_exp + 1 else dec_exp end
+    let nd = rd.size()
+
+    recover
+      let s = String
+
+      // Leading digit.
+      s.push(if carry then '1' elseif nd > 0 then try rd(0)? else '0' end else '0' end)
+
+      // Fractional digits of mantissa.
+      if prec > 0 then
+        s.push('.')
+        for i in Range(0, prec) do
+          s.push(
+            if carry then '0'
+            elseif (i + 1) < nd then try rd(i + 1)? else '0' end
+            else '0' end)
+        end
+      elseif alt then
+        s.push('.')
+      end
+
+      // Exponent: actual_exp - 1 (mantissa is d.xxx, not 0.dxxx).
+      let exp_val: I64 = actual_exp - 1
+      s.append(if upper then "E" else "e" end)
+      s.append(if exp_val >= 0 then "+" else "-" end)
+      let abs_exp: U64 = if exp_val >= 0 then exp_val.u64() else (-exp_val).u64() end
+      let exp_str: String = abs_exp.string()
+      if exp_str.size() < 2 then
+        s.push('0')
+      end
+      s.append(exp_str)
+      s
+    end
+
+
+  fun _fmt_trim_zeros_fixed(s: String val): String val =>
+    """
+    Remove trailing zeros and a lone decimal point from a fixed string.
+    """
+    var end_pos = s.size()
+    while end_pos > 0 do
+      let c = try s(end_pos - 1)? else break end
+      if c == '0' then
+        end_pos = end_pos - 1
+      elseif c == '.' then
+        end_pos = end_pos - 1
+        break
+      else
+        break
+      end
+    end
+    if end_pos == s.size() then
+      s
+    else
+      s.trim(0, end_pos)
+    end
+
+
+  fun _fmt_trim_zeros_sci(s: String val, upper: Bool): String val =>
+    """
+    Remove trailing zeros from the mantissa part of a scientific string,
+    stopping at the `e`/`E` separator.
+    """
+    let e_char: U8 = if upper then 'E' else 'e' end
+    var e_pos: USize = s.size()
+    for i in Range(0, s.size()) do
+      if try s(i)? == e_char else false end then
+        e_pos = i
+        break
+      end
+    end
+    if e_pos == s.size() then
+      return s
+    end
+
+    let mantissa: String val = s.trim(0, e_pos)
+    let exp_part: String val = s.trim(e_pos)
+
+    let trimmed_m: String val = _fmt_trim_zeros_fixed(mantissa)
+    if trimmed_m.size() == mantissa.size() then
+      s
+    else
+      recover
+        let r = String(trimmed_m.size() + exp_part.size())
+        r.append(trimmed_m)
+        r.append(exp_part)
+        r
+      end
+    end
+
+
+  fun _fmt_ensure_dot(s: String val): String val =>
+    """
+    Append a trailing '.' if the string contains no decimal point.
+    """
+    for i in Range(0, s.size()) do
+      if try s(i)? == '.' else false end then
+        return s
+      end
+    end
+    recover
+      let r = String(s.size() + 1)
+      r.append(s)
+      r.push('.')
+      r
+    end
+
+
+  fun _fmt_group_fixed(fixed: String val, grouping: (U8 | None)): String val =>
+    """
+    Apply thousands grouping to the integer part of a fixed-point string.
+    """
+    let sep: U8 = match grouping
+      | let g: U8 => g
+      else
+        return fixed
+      end
+    var dot_pos: USize = fixed.size()
+    for i in Range(0, fixed.size()) do
+      if try fixed(i)? == '.' else false end then
+        dot_pos = i
+        break
+      end
+    end
+    let int_part: String val = fixed.trim(0, dot_pos)
+    let frac_part: String val = fixed.trim(dot_pos)
+    let n = int_part.size()
+    if n <= 3 then
+      return fixed
+    end
+    let num_seps = (n - 1) / 3
+    recover
+      let r = String(n + num_seps + frac_part.size())
+      for i in Range(0, n) do
+        if (i > 0) and (((n - i) % 3) == 0) then
+          r.push(sep)
+        end
+        try r.push(int_part(i)?) end
+      end
+      r.append(frac_part)
+      r
+    end
+
+
+  fun _fmt_int(fspec: FormatSpec val): String =>
+    """
+    Format this (assumed integer) MPFRep using integer type codes.
+    """
+    let base: USize = match fspec.type_char
+      | 'b' => 2
+      | 'o' => 8
+      | 'x' | 'X' => 16
+      else
+        10
+      end
+    let upper = fspec.type_char == 'X'
+
+    // Extract absolute integer value from digits.
+    let abs_digits: Array[U8] val = if _sign then
+        _create(false, false, false, _exponent, _digits)._digits
+      else
+        _digits
+      end
+
+    // Convert base-256 integer to target base string.
+    let raw: String val = _b256_to_base(abs_digits, base, upper)
+
+    // Precision zero-padding for integers.
+    let padded: String val = match fspec.precision
+      | let p: USize if raw.size() < p =>
+        recover
+          let s = String(p)
+          for _ in Range(raw.size(), p) do s.push('0') end
+          s.append(raw)
+          s
+        end
+      else
+        raw
+      end
+
+    let prefix: String val =
+      if fspec.hash then
+        match fspec.type_char
+        | 'b' => "0b"
+        | 'o' => "0o"
+        | 'x' => "0x"
+        | 'X' => "0X"
+        else "" end
+      else "" end
+
+    let sign_str: String val = if _sign then
+        "-"
+      elseif fspec.sign is SignPlus then
+        "+"
+      elseif fspec.sign is SignSpace then
+        " "
+      else
+        ""
+      end
+
+    let fill_char: U32 = if fspec.zero then U32('0') else fspec.fill end
+    let content = sign_str.size() + prefix.size() + padded.size()
+    let width = fspec.width
+
+    if content >= width then
+      return recover
+        let s = String(content)
+        s.append(sign_str)
+        s.append(prefix)
+        s.append(padded)
+        s
+      end
+    end
+
+    let pad = width - content
+    recover
+      let s = String(width)
+      match fspec.align
+      | AlignLeft =>
+        s.append(sign_str)
+        s.append(prefix)
+        s.append(padded)
+        s.append(String.from_utf32(fill_char) * pad)
+      | AlignNumeric =>
+        s.append(sign_str)
+        s.append(prefix)
+        s.append(String.from_utf32(fill_char) * pad)
+        s.append(padded)
+      | AlignCenter =>
+        let before = pad / 2
+        s.append(String.from_utf32(fill_char) * before)
+        s.append(sign_str)
+        s.append(prefix)
+        s.append(padded)
+        s.append(String.from_utf32(fill_char) * (pad - before))
+      else
+        s.append(String.from_utf32(fill_char) * pad)
+        s.append(sign_str)
+        s.append(prefix)
+        s.append(padded)
+      end
+      s
+    end
+
+
+  fun _b256_to_base(digits: Array[U8] val, base: USize, upper: Bool): String val =>
+    """
+    Convert a big-endian base-256 integer to the target base string.
+    """
+    ifdef debug then
+      (base <= 36) or Fail(Format("[_b256_to_base] Base for conversion ({}) must be in range [2, 36]", base))
+    end
+    if digits.size() == 0 then
+      return "0"
+    end
+    let charset: String val = if upper then
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      else
+        "0123456789abcdefghijklmnopqrstuvwxyz"
+      end
+    // Work with a mutable copy.
+    let d: Array[U8] ref = recover
+      let a = Array[U8](digits.size())
+      for b in digits.values() do
+        a.push(b)
+      end
+      a
+    end
+    var result = recover String end
+    while not _b256_is_zero(d) do
+      let rem = _b256_short_div(d, base.u32())
+      try result.unshift(charset(rem.usize())?) end
+    end
+    if result.size() == 0 then
+      result.push('0')
+    end
+    consume result
+
+
+  fun tag _b256_is_zero(d: Array[U8] ref): Bool =>
+    """
+    `true` when all digits in `d` are zero.
+    """"
+    for b in d.values() do
+      if b != 0 then
+        return false
+      end
+    end
+    true
+
+
+  fun tag _b256_short_div(d: Array[U8] ref, divisor: U32): U32 =>
+    """
+    Divide big-endian base-256 array in place by divisor; return remainder.
+    """
+    var rem: U32 = 0
+    for i in Range(0, d.size()) do
+      let cur: U32 = (rem * 256) + (try d(i)?.u32() else 0 end)
+      try d(i)? = (cur / divisor).u8() end
+      rem = cur % divisor
+    end
+    rem
+
+
+  fun _fmt_pad(s: String val, fspec: FormatSpec val): String =>
+    """
+    Apply width/fill/alignment to an already-complete string (NaN, Inf).
+    """
+    let width = fspec.width
+    if s.size() >= width then
+      return s
+    end
+    let pad = width - s.size()
+    recover
+      let r = String(width)
+      match fspec.align
+      | AlignLeft =>
+        r.append(s); r.append(String.from_utf32(fspec.fill) * pad)
+      | AlignCenter =>
+        let before = pad / 2
+        r.append(String.from_utf32(fspec.fill) * before)
+        r.append(s)
+        r.append(String.from_utf32(fspec.fill) * (pad - before))
+      else
+        r.append(String.from_utf32(fspec.fill) * pad); r.append(s)
+      end
+      r
+    end
+
+
+  fun _fmt_num_pad(sign_str: String val, digits: String val,
+    fspec: FormatSpec val): String =>
+    """
+    Apply width/fill/alignment keeping sign and digits separate.
+    """
+    let fill_char: U32 = if fspec.zero then U32('0') else fspec.fill end
+    let content = sign_str.size() + digits.size()
+    let width = fspec.width
+    if content >= width then
+      return recover
+        let s = String(content)
+        s.append(sign_str)
+        s.append(digits)
+        s
+      end
+    end
+    let pad = width - content
+    recover
+      let s = String(width)
+      match fspec.align
+      | AlignLeft =>
+        s.append(sign_str)
+        s.append(digits)
+        s.append(String.from_utf32(fill_char) * pad)
+      | AlignNumeric =>
+        s.append(sign_str)
+        s.append(String.from_utf32(fill_char) * pad)
+        s.append(digits)
+      | AlignCenter =>
+        let before = pad / 2
+        s.append(String.from_utf32(fill_char) * before)
+        s.append(sign_str)
+        s.append(digits)
+        s.append(String.from_utf32(fill_char) * (pad - before))
+      else
+        s.append(String.from_utf32(fill_char) * pad)
+        s.append(sign_str)
+        s.append(digits)
+      end
+      s
+    end
+

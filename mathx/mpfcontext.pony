@@ -29,8 +29,10 @@ class val MPFContext
 
   ## Default precision
 
-  The default precision is 112 bits (≈ IEEE 754 binary128 / quad-precision),
-  giving about 34 significant decimal digits.
+  The default precision is 128 bits, giving about 38 significant decimal
+  digits. This covers the full range of `U128`/`I128` integer values without
+  loss, which is why 128 bits is preferred over the 112-bit IEEE 754 binary128
+  mantissa width.
   """
 
   let precision: USize
@@ -46,11 +48,11 @@ class val MPFContext
   """
 
 
-  new val create(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val create(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     Create an `MPFContext` with the given precision `prec` (bits) and rounding
-    mode `rnd`. The default (no arguments) produces a 112-bit context with
-    round-to-nearest, which matches IEEE 754 binary128.
+    mode `rnd`. The default (no arguments) produces a 128-bit context with
+    round-to-nearest, giving ~38 significant decimal digits.
     """
     precision = prec
     rounding  = rnd

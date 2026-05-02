@@ -29,6 +29,7 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [x] Correct the `raw_digits` docstring.
 [ ] List private methods that are never used. List public methods too. Do we have synonyms? Can we reduce the API scope?
 [ ] Replace `from_mpfloat` into `from[A: ((Number | MPInt | MPFloat) & Real[A] val)]` when `MPFloat` implements `Real[MPFloat]`.
+[x] Implement `Formattable`.
 
 ### `MPFloat`
 
@@ -55,9 +56,9 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] Option to add digit separators `_` in `exact_string`.
 [x] See if `i128`, `i64`, `i32`, `i16` and `i8` can be optimized to prevent creating a new `MPFloat`, using `I128.from_bits`.
 [ ] Write tests for all `F64` or `F32` corner cases, like cancellation, loss of precision, etc.
-
-[ ] Make all `from_*` constructors private and replace with a generic `from[A]` constructor where `A` is `Number | MPInt | MPFloat`
-[ ] Change the default precision to 128 to remain consistent with `from[A]`.
+[x] Make all `from_*` constructors private and replace with a generic `from[A]` constructor where `A` is `Number | MPInt | MPFloat`
+[x] Change the default precision to 128 to remain consistent with `from[A]`.
+[x] Implement `Formattable`.
 
 
 ### `MPFRep`
@@ -72,6 +73,7 @@ This is the follow-up step of the plan: optimizations. A class ref MPFRep would 
 [ ] Remove the `\do_not_use\` methods.
 [ ] Check the transformations between `MPFRep` and `MPInt`.
 [ ] Path to exact rounding...
+[x] Implement `Formattable`.
 
 
 ### `MPFContext`

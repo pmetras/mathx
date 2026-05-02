@@ -8,7 +8,7 @@ use "../bitsx"
 use "../formatx"
 
 
-class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Comparable[MPInt] & Stringable)
+class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Comparable[MPInt] & Stringable & Formattable)
   """
   A multiple-precision integer that can be used for arbitrary precision
   calculation on integers.
@@ -2196,6 +2196,148 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
     end
     result.reverse_in_place()
     consume result
+
+
+  fun format(spec: String = ""): String =>
+    """
+    Format this integer according to `spec`.
+
+    **Type codes**
+
+    - `'d'` or no type: decimal (base 10).
+    - `'b'`: binary (base 2).
+    - `'o'`: octal (base 8).
+    - `'x'`: hexadecimal, lower-case digits.
+    - `'X'`: hexadecimal, upper-case digits.
+
+    Width, fill, alignment (`<`, `>`, `^`, `=`), sign (`+`, `-`, space), `#`
+    (prefix `0b`/`0o`/`0x`/`0X`), `0` (zero-pad), precision (minimum digit
+    count), and grouping (`,` or `_`) all follow the standard `FormatSpec`
+    grammar.
+    """
+    let fspec = FormatSpec(spec)
+    let tc = fspec.type_char
+
+    let base: USize = match tc
+      | 'b' => 2
+      | 'o' => 8
+      | 'x' | 'X' => 16
+      else 10 end
+    let upper = tc == 'X'
+
+    let raw: String val = _to_base_string(base, upper)
+
+    // Precision zero-padding.
+    let padded: String val = match fspec.precision
+      | let p: USize if raw.size() < p =>
+        recover
+          let s = String(p)
+          for _ in Range(raw.size(), p) do s.push('0') end
+          s.append(raw)
+          s
+        end
+      else raw end
+
+    // Grouping.
+    let group_size: USize = match tc
+      | 'b' | 'o' | 'x' | 'X' => 4
+      else 3 end
+    let grouped: String val = match fspec.grouping
+      | let g: U8 if padded.size() > group_size =>
+        let n = padded.size()
+        let num_seps = (n - 1) / group_size
+        recover
+          let s = String(n + num_seps)
+          for i in Range(0, n) do
+            if (i > 0) and (((n - i) % group_size) == 0) then s.push(g) end
+            try s.push(padded(i)?) end
+          end
+          s
+        end
+      else padded end
+
+    let prefix: String val =
+      if fspec.hash then
+        match tc
+        | 'b' => "0b" | 'o' => "0o" | 'x' => "0x" | 'X' => "0X"
+        else "" end
+      else "" end
+
+    let sign_str: String val =
+      if _sign then "-"
+      elseif fspec.sign is SignPlus then "+"
+      elseif fspec.sign is SignSpace then " "
+      else "" end
+
+    let fill_char: U32 = if fspec.zero then U32('0') else fspec.fill end
+    let fill_str: String val = String.from_utf32(fill_char)
+    let content = sign_str.size() + prefix.size() + grouped.size()
+    let width = fspec.width
+
+    if content >= width then
+      return recover
+        let s = String(content)
+        s.append(sign_str); s.append(prefix); s.append(grouped)
+        s
+      end
+    end
+
+    let pad = width - content
+    recover
+      let s = String(width)
+      match fspec.align
+      | AlignLeft =>
+        s.append(sign_str); s.append(prefix); s.append(grouped)
+        _fmt_fill(s, fill_char, fill_str, pad)
+      | AlignNumeric =>
+        s.append(sign_str); s.append(prefix)
+        _fmt_fill(s, fill_char, fill_str, pad)
+        s.append(grouped)
+      | AlignCenter =>
+        let before = pad / 2
+        _fmt_fill(s, fill_char, fill_str, before)
+        s.append(sign_str); s.append(prefix); s.append(grouped)
+        _fmt_fill(s, fill_char, fill_str, pad - before)
+      else
+        _fmt_fill(s, fill_char, fill_str, pad)
+        s.append(sign_str); s.append(prefix); s.append(grouped)
+      end
+      s
+    end
+
+
+  fun _to_base_string(base: USize, upper: Bool): String val =>
+    """Convert the absolute value of this MPInt to a string in the given base."""
+    if is_zero() then return "0" end
+    let charset: String val = if upper then
+        "0123456789ABCDEF"
+      else
+        "0123456789abcdef"
+      end
+    // Work on a mutable copy of the digit array.
+    let d: Array[U32] ref = recover
+      let a = Array[U32](_digits.size())
+      for x in _digits.values() do a.push(x) end
+      a
+    end
+    var result = recover String end
+    var rem_digit: U32 = 0
+    while not _is_zero(d) do
+      rem_digit = _short_div(d, base.u32())
+      try result.unshift(charset(rem_digit.usize())?) end
+    end
+    if result.size() == 0 then result.push('0') end
+    consume result
+
+
+  fun tag _fmt_fill(s: String ref, fill_char: U32, fill_str: String val,
+    n: USize) =>
+    if fill_char <= 127 then
+      let b = fill_char.u8()
+      for _ in Range(0, n) do s.push(b) end
+    else
+      for _ in Range(0, n) do s.append(fill_str) end
+    end
 
 
   //- Comparisons -------------------------------------------------------------

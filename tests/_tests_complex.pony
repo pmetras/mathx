@@ -16,6 +16,7 @@ use "random"
 
 use "../mathx"
 use "../pony_testx"
+use "../formatx"
 
 
 class iso _TestComplexAdd[F: (Float & FloatingPoint[F])] is UnitTest
@@ -1120,3 +1121,224 @@ class iso _TestComplexInverseHyp[F: (Float & FloatingPoint[F])] is UnitTest
 
     // Identity: asinh(-z) = -asinh(z)
     h.assert_true(z.neg().asinh().almost_eq(z.asinh().neg()))
+
+
+// ---------------------------------------------------------------------------
+// Complex format tests
+// ---------------------------------------------------------------------------
+
+class iso _TestComplexFormatCartesian[F: (Float & FloatingPoint[F])] is UnitTest
+  fun name(): String => "Complex[F]/format/cartesian"
+
+  fun apply(h: TestHelper) =>
+    let c1 = Complex[F](F.from[F64](1.0), F.from[F64](2.5))
+    h.assert_eq[String](c1.format(".3f"), "(1.000+2.500i)")
+
+    // Negative imaginary part: sign absorbed into '-'.
+    let c2 = Complex[F](F.from[F64](1.0), F.from[F64](-2.5))
+    h.assert_eq[String](c2.format(".3f"), "(1.000-2.500i)")
+
+    // Pure imaginary.
+    let c3 = Complex[F](F.from[F64](0.0), F.from[F64](3.0))
+    h.assert_eq[String](c3.format(".1f"), "(0.0+3.0i)")
+
+    // Pure real.
+    let c4 = Complex[F](F.from[F64](4.0), F.from[F64](0.0))
+    h.assert_eq[String](c4.format(".2f"), "(4.00+0.00i)")
+
+    // Scientific notation.
+    let c5 = Complex[F](F.from[F64](1.0e3), F.from[F64](-2.0e-3))
+    let s5 = c5.format(".2e")
+    h.assert_true(s5.contains("1.00e+03"), "expected '1.00e+03' in '" + s5 + "'")
+    h.assert_true(s5.contains("2.00e-03"), "expected '2.00e-03' in '" + s5 + "'")
+
+    // Special values: inf and nan components.
+    let inf = F.from[ISize](1) / F.from[ISize](0)
+    let nan = F.from[ISize](0) / F.from[ISize](0)
+
+    // Real part infinite.
+    let s_inf_re = Complex[F](inf, F.from[ISize](1)).format(".2f")
+    h.assert_true(s_inf_re.contains("inf"), "expected 'inf' in '" + s_inf_re + "'")
+
+    // Imaginary part infinite.
+    let s_inf_im = Complex[F](F.from[ISize](1), inf).format(".2f")
+    h.assert_true(s_inf_im.contains("inf"), "expected 'inf' in '" + s_inf_im + "'")
+
+    // Negative infinity imaginary → sign becomes '-'.
+    let s_neg_inf = Complex[F](F.from[ISize](1), -inf).format(".2f")
+    h.assert_true(s_neg_inf.contains("-inf"), "expected '-inf' in '" + s_neg_inf + "'")
+
+    // NaN component.
+    let s_nan = Complex[F](nan, F.from[ISize](0)).format(".2f")
+    h.assert_true(s_nan.contains("nan"), "expected 'nan' in '" + s_nan + "'")
+
+
+class iso _TestComplexFormatPolar[F: (Float & FloatingPoint[F])] is UnitTest
+  fun name(): String => "Complex[F]/format/polar"
+
+  fun apply(h: TestHelper) =>
+    // z = 1 + 0j → rho = 1, theta = 0.
+    let c1 = Complex[F](F.from[ISize](1), F.from[ISize](0))
+    let s1 = c1.format(".3r")
+    h.assert_true(s1.contains("∠"), "expected '∠' in '" + s1 + "'")
+    h.assert_true(s1.contains("1.000"), "expected '1.000' in '" + s1 + "'")
+    h.assert_true(s1.contains("0.000"), "expected '0.000' in '" + s1 + "'")
+
+    // z = 0 + 1j → rho = 1, theta = pi/2.
+    let c2 = Complex[F](F.from[ISize](0), F.from[ISize](1))
+    let s2 = c2.format(".4r")
+    h.assert_true(s2.contains("1.0000e+00"), "expected '1.0000e+00' in '" + s2 + "'")
+    // theta ≈ 1.5708, shown in scientific notation via 'e'.
+    h.assert_true(s2.contains("1.5708e+00"), "expected '1.5708e+00' in '" + s2 + "'")
+
+    // Uppercase R → uppercase E in exponent.
+    let s3 = c2.format(".2R")
+    h.assert_true(s3.contains("E+"), "expected uppercase 'E+' in '" + s3 + "'")
+
+    // Special values in polar form.
+    let inf = F.from[ISize](1) / F.from[ISize](0)
+    let nan = F.from[ISize](0) / F.from[ISize](0)
+
+    // Infinite modulus: abs(inf+0j) = inf.
+    let s_inf = Complex[F](inf, F.from[ISize](0)).format(".2r")
+    h.assert_true(s_inf.contains("inf"), "expected 'inf' in '" + s_inf + "'")
+    h.assert_true(s_inf.contains("∠"), "expected '∠' in '" + s_inf + "'")
+
+    // NaN component: abs and arg are both nan.
+    let s_nan = Complex[F](nan, F.from[ISize](0)).format(".2r")
+    h.assert_true(s_nan.contains("nan"), "expected 'nan' in '" + s_nan + "'")
+
+
+class iso _TestComplexFormatWidth[F: (Float & FloatingPoint[F])] is UnitTest
+  fun name(): String => "Complex[F]/format/width_align"
+
+  fun apply(h: TestHelper) =>
+    let c = Complex[F](F.from[ISize](1), F.from[ISize](2))
+    // Right-align (default).
+    let s1 = c.format("20.2f")
+    h.assert_eq[USize](s1.size(), 20)
+    h.assert_true(s1.contains("(1.00+2.00i)"), "value missing in '" + s1 + "'")
+
+    // Left-align.
+    let s2 = c.format("<20.2f")
+    h.assert_eq[USize](s2.size(), 20)
+    h.assert_true(s2.contains("(1.00+2.00i)"), "value missing in '" + s2 + "'")
+
+    // Center-align.
+    let s3 = c.format("^20.2f")
+    h.assert_eq[USize](s3.size(), 20)
+    h.assert_true(s3.contains("(1.00+2.00i)"), "value missing in '" + s3 + "'")
+
+    // Width smaller than content: no truncation.
+    let s4 = c.format("3.2f")
+    h.assert_eq[String](s4, "(1.00+2.00i)")
+
+
+class iso _TestComplexFromString[F: (Float & FloatingPoint[F])] is UnitTest
+  fun name(): String => "Complex[F]/from_string"
+
+  fun apply(h: TestHelper) =>
+    let tol = F.from[F64](1e-5)
+    let ae = {(got: Complex[F], re: F64, im: F64, msg: String) =>
+      let exp = Complex[F](F.from[F64](re), F.from[F64](im))
+      h.assert_true(got.almost_eq(exp, tol, tol), msg +
+        ": got=" + got.string() + " exp=" + exp.string())
+    }
+
+    // Pure real.
+    ae(try Complex[F].from_string("1.23")? else Complex[F](F.from[ISize](0)) end,
+      1.23, 0.0, "1.23")
+
+    // Pure imaginary: unit forms.
+    ae(try Complex[F].from_string("i")? else Complex[F](F.from[ISize](0)) end,
+      0.0, 1.0, "i")
+    ae(try Complex[F].from_string("+i")? else Complex[F](F.from[ISize](0)) end,
+      0.0, 1.0, "+i")
+    ae(try Complex[F].from_string("-i")? else Complex[F](F.from[ISize](0)) end,
+      0.0, -1.0, "-i")
+    ae(try Complex[F].from_string("-j")? else Complex[F](F.from[ISize](0)) end,
+      0.0, -1.0, "-j")
+
+    // Cartesian: number then i/j suffix.
+    ae(try Complex[F].from_string("5+6.78i")? else Complex[F](F.from[ISize](0)) end,
+      5.0, 6.78, "5+6.78i")
+    ae(try Complex[F].from_string("-9.9e2-7.32e1i")? else Complex[F](F.from[ISize](0)) end,
+      -990.0, -73.2, "-9.9e2-7.32e1i")
+
+    // i/j prefix before number.
+    ae(try Complex[F].from_string("-6+i854")? else Complex[F](F.from[ISize](0)) end,
+      -6.0, 854.0, "-6+i854")
+
+    // Reversed: imaginary first then real.
+    ae(try Complex[F].from_string("4.2i+7.0")? else Complex[F](F.from[ISize](0)) end,
+      7.0, 4.2, "4.2i+7.0")
+
+    // Infinity / NaN special words.
+    let got_inf = try Complex[F].from_string("inf")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_inf.real().infinite(), "inf: real should be infinite")
+    h.assert_true(not got_inf.imag().infinite(), "inf: imaginary should not be infinite")
+
+    let got_nan = try Complex[F].from_string("nan")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_nan.real().nan(), "nan: real should be NaN")
+
+    // "1+iinf" — imaginary infinity via i-prefix.
+    let got_iinf = try Complex[F].from_string("1+iinf")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_iinf.real() == F.from[F64](1.0), "1+iinf: real should be 1")
+    h.assert_true(got_iinf.imag().infinite(), "1+iinf: imaginary should be infinite")
+
+    // "2-infi" — imaginary infinity via i-suffix.
+    let got_infi = try Complex[F].from_string("2-infi")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_infi.real() == F.from[F64](2.0), "2-infi: real should be 2")
+    h.assert_true(got_infi.imag().infinite(), "2-infi: imaginary should be infinite")
+    h.assert_true(got_infi.imag() < F.from[ISize](0), "2-infi: imaginary should be negative")
+
+    // "infj" — imaginary infinity via j-suffix.
+    let got_infj = try Complex[F].from_string("infj")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_infj.imag().infinite(), "infj: imaginary should be infinite")
+    h.assert_true(not got_infj.real().infinite(), "infj: real should not be infinite")
+
+    // "jNaN" — imaginary NaN via j-prefix.
+    let got_jnan = try Complex[F].from_string("jNaN")? else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_jnan.imag().nan(), "jNaN: imaginary should be NaN")
+
+    // "(-inf, NaN)" — pair form with special values.
+    let got_pair_special = try Complex[F].from_string("(-inf, NaN)")?
+      else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_pair_special.real().infinite(), "(-inf, NaN): real should be infinite")
+    h.assert_true(got_pair_special.real() < F.from[ISize](0), "(-inf, NaN): real should be negative")
+    h.assert_true(got_pair_special.imag().nan(), "(-inf, NaN): imaginary should be NaN")
+
+    // Polar form.
+    let pi_half: F64 = 1.5707963267948966
+    ae(try Complex[F].from_string("1.00E+00∠0.00E+00")? else Complex[F](F.from[ISize](0)) end,
+      1.0, 0.0, "polar 1∠0")
+    let got_polar = try Complex[F].from_string("1∠" + pi_half.string())?
+      else Complex[F](F.from[ISize](0)) end
+    h.assert_true(got_polar.almost_eq(Complex[F](F.from[ISize](0), F.from[ISize](1)), tol, tol),
+      "polar 1∠π/2: got=" + got_polar.string())
+
+    // Spaces around polar separator.
+    ae(try Complex[F].from_string(" 1.0  ∠  0.0 ")? else Complex[F](F.from[ISize](0)) end,
+      1.0, 0.0, "polar with spaces")
+
+    // "@NaN@∠3.14" — polar with @NaN@ rho (both components NaN via cos/sin(nan)).
+    let got_nan_polar = try Complex[F].from_string("@NaN@∠3.14")?
+      else Complex[F](F.from[ISize](1)) end
+    h.assert_true(got_nan_polar.real().nan() or got_nan_polar.imag().nan(),
+      "@NaN@∠3.14: at least one component should be NaN")
+
+    // Pair form.
+    ae(try Complex[F].from_string("(5.6, 7.8)")? else Complex[F](F.from[ISize](0)) end,
+      5.6, 7.8, "(5.6, 7.8)")
+
+    // Error cases: these must raise.
+    h.assert_true(
+      try Complex[F].from_string("abc")?; false else true end,
+      "error on 'abc'")
+    h.assert_true(
+      try Complex[F].from_string("")?; false else true end,
+      "error on empty string")
+    h.assert_true(
+      try Complex[F].from_string("1+2+3i")?; false else true end,
+      "error on '1+2+3i'")
+

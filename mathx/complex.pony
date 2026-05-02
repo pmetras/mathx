@@ -8,8 +8,9 @@ use "../pony_testx"
 use "../formatx"
 
 
+
 class val Complex[F: (Float & FloatingPoint[F]) = F64]
-  is (Equatable[Complex[F]] & Stringable & Approximated[Complex[F], F])
+  is (Equatable[Complex[F]] & Stringable & Formattable & Approximated[Complex[F], F])
   """
   Complex numbers done right for numeric calculations. These functions try to
   avoid some overflows, underflows or loss of precision.
@@ -66,6 +67,420 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
     _im = r * theta.sin()
 
 
+  new val from_string(s: String) ? =>
+    """
+    Create a complex number interpreting the string `s`.
+
+    **BNF Grammar**
+
+    ```BNF
+    complex    ::= ws (pair | polar | cartesian) ws
+    pair       ::= '(' ws number ws ',' ws number ws ')'
+    polar      ::= number ws '∠' ws number
+    cartesian  ::= term (ws term)?
+                | term          /* pure real or pure imag */
+    term       ::= real_term | imag_term
+    real_term  ::= sign? number
+    imag_term  ::= sign? imag_coeff
+    imag_coeff ::= unit_i                 /* i, j        */
+                | unit_i number           /* i3.5, j42   */
+                | number unit_i           /* 3.5i, 42j   */
+    unit_i     ::= 'i' | 'j'
+    sign       ::= '+' | '-'
+    number     ::= 'inf' | '@Inf@' | 'nan' | 'NaN' | '@NaN@'
+                | digits ('.' digits?)? exp?
+                | '.' digits exp?
+    digits     ::= [0-9]+
+    exp        ::= ('e' | 'E') sign? digits
+    ws         ::= ' '*
+    ```
+
+    The grammar does not validate that `s` is a valid complex as is accepts
+    invalid input like "4i+8i" that is not interpreted as "12i".
+
+    Disambiguation rules:
+
+    - `i` prefix vs `inf`: `i` followed by a digit is imag_coeff (i3.5), but
+      `i` followed by `n` is the start of `inf`. The rule is: `unit_i` only
+      matches a bare `i` or `j` not followed by an alphanumeric character.
+    - Sign of second term: in `a-bi`, the `-` belongs to the second term as
+      its sign, not to `a`. The parser must treat `+/-` after a complete
+      first term as the start of a new term, not as part of number.
+    - Two imaginary terms: `3i+5i` — two `imag_term`s. It is an error
+      (only one real, one imaginary allowed).
+    - Two real terms: `3+5` — two real_terms with no `i` nor `j`. It is an
+      error too.
+    - Sign before `i` with `inf` lookahead: `-inf` — sign is `-`, then `inf`
+      is a number in a real_term. The `i` of `inf` must be consumed as part
+      of the word, not as `unit_i`. Must attempt to match number (including
+      `inf` or `nan`) before attempting `unit_i`.
+
+    The following examples are accepted:
+
+    ```pony
+    "1.23"                          // Real
+    "i"                             // Pure imaginary
+    "+i"                            // Positive imaginary
+    "-i"                            // Negative imaginary
+    "-j"                            // Using j instead of i
+    "5+6.78i"                       // i after
+    "-6+i854"                       // i before
+    "-9.9e12-7.32e5i"               // Scientific numbers
+    "inf-5.3j"                      // Infinity
+    "1+iinf"                        // Infinity imaginary
+    "2-infi"                        // Infinity imaginary
+    "infj"                          // Idem but with j
+    "nan"                           // Not a number
+    "jNaN"                          // Not a number
+    "4.2i+7.0"                      // Reverse
+    "1.00E+00∠7.85E-01"             // Using polar coordinates
+    " -1.23e+03  ∠    7.89e-01   "  // With spaces
+    "@NaN@∠3.14"                    // Not a number
+    "(5.6, 7.8)"                    // As a pair of numbers
+    "(-inf, NaN)"                   // Not a number
+    ```
+    """
+    // Skip leading and trailing whitespace; work on a trimmed val view.
+    let t: String val = recover s.clone().>strip() end
+
+    // ── (re, im) pair ─────────────────────────────────────────────────────
+    if (t.size() >= 2) and (t.at_offset(0)? == '(') then
+      let inner = t.substring(1, (t.size() - 1).isize())
+      // find the comma
+      var comma: ISize = -1
+      for ci in Range(0, inner.size()) do
+        if inner.at_offset(ci.isize())? == ',' then
+          comma = ci.isize()
+          break
+        end
+      end
+      if comma < 0 then
+        Debug(Format("[Complex.from_string] Cannot find comma when reading (real, imag) pair from \"{}\"", t))
+        error
+      end
+
+      let re_str: String val = recover inner.substring(0, comma).>strip() end
+      let im_str: String val = recover inner.substring(comma + 1).>strip() end
+      if (re_str.size() == 0) or (im_str.size() == 0) then
+        Debug(Format("[Complex.from_string] Missing value in ({}, {}) pair", [re_str; im_str]))
+        error
+      end
+
+      (let rv, _) = _parse_f64(re_str, 0)?
+      (let iv, _) = _parse_f64(im_str, 0)?
+      _re = F.from[F64](rv)
+      _im = F.from[F64](iv)
+      return
+    end
+
+    // ── polar  rho ∠ theta ────────────────────────────────────────────────
+    // ∠ = UTF-8 E2 88 A0 (3 bytes)
+    let angle_bytes: Array[U8] val = [0xe2; 0x88; 0xa0]
+    var angle_pos: ISize = -1
+    var bi: USize = 0
+    while bi < t.size() do
+      if (bi + 2) < t.size() then
+        try
+          if (t.at_offset(bi.isize())? == 0xe2)
+            and (t.at_offset((bi + 1).isize())? == 0x88)
+            and (t.at_offset((bi + 2).isize())? == 0xa0)
+          then
+            angle_pos = bi.isize()
+            break
+          end
+        end
+      end
+      bi = bi + 1
+    end
+
+    if angle_pos >= 0 then
+      let rho_str:   String val = recover t.substring(0, angle_pos).>strip() end
+      let theta_str: String val = recover t.substring(angle_pos + 3).>strip() end
+      (let rv, _) = _parse_f64(rho_str, 0)?
+      (let tv, _) = _parse_f64(theta_str, 0)?
+      let rho   = F.from[F64](rv)
+      let theta = F.from[F64](tv)
+      _re = rho * theta.cos()
+      _im = rho * theta.sin()
+      return
+    end
+
+    // ── cartesian: one or two numeric tokens separated by +/- ────────────
+    // An imaginary token ends with i or j (possibly preceded by a number).
+    // A real token is a bare number.
+    // We parse up to two tokens. Each token is:
+    //   [sign] [number] [i/j]
+    // where [number] may be absent (meaning 1) and [i/j] marks imaginary.
+    //
+    // Scan for tokens by consuming the string left-to-right.
+    var re_val: F64 = 0.0
+    var im_val: F64 = 0.0
+    var found_re: Bool = false
+    var found_im: Bool = false
+    var pos: USize = 0
+
+    var tok: USize = 0
+    while (tok < 2) and (pos < t.size()) do
+      // Skip spaces.
+      while (pos < t.size()) and (t.at_offset(pos.isize())? == ' ') do
+        pos = pos + 1
+      end
+      if pos >= t.size() then
+        break
+      end
+
+      // Collect optional sign.
+      let sign_ch: U8 = t.at_offset(pos.isize())?
+      let explicit_sign: Bool = (sign_ch == '+') or (sign_ch == '-')
+      let sign: F64 = if sign_ch == '-' then -1.0 else 1.0 end
+      if explicit_sign then
+        pos = pos + 1
+      end
+
+      // Skip spaces after sign.
+      while (pos < t.size()) and (t.at_offset(pos.isize())? == ' ') do
+        pos = pos + 1
+      end
+      if pos >= t.size() then
+        Debug(Format("[Complex.from_string] Bare sign with nothing after in \"{}\"", t))
+        error
+      end
+
+      // Check for i/j prefix (e.g. "i854", "-i854", "iinf") or unit i/j ("+i", "-j").
+      // Disambiguation: unit_i only when NOT followed by alphanumeric or number-start.
+      let next_ch: U8 = t.at_offset(pos.isize())?
+      if (next_ch == 'i') or (next_ch == 'j') then
+        let after_pos: USize = pos + 1
+        let ch2: U8 =
+          if after_pos < t.size() then
+            t.at_offset(after_pos.isize())?
+          else
+            0
+          end
+        let ch2_alpha = ((ch2 >= 'a') and (ch2 <= 'z'))
+          or ((ch2 >= 'A') and (ch2 <= 'Z'))
+        let ch2_digit = (ch2 >= '0') and (ch2 <= '9')
+        let ch2_num_start = (ch2 == '.') or (ch2 == '+') or (ch2 == '-')
+        if ch2_digit or ch2_num_start then
+          // i/j is an imaginary-unit prefix before digits: "i854", "i.5".
+          pos = after_pos
+          (let v, let new_pos) = _parse_f64(t, pos)?
+          pos = new_pos
+          if found_im then
+            Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 imaginary part", t))
+            error
+          end
+          im_val = sign * v
+          found_im = true
+        elseif ch2_alpha then
+          // Disambiguate: "inf" (i is part of the word, real term) vs
+          // "iinf"/"iNaN" (i is imaginary prefix) vs "jNaN" (j is prefix).
+          // Rule: attempt number (including inf/nan) before unit_i.
+          // Try parse_f64 from pos first; if that succeeds, it's a real term
+          // (e.g. "inf" → +inf). If it fails, i/j is a prefix for imaginary.
+          var tried_real = false
+          var real_v: F64 = 0.0
+          var real_pos: USize = 0
+          try
+            (let rv, let rp) = _parse_f64(t, pos)?
+            real_v = rv
+            real_pos = rp
+            tried_real = true
+          end
+          if tried_real then
+            // Check trailing i/j (handles "infj" → imaginary inf).
+            var np = real_pos
+            while (np < t.size()) and (t.at_offset(np.isize())? == ' ') do
+              np = np + 1
+            end
+            let trailing_ij: Bool = if np < t.size() then
+                let tc2 = t.at_offset(np.isize())?
+                if (tc2 == 'i') or (tc2 == 'j') then
+                  np = np + 1
+                  true
+                else
+                  false
+                end
+              else
+                false
+              end
+            pos = np
+            if trailing_ij then
+              if found_im then
+                Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 imaginary part", t))
+                error
+              end
+              im_val = sign * real_v
+              found_im = true
+            else
+              if found_re then
+                Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 real part", t))
+                error
+              end
+              re_val = sign * real_v
+              found_re = true
+            end
+          else
+            // parse_f64 from pos failed → i/j is imaginary prefix.
+            pos = after_pos
+            (let v, let new_pos) = _parse_f64(t, pos)?
+            pos = new_pos
+            if found_im then
+              Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 imaginary part", t))
+              error
+            end
+            im_val = sign * v
+            found_im = true
+          end
+        else
+          // Unit imaginary: ±i / ±j (next char is space, sign, end, etc.)
+          pos = after_pos
+          if found_im then
+            Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 imaginary part", t))
+            error
+          end
+          im_val = sign
+          found_im = true
+        end
+      else
+        // Try to parse a number.
+        (let v, let new_pos) = _parse_f64(t, pos)?
+        pos = new_pos
+        // Skip spaces after number.
+        while (pos < t.size()) and (t.at_offset(pos.isize())? == ' ') do
+          pos = pos + 1
+        end
+        // Check for trailing i/j (e.g. "6.78i").
+        let has_ij: Bool = if pos < t.size() then
+            let ch = t.at_offset(pos.isize())?
+            if (ch == 'i') or (ch == 'j') then
+              pos = pos + 1
+              true
+            else
+              false
+            end
+          else
+            false
+          end
+        if has_ij then
+          if found_im then
+            Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 imaginary part", t))
+            error
+          end
+          im_val = sign * v
+          found_im = true
+        else
+          if found_re then
+            Debug(Format("[Complex.from_string] Complex \"{}\" can't have more than 1 real part", t))
+            error
+          end
+          re_val = sign * v
+          found_re = true
+        end
+      end
+      tok = tok + 1
+    end
+
+    if pos < t.size() then
+      // Skip trailing spaces.
+      while (pos < t.size()) and (t.at_offset(pos.isize())? == ' ') do
+        pos = pos + 1
+      end
+      if pos < t.size() then
+        let c = t.at_offset(pos.isize())?
+        Debug(Format("[Complex.from_string] Unrecognized character '{}' while parsing complex \"{}\"", [c; t]))
+        error
+      end
+    end
+
+    if (not found_re) and (not found_im) then error end
+    _re = F.from[F64](re_val)
+    _im = F.from[F64](im_val)
+
+
+  fun tag _parse_f64(src: String val, pos: USize): (F64, USize) ? =>
+    """
+    Scan one numeric token from `src` starting at byte `pos` (leading spaces
+    skipped). Returns `(value, new_pos)` or errors if no number is found.
+    Handles: regular decimals with optional exponent, `inf`/`nan` (3-letter
+    case-insensitive), and the `@Inf@` / `@NaN@` sentinel forms.
+    """
+    var p: USize = pos
+    // Skip spaces.
+    while (p < src.size()) and (src(p)? == ' ') do
+      p = p + 1
+    end
+    if p >= src.size() then
+      Debug(Format("[Complex._parse_f64] Can't parse number in \"{}\"", src))
+      error
+    end
+    let start: USize = p
+    // Optional sign.
+    let ch0 = src(p)?
+    if (ch0 == '+') or (ch0 == '-') then
+      p = p + 1
+    end
+    if p >= src.size() then
+      Debug(Format("[Complex._parse_f64] Can't parse number after sign in \"{}\"", src))
+      error
+    end
+    // Check for special forms: @Inf@ / @NaN@ or inf / nan.
+    let ch1_raw = src(p)?
+    let ch1 = ch1_raw or 0x20  // lowercase
+    if ch1_raw == '@' then
+      // @Inf@ or @NaN@: consume up to closing @.
+      p = p + 1  // skip opening @
+      while (p < src.size()) and (src(p)? != '@') do
+        p = p + 1
+      end
+      if p < src.size() then // skip closing @
+        p = p + 1
+      end
+    elseif (ch1 == 'i') or (ch1 == 'n') then
+      // Consume exactly 3 letter chars (covers "inf"/"nan"; stops before trailing i/j suffix).
+      var word_count: USize = 0
+      while (p < src.size()) and (word_count < 3) and
+            (let c = src(p)? or 0x20
+              ((c >= 'a') and (c <= 'z'))) do
+        p = p + 1
+        word_count = word_count + 1
+      end
+    else
+      // Digits and decimal point.
+      while (p < src.size()) and
+            (let c = src(p)?
+              ((c >= '0') and (c <= '9')) or (c == '.')) do
+        p = p + 1
+      end
+      // Optional exponent: e/E followed by optional sign and digits.
+      if p < src.size() then
+        let ec = src(p)? or 0x20
+        if ec == 'e' then
+          p = p + 1
+          if p < src.size() then
+            let sc = src(p)?
+            if (sc == '+') or (sc == '-') then
+              p = p + 1
+            end
+          end
+          while (p < src.size()) and
+                (let c = src(p)?
+                  (c >= '0') and (c <= '9')) do
+            p = p + 1
+          end
+        end
+      end
+    end
+    if p == start then
+      Debug(Format("[Complex._parse_f64] Can't parse number from string \"{}\"", src))
+      error
+    end
+    let raw: String val = recover src.substring(start.isize(), p.isize()) end
+    // Normalize @Inf@ / @NaN@ to forms strtod recognises (strip @ delimiters).
+    let token: String val = recover raw.clone().>replace("@", "") end
+    (token.f64()?, p)
+
+
   fun string(): String iso^ =>
     """
     Convert the complex to a string for display with the cartesian form
@@ -91,6 +506,102 @@ class val Complex[F: (Float & FloatingPoint[F]) = F64]
       "nan"
     end
     result.clone()
+
+
+  fun format(spec: String = ""): String =>
+    """
+    Format this complex number according to `spec`.
+
+    The type character controls presentation:
+    - `r` — polar form `(ρ∠θ)` where ρ = abs() and θ = arg() in radians.
+    - `R` — polar form with uppercase exponent in scientific notation
+             (e.g. `(1.00E+00∠7.85E-01)`).
+    - anything else (including no type char) — cartesian form `(re+imi)`.
+
+    The numeric sub-spec (precision, sign, `e`/`f`/`g`, width-modifiers) is
+    forwarded to each component individually.  Width and alignment are applied
+    to the assembled complex string as a whole.
+
+    Examples:
+    ```
+    Complex[F64](1.0, -2.5).format(".3f")   // "(1.000-2.500i)"
+    Complex[F64](1.0,  1.0).format(".4r")   // "(1.4142∠0.7854)"
+    Complex[F64](0.0,  0.0).format(".2e")   // "(0.00e+00+0.00e+00i)"
+    Complex[F64](1.0,  1.0).format("20.3f") // "     (1.000+1.000i)"
+    ```
+    """
+    let fspec = FormatSpec(spec)
+
+    // Build the inner numeric spec (no width — we apply width to the whole).
+    // We strip the type char for component formatting: for polar r/R we use
+    // 'e'/'E'; for cartesian we forward the type char as-is (e/f/g/default).
+    let tc = fspec.type_char
+    let polar = (tc == 'r') or (tc == 'R')
+    let upper = tc == 'R'
+
+    // Reconstruct a component spec: sign + optional # + optional z +
+    // precision + component type char, but width = 0.
+    let cspec: String ref = String
+    match fspec.sign
+    | SignPlus  => cspec.push('+')
+    | SignSpace => cspec.push(' ')
+    | SignMinus => cspec.push('-')
+    | SignDefault => None
+    end
+    if fspec.z   then cspec.push('z') end
+    if fspec.hash then cspec.push('#') end
+    match fspec.precision
+    | let p: USize => cspec.push('.'); cspec.append(p.string())
+    end
+    match fspec.grouping
+    | let g: U8 => cspec.push(g)
+    end
+    if polar then
+      cspec.push(if upper then 'E' else 'e' end)
+    elseif (tc != 0) and not polar then
+      cspec.push(tc)
+    end
+    let cs: String val = cspec.clone()
+
+    let fmt_component = {(v: F): String => Format("{:" + cs + "}", v)}
+    let inner: String =
+      if polar then
+        let rho   = abs()
+        let theta = arg()
+        "(" + fmt_component(rho) + "∠" + fmt_component(theta) + ")"
+      else
+        let re_str = fmt_component(_re)
+        let im_abs = _im.abs()
+        let im_neg = _im < F.from[ISize](0)
+        let im_str = fmt_component(im_abs)
+        let sign_str = if im_neg then "-" else "+" end
+        "(" + re_str + sign_str + im_str + "i)"
+      end
+
+    // Apply width / fill / align to the whole string.
+    if fspec.width == 0 then
+      inner
+    else
+      let fill_char = fspec.fill
+      let w = fspec.width
+      let n = inner.codepoints()
+      if n >= w then
+        inner
+      else
+        let pad = w - n
+        match fspec.align
+        | AlignLeft =>
+          inner + (String.from_utf32(fill_char) * pad)
+        | AlignCenter =>
+          let lpad = pad / 2
+          let rpad = pad - lpad
+          (String.from_utf32(fill_char) * lpad) + inner + (String.from_utf32(fill_char) * rpad)
+        else
+          // AlignRight / AlignDefault / AlignNumeric all right-align for complex.
+          (String.from_utf32(fill_char) * pad) + inner
+        end
+      end
+    end
 
 
   fun real(): F =>

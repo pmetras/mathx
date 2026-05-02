@@ -40,10 +40,10 @@
 
 use "../mathx"
 use "../pony_testx"
+use "../formatx"
 
 use "random"
 use "collections"
-use "format"
 use "debug"
 
 
@@ -328,10 +328,10 @@ class iso _TestMPFloatNewSpecial is UnitTest
 
 class iso _TestMPFloatFromF32 is UnitTest
   """
-  `from_f32` preserves sign, special values, and approximate magnitude.
+  `from[F32]` preserves sign, special values, and approximate magnitude.
   Digit values are verified indirectly through `string()`.
   """
-  fun name(): String => "MPFloat/from_f32"
+  fun name(): String => "MPFloat/from[F32]"
 
   fun apply(h: TestHelper) =>
     let p: USize = 32
@@ -341,39 +341,39 @@ class iso _TestMPFloatFromF32 is UnitTest
     }
 
     // NaN propagation: quiet NaN bit pattern
-    let fnan = MPFloat.from_f32(F32.from_bits(0x7FF8_0000))
+    let fnan = MPFloat.from[F32](F32.from_bits(0x7FF8_0000))
     h.assert_true(fnan.is_nan(), "from_f32(NaN) is NaN")
 
     // See https://en.wikipedia.org/wiki/Single-precision_floating-point_format#Notable_single-precision_cases
     // +infinity bit pattern
-    let finf = MPFloat.from_f32(F32.from_bits(0x7F80_0000))
+    let finf = MPFloat.from[F32](F32.from_bits(0x7F80_0000))
     h.assert_true(finf.is_infinite(), "from_f32(+inf) is inf")
     h.assert_false(finf.is_negative(), "from_f32(+inf) is positive")
 
     // -infinity bit pattern
-    let fninf = MPFloat.from_f32(F32.from_bits(0xFF80_0000))
+    let fninf = MPFloat.from[F32](F32.from_bits(0xFF80_0000))
     h.assert_true(fninf.is_infinite(), "from_f32(-inf) is inf")
     h.assert_true(fninf.is_negative(), "from_f32(-inf) is negative")
 
     // +0
-    let fz = MPFloat.from_f32(0.0)
+    let fz = MPFloat.from[F32](0.0)
     h.assert_true(fz.is_zero(), "from_f32(0.0) is zero")
     h.assert_false(fz.is_negative(), "from_f32(0.0) is +0")
 
     // -0 detected via sign bit
-    let fnz = MPFloat.from_f32(-0.0)
+    let fnz = MPFloat.from[F32](-0.0)
     h.assert_true(fnz.is_zero(), "from_f32(-0.0) is zero")
     h.assert_true(fnz.is_negative(), "from_f32(-0.0) is -0")
 
     // Positive value: string() must start with "3."
-    let fpi = MPFloat.from_f32(3.14159, 64)
+    let fpi = MPFloat.from[F32](3.14159, 64)
     h.assert_false(fpi.is_zero(), "from_f32(3.14) is not zero")
     h.assert_false(fpi.is_negative(), "from_f32(3.14) is positive")
     h.assert_true(fpi.is_finite(), "from_f32(3.14) is finite")
     h.assert_true(fpi.string().at("3."), "from_f32(3.14) string starts with \"3.\"")
 
     // Negative value
-    let fneg = MPFloat.from_f32(-2.71828, 64)
+    let fneg = MPFloat.from[F32](-2.71828, 64)
     h.assert_true(fneg.is_negative(), "from_f32(-2.71) is negative")
     h.assert_true(fneg.string().at("-2."), "from_f32(-2.71) string starts with \"-2.\"")
 
@@ -381,7 +381,7 @@ class iso _TestMPFloatFromF32 is UnitTest
     let rand = Rand
     for i in Range(0, 100) do
       let f = F32.from_bits(rand.u32())
-      let mpf = MPFloat.from_f32(f, p)
+      let mpf = MPFloat.from[F32](f, p)
       
       // 1. Round-trip check
       let rt_f = mpf.f32()
@@ -416,10 +416,10 @@ class iso _TestMPFloatFromF32 is UnitTest
 
 class iso _TestMPFloatFromF64 is UnitTest
   """
-  `from_f64` preserves sign, special values, and approximate magnitude.
+  `from[F64]` preserves sign, special values, and approximate magnitude.
   Digit values are verified indirectly through `string()`.
   """
-  fun name(): String => "MPFloat/from_f64"
+  fun name(): String => "MPFloat/from[F64]"
 
   fun apply(h: TestHelper) =>
     let p: USize = 64
@@ -430,38 +430,38 @@ class iso _TestMPFloatFromF64 is UnitTest
 
     // See https://en.wikipedia.org/wiki/Double-precision_floating-point_format#Double-precision_examples
     // NaN propagation: quiet NaN bit pattern
-    let fnan = MPFloat.from_f64(F64.from_bits(0x7FF8_0000_0000_0000))
+    let fnan = MPFloat.from[F64](F64.from_bits(0x7FF8_0000_0000_0000))
     h.assert_true(fnan.is_nan(), "from_f64(NaN) is NaN")
 
     // +infinity bit pattern
-    let finf = MPFloat.from_f64(F64.from_bits(0x7FF0_0000_0000_0000))
+    let finf = MPFloat.from[F64](F64.from_bits(0x7FF0_0000_0000_0000))
     h.assert_true(finf.is_infinite(), "from_f64(+inf) is inf")
     h.assert_false(finf.is_negative(), "from_f64(+inf) is positive")
 
     // -infinity bit pattern
-    let fninf = MPFloat.from_f64(F64.from_bits(0xFFF0_0000_0000_0000))
+    let fninf = MPFloat.from[F64](F64.from_bits(0xFFF0_0000_0000_0000))
     h.assert_true(fninf.is_infinite(), "from_f64(-inf) is inf")
     h.assert_true(fninf.is_negative(), "from_f64(-inf) is negative")
 
     // +0
-    let fz = MPFloat.from_f64(0.0)
+    let fz = MPFloat.from[F64](0.0)
     h.assert_true(fz.is_zero(), "from_f64(0.0) is zero")
     h.assert_false(fz.is_negative(), "from_f64(0.0) is +0")
 
     // -0 detected via sign bit
-    let fnz = MPFloat.from_f64(-0.0)
+    let fnz = MPFloat.from[F64](-0.0)
     h.assert_true(fnz.is_zero(), "from_f64(-0.0) is zero")
     h.assert_true(fnz.is_negative(), "from_f64(-0.0) is -0")
 
     // Positive value: string() must start with "3."
-    let fpi = MPFloat.from_f64(3.14159, 64)
+    let fpi = MPFloat.from[F64](3.14159, 64)
     h.assert_false(fpi.is_zero(), "from_f64(3.14) is not zero")
     h.assert_false(fpi.is_negative(), "from_f64(3.14) is positive")
     h.assert_true(fpi.is_finite(), "from_f64(3.14) is finite")
     h.assert_true(fpi.string().at("3."), "from_f64(3.14) string starts with \"3.\"")
 
     // Negative value
-    let fneg = MPFloat.from_f64(-2.71828, 64)
+    let fneg = MPFloat.from[F64](-2.71828, 64)
     h.assert_true(fneg.is_negative(), "from_f64(-2.71) is negative")
     h.assert_true(fneg.string().at("-2."), "from_f64(-2.71) string starts with \"-2.\"")
 
@@ -469,7 +469,7 @@ class iso _TestMPFloatFromF64 is UnitTest
     let rand = Rand
     for i in Range(0, 100) do
       let f = F64.from_bits(rand.u64())
-      let mpf = MPFloat.from_f64(f, p)
+      let mpf = MPFloat.from[F64](f, p)
       
       // 1. Round-trip check
       let rt_f = mpf.f64()
@@ -504,30 +504,30 @@ class iso _TestMPFloatFromF64 is UnitTest
 
 class iso _TestMPFloatFromULong is UnitTest
   """
-  `from_ulong` preserves sign.
+  `from[ULong]` preserves sign.
   Digit values are verified indirectly through `string()`.
   """
-  fun name(): String => "MPFloat/from_ulong"
+  fun name(): String => "MPFloat/from[ULong]"
 
   fun apply(h: TestHelper) =>
     // 0
-    let fz = MPFloat.from_ulong(0)
+    let fz = MPFloat.from[ULong](0)
     h.assert_true(fz.is_zero(), "from_ulong(0) is zero")
-    h.assert_true(fz == MPFloat.from_f32(0.0), "MPFloat.from_ulong(0) == MPFloat.from_f32(0.0)")
-    h.assert_eq[MPFloat](fz, MPFloat.from_f64(0.0), "MPFloat.from_ulong(0) == MPFloat.from_f64(0.0)")
+    h.assert_true(fz == MPFloat.from[F32](0.0), "MPFloat.from[ULong](0) == MPFloat.from[F32](0.0)")
+    h.assert_eq[MPFloat](fz, MPFloat.from[F64](0.0), "MPFloat.from[ULong](0) == MPFloat.from[F64](0.0)")
     h.assert_true(fz.is_integer(), "from_ulong(0) is integer")
 
     // Random numbers
     let rand = Rand
     for i in Range(1, 100) do
       let r: ULong = rand.ulong()
-      let fr = MPFloat.from_ulong(r)
+      let fr = MPFloat.from[ULong](r)
       h.assert_eq[String](fr.string().trim(0, try fr.string().find(".0")?.usize() else 0 end), r.string(), "Random from_ulong(" + r.string() + ")")
       h.assert_true(fr.is_integer(), "Random from_ulong(" + fr.string() + ") is integer")
     end
 
     // Maximum value
-    let fpm = MPFloat.from_ulong(ULong.max_value())
+    let fpm = MPFloat.from[ULong](ULong.max_value())
     h.assert_eq[String](fpm.string().trim(0, try fpm.string().find(".0")?.usize() else 0 end), ULong.max_value().string(), "Maximum ULong value")
     h.assert_true(fpm.is_integer(), "from_ulong(ULong.max_value()) is integer")
 
@@ -619,24 +619,24 @@ class iso _TestMPFloatFromStringDecimal is UnitTest
     let s3 = try MPFloat.from_string("3", p)? else MPFloat.nan_val() end
     h.assert_true(s3.is_finite(), "\"3\" is finite")
     h.assert_false(s3.is_negative(), "\"3\" is positive")
-    ae(s3, MPFloat.from_f64(3.0, p), "\"3\" ≈ 3")
+    ae(s3, MPFloat.from[F64](3.0, p), "\"3\" ≈ 3")
 
     // Negative: "-2.5" (exact in base 256)
     let sm = try MPFloat.from_string("-2.5", p)? else MPFloat.nan_val() end
     h.assert_true(sm.is_negative(), "\"-2.5\" is negative")
     h.assert_true(sm.is_finite(), "\"-2.5\" is finite")
-    ae(sm, MPFloat.from_f64(-2.5, p), "\"-2.5\" ≈ -2.5")
+    ae(sm, MPFloat.from[F64](-2.5, p), "\"-2.5\" ≈ -2.5")
 
     // Exponent notation: "314e-2" = 3.14
     let se = try MPFloat.from_string("314e-2", p)? else MPFloat.nan_val() end
     h.assert_true(se.is_finite(), "\"314e-2\" is finite")
     h.assert_false(se.is_negative(), "\"314e-2\" is positive")
-    ae(se, MPFloat.from_f64(3.14, p), "\"314e-2\" ≈ 3.14")
+    ae(se, MPFloat.from[F64](3.14, p), "\"314e-2\" ≈ 3.14")
 
     // '@' as exponent separator (GMP/MPFR style for base ≤ 10).
     let sat = try MPFloat.from_string("314@-2", p)? else MPFloat.nan_val() end
     h.assert_true(sat.is_finite(), "\"314@-2\" is finite")
-    ae(sat, MPFloat.from_f64(3.14, p), "\"314@-2\" ≈ 3.14")
+    ae(sat, MPFloat.from[F64](3.14, p), "\"314@-2\" ≈ 3.14")
 
     // Large exponent: "1E3" = 1000 → finite
     let s1k = try MPFloat.from_string("1E3", 64)? else MPFloat.nan_val() end
@@ -685,15 +685,15 @@ class iso _TestMPFloatNewString is UnitTest
     h.assert_true(MPFloat(64).string() == "0.0", "MPFloat(64) → \"0.0\"")
 
     // Positive value ≈ 3: string starts with "3."
-    let f3 = MPFloat.from_f64(3.0, 32)
+    let f3 = MPFloat.from[F64](3.0, 32)
     h.assert_true(f3.string().at("3."), "from_f64(3.0, 32) starts with \"3.\"")
 
     // Negative value ≈ -2: string starts with "-2."
-    let fneg = MPFloat.from_f64(-2.0, 32)
+    let fneg = MPFloat.from[F64](-2.0, 32)
     h.assert_true(fneg.string().at("-2."), "from_f64(-2.0, 32) starts with \"-2.\"")
 
     // Value in (0, 1): string starts with "0."
-    let fhalf = MPFloat.from_f64(0.5, 32)
+    let fhalf = MPFloat.from[F64](0.5, 32)
     h.assert_true(fhalf.string().at("0."), "from_f64(0.5, 32) starts with \"0.\"")
 
     // Verify decimal accuracy: 0.5 → first fractional digit is 5
@@ -713,8 +713,8 @@ class iso _TestMPFloatSign is UnitTest
 
   fun apply(h: TestHelper) =>
     h.assert_true(MPFloat().sign() is Equal, "+0 sign = Equal")
-    h.assert_true(MPFloat.from_f64(1.0).sign() is Greater, "+1 sign = Greater")
-    h.assert_true(MPFloat.from_f64(-1.0).sign() is Less, "-1 sign = Less")
+    h.assert_true(MPFloat.from[F64](1.0).sign() is Greater, "+1 sign = Greater")
+    h.assert_true(MPFloat.from[F64](-1.0).sign() is Less, "-1 sign = Less")
     h.assert_true(MPFloat.nan_val().sign() is Equal, "NaN sign = Equal (convention)")
     h.assert_true(MPFloat.inf_val().sign() is Greater, "+inf sign = Greater")
     h.assert_true(MPFloat.inf_val(false).sign() is Less, "-inf sign = Less")
@@ -729,12 +729,12 @@ class iso _TestMPFloatNeg is UnitTest
   fun name(): String => "MPFloat/neg"
 
   fun apply(h: TestHelper) =>
-    let fp = MPFloat.from_f64(3.14, 32)
+    let fp = MPFloat.from[F64](3.14, 32)
     h.assert_false(fp.is_negative(), "3.14 is positive")
     h.assert_true(fp.neg().is_negative(), "neg(3.14) is negative")
     h.assert_false(fp.neg().neg().is_negative(), "double neg restores positive")
 
-    let fn2 = MPFloat.from_f64(-2.0, 32)
+    let fn2 = MPFloat.from[F64](-2.0, 32)
     h.assert_true(fn2.is_negative(), "-2.0 is negative")
     h.assert_false(fn2.neg().is_negative(), "neg(-2.0) is positive")
     h.assert_true(fn2.neg().string().at("2."), "neg(-2.0) string starts with \"2.\"")
@@ -759,45 +759,45 @@ class iso _TestMPFloatAdd is UnitTest
 
     // Special values.
     h.assert_true(
-      MPFloat.nan_val().add(MPFloat.from_f64(1.0, p)).is_nan(),
+      MPFloat.nan_val().add(MPFloat.from[F64](1.0, p)).is_nan(),
       "NaN + x = NaN")
     h.assert_true(
-      MPFloat.from_f64(1.0, p).add(MPFloat.nan_val()).is_nan(),
+      MPFloat.from[F64](1.0, p).add(MPFloat.nan_val()).is_nan(),
       "x + NaN = NaN")
     h.assert_true(
       MPFloat.inf_val(true).add(MPFloat.inf_val(false)).is_nan(),
       "+inf + -inf = NaN")
     h.assert_true(
-      MPFloat.inf_val(true).add(MPFloat.from_f64(1.0, p)).is_infinite(),
+      MPFloat.inf_val(true).add(MPFloat.from[F64](1.0, p)).is_infinite(),
       "+inf + finite = inf")
     h.assert_false(
-      MPFloat.inf_val(true).add(MPFloat.from_f64(1.0, p)).is_negative(),
+      MPFloat.inf_val(true).add(MPFloat.from[F64](1.0, p)).is_negative(),
       "+inf + finite is positive inf")
 
     // Identity with zero.
-    ae(MPFloat.from_f64(3.0, p).add(MPFloat.create(p)), MPFloat.from_f64(3.0, p), "x + 0 = x")
-    ae(MPFloat.create(p).add(MPFloat.from_f64(3.0, p)), MPFloat.from_f64(3.0, p), "0 + x = x")
+    ae(MPFloat.from[F64](3.0, p).add(MPFloat.create(p)), MPFloat.from[F64](3.0, p), "x + 0 = x")
+    ae(MPFloat.create(p).add(MPFloat.from[F64](3.0, p)), MPFloat.from[F64](3.0, p), "0 + x = x")
 
     // Same-sign addition.
-    ae(MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(5.0, p), "3 + 2 = 5")
-    ae(MPFloat.from_f64(-3.0, p).add(MPFloat.from_f64(-2.0, p)), MPFloat.from_f64(-5.0, p), "-3 + -2 = -5")
+    ae(MPFloat.from[F64](3.0, p).add(MPFloat.from[F64](2.0, p)), MPFloat.from[F64](5.0, p), "3 + 2 = 5")
+    ae(MPFloat.from[F64](-3.0, p).add(MPFloat.from[F64](-2.0, p)), MPFloat.from[F64](-5.0, p), "-3 + -2 = -5")
 
     // Opposite-sign addition (subtraction of magnitudes).
-    ae(MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(-2.0, p)), MPFloat.from_f64(1.0, p), "3 + (-2) = 1")
-    ae(MPFloat.from_f64(2.0, p).add(MPFloat.from_f64(-3.0, p)), MPFloat.from_f64(-1.0, p), "2 + (-3) = -1")
+    ae(MPFloat.from[F64](3.0, p).add(MPFloat.from[F64](-2.0, p)), MPFloat.from[F64](1.0, p), "3 + (-2) = 1")
+    ae(MPFloat.from[F64](2.0, p).add(MPFloat.from[F64](-3.0, p)), MPFloat.from[F64](-1.0, p), "2 + (-3) = -1")
 
     // Exact cancellation → zero.
     h.assert_true(
-      MPFloat.from_f64(3.0, p).add(MPFloat.from_f64(-3.0, p)).is_zero(),
+      MPFloat.from[F64](3.0, p).add(MPFloat.from[F64](-3.0, p)).is_zero(),
       "3 + (-3) = 0")
 
     // Carry across digit boundary: 255/256 + 1/256 = 1.
-    ae(MPFloat.from_f64(255.0 / 256.0, p).add(MPFloat.from_f64(1.0 / 256.0, p)),
-      MPFloat.from_f64(1.0, p), "255/256 + 1/256 = 1")
+    ae(MPFloat.from[F64](255.0 / 256.0, p).add(MPFloat.from[F64](1.0 / 256.0, p)),
+      MPFloat.from[F64](1.0, p), "255/256 + 1/256 = 1")
 
     // Exponent alignment: 256 + 1 = 257.
-    ae(MPFloat.from_f64(256.0, p).add(MPFloat.from_f64(1.0, p)),
-      MPFloat.from_f64(257.0, p), "256 + 1 = 257")
+    ae(MPFloat.from[F64](256.0, p).add(MPFloat.from[F64](1.0, p)),
+      MPFloat.from[F64](257.0, p), "256 + 1 = 257")
 
 
 class iso _TestMPFloatSub is UnitTest
@@ -814,14 +814,14 @@ class iso _TestMPFloatSub is UnitTest
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
     }
 
-    ae(MPFloat.from_f64(5.0, p).sub(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(3.0, p), "5 - 2 = 3")
-    ae(MPFloat.from_f64(2.0, p).sub(MPFloat.from_f64(5.0, p)), MPFloat.from_f64(-3.0, p), "2 - 5 = -3")
+    ae(MPFloat.from[F64](5.0, p).sub(MPFloat.from[F64](2.0, p)), MPFloat.from[F64](3.0, p), "5 - 2 = 3")
+    ae(MPFloat.from[F64](2.0, p).sub(MPFloat.from[F64](5.0, p)), MPFloat.from[F64](-3.0, p), "2 - 5 = -3")
     h.assert_true(
-      MPFloat.from_f64(5.0, p).sub(MPFloat.from_f64(5.0, p)).is_zero(),
+      MPFloat.from[F64](5.0, p).sub(MPFloat.from[F64](5.0, p)).is_zero(),
       "5 - 5 = 0")
-    ae(MPFloat.from_f64(-5.0, p).sub(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(-7.0, p), "-5 - 2 = -7")
+    ae(MPFloat.from[F64](-5.0, p).sub(MPFloat.from[F64](2.0, p)), MPFloat.from[F64](-7.0, p), "-5 - 2 = -7")
     h.assert_true(
-      MPFloat.from_f64(1.0, p).sub(MPFloat.nan_val()).is_nan(),
+      MPFloat.from[F64](1.0, p).sub(MPFloat.nan_val()).is_nan(),
       "x - NaN = NaN")
 
 
@@ -843,19 +843,19 @@ class iso _TestMPFloatMul is UnitTest
 
     // Special values.
     h.assert_true(
-      MPFloat.nan_val().mul(MPFloat.from_f64(2.0, p)).is_nan(),
+      MPFloat.nan_val().mul(MPFloat.from[F64](2.0, p)).is_nan(),
       "NaN × x = NaN")
     h.assert_true(
-      MPFloat.from_f64(2.0, p).mul(MPFloat.nan_val()).is_nan(),
+      MPFloat.from[F64](2.0, p).mul(MPFloat.nan_val()).is_nan(),
       "x × NaN = NaN")
     h.assert_true(
-      MPFloat.inf_val(true).mul(MPFloat.from_f64(2.0, p)).is_infinite(),
+      MPFloat.inf_val(true).mul(MPFloat.from[F64](2.0, p)).is_infinite(),
       "+inf × finite = inf")
     h.assert_false(
-      MPFloat.inf_val(true).mul(MPFloat.from_f64(2.0, p)).is_negative(),
+      MPFloat.inf_val(true).mul(MPFloat.from[F64](2.0, p)).is_negative(),
       "+inf × +x = +inf")
     h.assert_true(
-      MPFloat.inf_val(true).mul(MPFloat.from_f64(-2.0, p)).is_negative(),
+      MPFloat.inf_val(true).mul(MPFloat.from[F64](-2.0, p)).is_negative(),
       "+inf × -x = -inf")
     h.assert_true(
       MPFloat.inf_val(true).mul(MPFloat.create(p)).is_nan(),
@@ -866,32 +866,32 @@ class iso _TestMPFloatMul is UnitTest
 
     // Multiplication by zero.
     h.assert_true(
-      MPFloat.from_f64(3.0, p).mul(MPFloat.create(p)).is_zero(),
+      MPFloat.from[F64](3.0, p).mul(MPFloat.create(p)).is_zero(),
       "3 × 0 = 0")
     h.assert_true(
-      MPFloat.create(p).mul(MPFloat.from_f64(3.0, p)).is_zero(),
+      MPFloat.create(p).mul(MPFloat.from[F64](3.0, p)).is_zero(),
       "0 × 3 = 0")
 
     // Sign propagation.
     h.assert_false(
-      MPFloat.from_f64(3.0, p).mul(MPFloat.from_f64(2.0, p)).is_negative(),
+      MPFloat.from[F64](3.0, p).mul(MPFloat.from[F64](2.0, p)).is_negative(),
       "(+3) × (+2) is positive")
     h.assert_true(
-      MPFloat.from_f64(-3.0, p).mul(MPFloat.from_f64(2.0, p)).is_negative(),
+      MPFloat.from[F64](-3.0, p).mul(MPFloat.from[F64](2.0, p)).is_negative(),
       "(-3) × (+2) is negative")
     h.assert_true(
-      MPFloat.from_f64(3.0, p).mul(MPFloat.from_f64(-2.0, p)).is_negative(),
+      MPFloat.from[F64](3.0, p).mul(MPFloat.from[F64](-2.0, p)).is_negative(),
       "(+3) × (-2) is negative")
     h.assert_false(
-      MPFloat.from_f64(-3.0, p).mul(MPFloat.from_f64(-2.0, p)).is_negative(),
+      MPFloat.from[F64](-3.0, p).mul(MPFloat.from[F64](-2.0, p)).is_negative(),
       "(-3) × (-2) is positive")
 
     // Exact values.
-    ae(MPFloat.from_f64(3.0, p).mul(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(6.0, p), "3 × 2 = 6")
-    ae(MPFloat.from_f64(10.0, p).mul(MPFloat.from_f64(10.0, p)), MPFloat.from_f64(100.0, p), "10 × 10 = 100")
+    ae(MPFloat.from[F64](3.0, p).mul(MPFloat.from[F64](2.0, p)), MPFloat.from[F64](6.0, p), "3 × 2 = 6")
+    ae(MPFloat.from[F64](10.0, p).mul(MPFloat.from[F64](10.0, p)), MPFloat.from[F64](100.0, p), "10 × 10 = 100")
     // Exponent propagation: (1/256) × 256 = 1.
-    ae(MPFloat.from_f64(1.0 / 256.0, p).mul(MPFloat.from_f64(256.0, p)),
-      MPFloat.from_f64(1.0, p), "(1/256) × 256 = 1")
+    ae(MPFloat.from[F64](1.0 / 256.0, p).mul(MPFloat.from[F64](256.0, p)),
+      MPFloat.from[F64](1.0, p), "(1/256) × 256 = 1")
 
     // Random numbers
     // When the reference is computed via F64 arithmetic, tolerance is limited
@@ -904,12 +904,12 @@ class iso _TestMPFloatMul is UnitTest
     for i in Range(0, 100) do
       let f1 = rand.real()
       let f2 = rand.real()
-      ae_f64(MPFloat.from_f64(f1, p) * MPFloat.from_f64(f2, p), MPFloat.from_f64(f1 * f2, p),
+      ae_f64(MPFloat.from[F64](f1, p) * MPFloat.from[F64](f2, p), MPFloat.from[F64](f1 * f2, p),
         "Random mul from F64 " + f1.string() + " × " + f2.string())
 
       let l1 = rand.ulong()
       let l2 = rand.ulong()
-      ae(MPFloat.from_ulong(l1, p) * MPFloat.from_ulong(l2, p), MPFloat.from_mpint(MPInt.from[ULong](l1) * MPInt.from[ULong](l2), p),
+      ae(MPFloat.from[ULong](l1, p) * MPFloat.from[ULong](l2, p), MPFloat.from[MPInt](MPInt.from[ULong](l1) * MPInt.from[ULong](l2), p),
         "Random mul from ULong " + l1.string() + " × " + l2.string())
     end
 
@@ -919,13 +919,13 @@ class iso _TestMPFloatMul is UnitTest
     for i in Range(0, 30) do
       mp1 = mp1 * MPInt.from[ULong](rand.ulong())
       mp2 = mp2 * MPInt.from[ULong](rand.ulong())
-      ae(MPFloat.from_mpint(mp1, p) * MPFloat.from_mpint(mp2, p), MPFloat.from_mpint(mp1 * mp2, p), "Random large integers mul " + mp1.string() + " × " + mp2.string())
+      ae(MPFloat.from[MPInt](mp1, p) * MPFloat.from[MPInt](mp2, p), MPFloat.from[MPInt](mp1 * mp2, p), "Random large integers mul " + mp1.string() + " × " + mp2.string())
 
       let f1 = rand.real()
       let f2 = rand.real()
-      let mf1 = MPFloat.from_mpint(mp1, p) * MPFloat.from_f64(f1, p)
-      let mf2 = MPFloat.from_mpint(mp2, p) * MPFloat.from_f64(f2, p)
-      ae_f64(mf1 * mf2, MPFloat.from_mpint(mp1, p) * MPFloat.from_mpint(mp2, p) * MPFloat.from_f64(f1 * f2, p),
+      let mf1 = MPFloat.from[MPInt](mp1, p) * MPFloat.from[F64](f1, p)
+      let mf2 = MPFloat.from[MPInt](mp2, p) * MPFloat.from[F64](f2, p)
+      ae_f64(mf1 * mf2, MPFloat.from[MPInt](mp1, p) * MPFloat.from[MPInt](mp2, p) * MPFloat.from[F64](f1 * f2, p),
         "Random large floats mul " + mf1.string() + " × " + mf2.string())
     end
 
@@ -957,19 +957,19 @@ class iso _TestMPFloatInv is UnitTest
 
     // Sign propagation.
     h.assert_false(
-      MPFloat.from_f64(2.0, p).inv().is_negative(), "1/(+2) is positive")
+      MPFloat.from[F64](2.0, p).inv().is_negative(), "1/(+2) is positive")
     h.assert_true(
-      MPFloat.from_f64(-2.0, p).inv().is_negative(), "1/(−2) is negative")
+      MPFloat.from[F64](-2.0, p).inv().is_negative(), "1/(−2) is negative")
 
     // Numeric values.
-    ae(MPFloat.from_f64(1.0, p).inv(), MPFloat.from_f64(1.0, p), "1/1 = 1")
-    ae(MPFloat.from_f64(2.0, p).inv(), MPFloat.from_f64(0.5, p), "1/2 = 0.5")
+    ae(MPFloat.from[F64](1.0, p).inv(), MPFloat.from[F64](1.0, p), "1/1 = 1")
+    ae(MPFloat.from[F64](2.0, p).inv(), MPFloat.from[F64](0.5, p), "1/2 = 0.5")
     // Round-trip: (1/2) × 2 = 1.
-    let x = MPFloat.from_f64(2.0, p)
-    ae(x.inv().mul(x), MPFloat.from_f64(1.0, p), "(1/2) × 2 = 1")
+    let x = MPFloat.from[F64](2.0, p)
+    ae(x.inv().mul(x), MPFloat.from[F64](1.0, p), "(1/2) × 2 = 1")
     // 1/256 and 1/(1/256) = 256.
-    ae(MPFloat.from_f64(256.0, p).inv(), MPFloat.from_f64(1.0 / 256.0, p), "1/256")
-    ae(MPFloat.from_f64(1.0 / 256.0, p).inv(), MPFloat.from_f64(256.0, p), "1/(1/256) = 256")
+    ae(MPFloat.from[F64](256.0, p).inv(), MPFloat.from[F64](1.0 / 256.0, p), "1/256")
+    ae(MPFloat.from[F64](1.0 / 256.0, p).inv(), MPFloat.from[F64](256.0, p), "1/(1/256) = 256")
 
 
 // ── Division ───────────────────────────────────────────────────────────────
@@ -988,44 +988,44 @@ class iso _TestMPFloatDiv is UnitTest
     }
 
     // Special values.
-    h.assert_true(MPFloat.nan_val().div(MPFloat.from_f64(2.0, p)).is_nan(),
+    h.assert_true(MPFloat.nan_val().div(MPFloat.from[F64](2.0, p)).is_nan(),
       "NaN / x = NaN")
-    h.assert_true(MPFloat.from_f64(2.0, p).div(MPFloat.nan_val()).is_nan(),
+    h.assert_true(MPFloat.from[F64](2.0, p).div(MPFloat.nan_val()).is_nan(),
       "x / NaN = NaN")
     h.assert_true(
       MPFloat.inf_val(true).div(MPFloat.inf_val(true)).is_nan(), "+∞/+∞ = NaN")
     h.assert_true(
-      MPFloat.from_f64(2.0, p).div(MPFloat.inf_val(true)).is_zero(),
+      MPFloat.from[F64](2.0, p).div(MPFloat.inf_val(true)).is_zero(),
       "finite / +∞ = 0")
     h.assert_true(
-      MPFloat.inf_val(true).div(MPFloat.from_f64(2.0, p)).is_infinite(),
+      MPFloat.inf_val(true).div(MPFloat.from[F64](2.0, p)).is_infinite(),
       "+∞ / finite = ∞")
     h.assert_true(
-      MPFloat.from_f64(2.0, p).div(MPFloat.create(p)).is_infinite(),
+      MPFloat.from[F64](2.0, p).div(MPFloat.create(p)).is_infinite(),
       "finite / 0 = ∞")
     h.assert_true(
       MPFloat.create(p).div(MPFloat.create(p)).is_nan(), "0 / 0 = NaN")
 
     // Sign propagation.
     h.assert_false(
-      MPFloat.from_f64(6.0, p).div(MPFloat.from_f64(2.0, p)).is_negative(),
+      MPFloat.from[F64](6.0, p).div(MPFloat.from[F64](2.0, p)).is_negative(),
       "(+6) / (+2) is positive")
     h.assert_true(
-      MPFloat.from_f64(-6.0, p).div(MPFloat.from_f64(2.0, p)).is_negative(),
+      MPFloat.from[F64](-6.0, p).div(MPFloat.from[F64](2.0, p)).is_negative(),
       "(−6) / (+2) is negative")
     h.assert_true(
-      MPFloat.from_f64(6.0, p).div(MPFloat.from_f64(-2.0, p)).is_negative(),
+      MPFloat.from[F64](6.0, p).div(MPFloat.from[F64](-2.0, p)).is_negative(),
       "(+6) / (−2) is negative")
     h.assert_false(
-      MPFloat.from_f64(-6.0, p).div(MPFloat.from_f64(-2.0, p)).is_negative(),
+      MPFloat.from[F64](-6.0, p).div(MPFloat.from[F64](-2.0, p)).is_negative(),
       "(−6) / (−2) is positive")
 
     // Exact values.
-    ae(MPFloat.from_f64(6.0, p).div(MPFloat.from_f64(2.0, p)), MPFloat.from_f64(3.0, p), "6 / 2 = 3")
-    ae(MPFloat.from_f64(1.0, p).div(MPFloat.from_f64(4.0, p)), MPFloat.from_f64(0.25, p), "1 / 4 = 0.25")
+    ae(MPFloat.from[F64](6.0, p).div(MPFloat.from[F64](2.0, p)), MPFloat.from[F64](3.0, p), "6 / 2 = 3")
+    ae(MPFloat.from[F64](1.0, p).div(MPFloat.from[F64](4.0, p)), MPFloat.from[F64](0.25, p), "1 / 4 = 0.25")
     // Round-trip: (6 / 2) × 2 = 6.
-    let xrt = MPFloat.from_f64(6.0, p)
-    let yrt = MPFloat.from_f64(2.0, p)
+    let xrt = MPFloat.from[F64](6.0, p)
+    let yrt = MPFloat.from[F64](2.0, p)
     ae(xrt.div(yrt).mul(yrt), xrt, "(6/2) × 2 = 6")
 
 
@@ -1048,26 +1048,26 @@ class iso _TestMPFloatSqrt is UnitTest
     h.assert_true(MPFloat.inf_val(true).sqrt().is_infinite(), "sqrt(+∞) = +∞")
     h.assert_false(MPFloat.inf_val(true).sqrt().is_negative(), "sqrt(+∞) is positive")
     h.assert_true(MPFloat.inf_val(false).sqrt().is_nan(), "sqrt(−∞) = NaN")
-    h.assert_true(MPFloat.from_f64(0.0, p).sqrt().is_zero(), "sqrt(+0) = +0")
-    h.assert_false(MPFloat.from_f64(0.0, p).sqrt().is_negative(), "sqrt(+0) is positive")
-    h.assert_true(MPFloat.from_f64(-0.0, p).sqrt().is_zero(), "sqrt(−0) = −0")
-    h.assert_true(MPFloat.from_f64(-0.0, p).sqrt().is_negative(), "sqrt(−0) is negative")
+    h.assert_true(MPFloat.from[F64](0.0, p).sqrt().is_zero(), "sqrt(+0) = +0")
+    h.assert_false(MPFloat.from[F64](0.0, p).sqrt().is_negative(), "sqrt(+0) is positive")
+    h.assert_true(MPFloat.from[F64](-0.0, p).sqrt().is_zero(), "sqrt(−0) = −0")
+    h.assert_true(MPFloat.from[F64](-0.0, p).sqrt().is_negative(), "sqrt(−0) is negative")
 
     // Negative non-zero → NaN.
-    h.assert_true(MPFloat.from_f64(-1.0, p).sqrt().is_nan(), "sqrt(−1) = NaN")
-    h.assert_true(MPFloat.from_f64(-4.0, p).sqrt().is_nan(), "sqrt(−4) = NaN")
+    h.assert_true(MPFloat.from[F64](-1.0, p).sqrt().is_nan(), "sqrt(−1) = NaN")
+    h.assert_true(MPFloat.from[F64](-4.0, p).sqrt().is_nan(), "sqrt(−4) = NaN")
 
     // Exact values.
-    ae(MPFloat.from_f64(4.0, p).sqrt(), MPFloat.from_f64(2.0, p), "sqrt(4) = 2")
-    ae(MPFloat.from_f64(16.0, p).sqrt(), MPFloat.from_f64(4.0, p), "sqrt(16) = 4")
-    ae(MPFloat.from_f64(64.0, p).sqrt(), MPFloat.from_f64(8.0, p), "sqrt(64) = 8")
+    ae(MPFloat.from[F64](4.0, p).sqrt(), MPFloat.from[F64](2.0, p), "sqrt(4) = 2")
+    ae(MPFloat.from[F64](16.0, p).sqrt(), MPFloat.from[F64](4.0, p), "sqrt(16) = 4")
+    ae(MPFloat.from[F64](64.0, p).sqrt(), MPFloat.from[F64](8.0, p), "sqrt(64) = 8")
     // √0.25 = 0.5 (even exponent, exact in base 256).
-    ae(MPFloat.from_f64(0.25, p).sqrt(), MPFloat.from_f64(0.5, p), "sqrt(0.25) = 0.5")
+    ae(MPFloat.from[F64](0.25, p).sqrt(), MPFloat.from[F64](0.5, p), "sqrt(0.25) = 0.5")
     // √2 ≈ 1.41421… (irrational).
-    ae(MPFloat.from_f64(2.0, p).sqrt(), MPFloat.from_f64(F64(2.0).sqrt(), p), "sqrt(2) ≈ 1.41421…")
+    ae(MPFloat.from[F64](2.0, p).sqrt(), MPFloat.from[F64](F64(2.0).sqrt(), p), "sqrt(2) ≈ 1.41421…")
     // Round-trip: sqrt(4)² = 4.
-    let s4 = MPFloat.from_f64(4.0, p).sqrt()
-    ae(s4.mul(s4), MPFloat.from_f64(4.0, p), "sqrt(4)² = 4")
+    let s4 = MPFloat.from[F64](4.0, p).sqrt()
+    ae(s4.mul(s4), MPFloat.from[F64](4.0, p), "sqrt(4)² = 4")
 
 
 // ── Comparisons ──────────────────────────────────────────────────────────────
@@ -1094,11 +1094,11 @@ class iso _TestMPFloatCmp is UnitTest
     let ninf = MPFloat.inf_val(false)
     let pz   = MPFloat.create(p)             // +0
     let nz   = MPFloat.create(p).neg()       // -0
-    let one  = MPFloat.from_f64(1.0, p)
-    let two  = MPFloat.from_f64(2.0, p)
-    let neg1 = MPFloat.from_f64(-1.0, p)
-    let neg2 = MPFloat.from_f64(-2.0, p)
-    let big  = MPFloat.from_f64(256.0, p)   // exponent = 2
+    let one  = MPFloat.from[F64](1.0, p)
+    let two  = MPFloat.from[F64](2.0, p)
+    let neg1 = MPFloat.from[F64](-1.0, p)
+    let neg2 = MPFloat.from[F64](-2.0, p)
+    let big  = MPFloat.from[F64](256.0, p)   // exponent = 2
 
     // ── NaN: all comparisons false except ne ─────────────────────────────────
     h.assert_false(nan.eq(nan),   "NaN == NaN is false")
@@ -1200,10 +1200,10 @@ class iso _TestMPFloatCmp is UnitTest
 
 class iso _TestMPFloatFromMPInt is UnitTest
   """
-  `from_mpint` converts an `MPInt` to an `MPFloat` with correct sign,
+  `from[MPInt]` converts an `MPInt` to an `MPFloat` with correct sign,
   magnitude, and precision.
   """
-  fun name(): String => "MPFloat/from_mpint"
+  fun name(): String => "MPFloat/from[MPInt]"
 
   fun apply(h: TestHelper) =>
     let p: USize = 192
@@ -1213,48 +1213,48 @@ class iso _TestMPFloatFromMPInt is UnitTest
     }
 
     // Zero: always +0.
-    let z = MPFloat.from_mpint(MPInt.from[ILong](0), p)
+    let z = MPFloat.from[MPInt](MPInt.from[ILong](0), p)
     h.assert_true(z.is_zero(),     "from_mpint(0) is zero")
     h.assert_false(z.is_negative(), "from_mpint(0) is +0")
     h.assert_false(z.is_nan(),     "from_mpint(0) is not NaN")
     h.assert_true(z.is_finite(),   "from_mpint(0) is finite")
 
     // Positive small integer: 1.
-    let one = MPFloat.from_mpint(MPInt.from[ILong](1), p)
+    let one = MPFloat.from[MPInt](MPInt.from[ILong](1), p)
     h.assert_false(one.is_negative(), "from_mpint(1) is positive")
     h.assert_true(one.is_finite(),    "from_mpint(1) is finite")
-    ae(one, MPFloat.from_f64(1.0, p), "from_mpint(1) ≈ 1")
+    ae(one, MPFloat.from[F64](1.0, p), "from_mpint(1) ≈ 1")
 
     // Negative integer: -3.
-    let neg3 = MPFloat.from_mpint(MPInt.from[ILong](-3), p)
+    let neg3 = MPFloat.from[MPInt](MPInt.from[ILong](-3), p)
     h.assert_true(neg3.is_negative(), "from_mpint(-3) is negative")
-    ae(neg3, MPFloat.from_f64(-3.0, p), "from_mpint(-3) ≈ -3")
+    ae(neg3, MPFloat.from[F64](-3.0, p), "from_mpint(-3) ≈ -3")
 
     // Larger integer: 1000.
-    let thou = MPFloat.from_mpint(MPInt.from[ILong](1000), p)
+    let thou = MPFloat.from[MPInt](MPInt.from[ILong](1000), p)
     h.assert_false(thou.is_negative(), "from_mpint(1000) is positive")
-    ae(thou, MPFloat.from_f64(1000.0, p), "from_mpint(1000) ≈ 1000")
+    ae(thou, MPFloat.from[F64](1000.0, p), "from_mpint(1000) ≈ 1000")
 
     // Power-of-2: 256 and 65536.
-    ae(MPFloat.from_mpint(MPInt.from[ILong](256), p), MPFloat.from_f64(256.0, p), "from_mpint(256) = 256")
-    ae(MPFloat.from_mpint(MPInt.from[ILong](65536), p), MPFloat.from_f64(65536.0, p), "from_mpint(65536) = 65536")
+    ae(MPFloat.from[MPInt](MPInt.from[ILong](256), p), MPFloat.from[F64](256.0, p), "from_mpint(256) = 256")
+    ae(MPFloat.from[MPInt](MPInt.from[ILong](65536), p), MPFloat.from[F64](65536.0, p), "from_mpint(65536) = 65536")
 
     // Negative large: -65536.
-    let ni65536 = MPFloat.from_mpint(MPInt.from[ILong](-65536), p)
+    let ni65536 = MPFloat.from[MPInt](MPInt.from[ILong](-65536), p)
     h.assert_true(ni65536.is_negative(), "from_mpint(-65536) is negative")
-    ae(ni65536, MPFloat.from_f64(-65536.0, p), "from_mpint(-65536) ≈ -65536")
+    ae(ni65536, MPFloat.from[F64](-65536.0, p), "from_mpint(-65536) ≈ -65536")
 
     // Round-trip sign: from_mpint(n).is_negative() == n.is_negative()
     let npos = MPInt.from[ILong](42)
     let nneg = MPInt.from[ILong](-42)
-    h.assert_false(MPFloat.from_mpint(npos, p).is_negative(), "positive MPInt → positive MPFloat")
-    h.assert_true( MPFloat.from_mpint(nneg, p).is_negative(), "negative MPInt → negative MPFloat")
+    h.assert_false(MPFloat.from[MPInt](npos, p).is_negative(), "positive MPInt → positive MPFloat")
+    h.assert_true( MPFloat.from[MPInt](nneg, p).is_negative(), "negative MPInt → negative MPFloat")
 
     // Precision parameter is honoured: value must be finite and positive.
-    let big = MPFloat.from_mpint(MPInt.from[ILong](1000000), 32)
+    let big = MPFloat.from[MPInt](MPInt.from[ILong](1000000), 32)
     h.assert_true(big.is_finite(),  "from_mpint(1e6, prec=32) is finite")
     h.assert_false(big.is_negative(), "from_mpint(1e6, prec=32) is positive")
-    ae(big, MPFloat.from_f64(1000000.0, 32), "from_mpint(1e6, prec=32) ≈ 1e6")
+    ae(big, MPFloat.from[F64](1000000.0, 32), "from_mpint(1e6, prec=32) ≈ 1e6")
 
     // ── Large MPInt (beyond I64 / F64 range) ─────────────────────────────────
 
@@ -1264,7 +1264,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // digits) cannot be held exactly.  We verify the rounded result is within
     // epsilon of from_string("1e20") computed at the same precision.
     let e20: MPInt = try MPInt.from_string("100000000000000000000")? else MPInt.from[ILong](0) end
-    let fe20 = MPFloat.from_mpint(e20, 64)
+    let fe20 = MPFloat.from[MPInt](e20, 64)
     let fe20_ref = try MPFloat.from_string("100000000000000000000", 64)? else MPFloat.nan_val() end
     let tol64: MPFloat = MPFloat.epsilon(64).sqrt()
     h.assert_true(fe20.is_finite(),    "from_mpint(10^20, p=64) is finite")
@@ -1275,7 +1275,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // With p=96 bits (12 bytes ≈ 28.9 significant decimal digits), 10^20 (21
     // digits) fits exactly.  The result must equal from_string at the same
     // precision to within rounding error.
-    let fe20p96 = MPFloat.from_mpint(e20, 96)
+    let fe20p96 = MPFloat.from[MPInt](e20, 96)
     let fe20p96_ref = try MPFloat.from_string("100000000000000000000", 96)? else MPFloat.nan_val() end
     let tol96: MPFloat = MPFloat.epsilon(96).sqrt()
     h.assert_true(fe20p96.almost_eq(fe20p96_ref, tol96, tol96),
@@ -1286,7 +1286,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     let d29: MPInt =
       try MPInt.from_string("12345678901234567890123456789")?
       else MPInt.from[ILong](0) end
-    let fd29 = MPFloat.from_mpint(d29, 128)
+    let fd29 = MPFloat.from[MPInt](d29, 128)
     let fd29_ref = try MPFloat.from_string("12345678901234567890123456789", 128)? else MPFloat.nan_val() end
     let tol128: MPFloat = MPFloat.epsilon(128).sqrt()
     h.assert_true(fd29.almost_eq(fd29_ref, tol128, tol128),
@@ -1295,7 +1295,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     // Negative large: -10^20 with p=96 for sufficient precision.
     let ne20: MPInt =
       try MPInt.from_string("-100000000000000000000")? else MPInt.from[ILong](0) end
-    let fne20 = MPFloat.from_mpint(ne20, 96)
+    let fne20 = MPFloat.from[MPInt](ne20, 96)
     let fne20_ref = try MPFloat.from_string("-100000000000000000000", 96)? else MPFloat.nan_val() end
     h.assert_true(fne20.almost_eq(fne20_ref, tol96, tol96),
       "from_mpint(-10^20, p=96) ≈ from_string(\"-1e20\", 96)")
@@ -1304,7 +1304,7 @@ class iso _TestMPFloatFromMPInt is UnitTest
     let d39: MPInt =
       try MPInt.from_string("123456789012345678901234567890123456789")?
       else MPInt.from[ILong](0) end
-    let fd39 = MPFloat.from_mpint(d39, 400)
+    let fd39 = MPFloat.from[MPInt](d39, 400)
     let fd39_ref = try MPFloat.from_string("123456789012345678901234567890123456789", 400)? else MPFloat.nan_val() end
     let tol400: MPFloat = MPFloat.epsilon(400).sqrt()
     h.assert_true(fd39.almost_eq(fd39_ref, tol400, tol400),
@@ -1508,7 +1508,7 @@ class iso _TestMPFloatRounding is UnitTest
     let f = {(s: String): MPFloat =>
       try MPFloat.from_string(s, p)? else MPFloat.create(p) end
     }
-    let fi = {(n: F64): MPFloat => MPFloat.from_f64(n, p) }
+    let fi = {(n: F64): MPFloat => MPFloat.from[F64](n, p) }
 
     // ── trunc ────────────────────────────────────────────────────────────────
 
@@ -1583,16 +1583,16 @@ class iso _TestMPFloatIsInteger is UnitTest
     let p: USize = 168
 
     // Finite exact integers.
-    h.assert_true(MPFloat.from_f64(0.0,   p).is_integer(), "0 is integer")
-    h.assert_true(MPFloat.from_f64(1.0,   p).is_integer(), "1 is integer")
-    h.assert_true(MPFloat.from_f64(-3.0,  p).is_integer(), "-3 is integer")
-    h.assert_true(MPFloat.from_f64(256.0, p).is_integer(), "256 is integer")
-    h.assert_true(MPFloat.from_f64(1024.0, p).is_integer(), "1024 is integer")
+    h.assert_true(MPFloat.from[F64](0.0,   p).is_integer(), "0 is integer")
+    h.assert_true(MPFloat.from[F64](1.0,   p).is_integer(), "1 is integer")
+    h.assert_true(MPFloat.from[F64](-3.0,  p).is_integer(), "-3 is integer")
+    h.assert_true(MPFloat.from[F64](256.0, p).is_integer(), "256 is integer")
+    h.assert_true(MPFloat.from[F64](1024.0, p).is_integer(), "1024 is integer")
 
     // Finite values with a fractional part.
-    h.assert_false(MPFloat.from_f64(0.5,  p).is_integer(), "0.5 not integer")
-    h.assert_false(MPFloat.from_f64(1.5,  p).is_integer(), "1.5 not integer")
-    h.assert_false(MPFloat.from_f64(-2.25, p).is_integer(), "-2.25 not integer")
+    h.assert_false(MPFloat.from[F64](0.5,  p).is_integer(), "0.5 not integer")
+    h.assert_false(MPFloat.from[F64](1.5,  p).is_integer(), "1.5 not integer")
+    h.assert_false(MPFloat.from[F64](-2.25, p).is_integer(), "-2.25 not integer")
 
     // Special values.
     h.assert_false(MPFloat.nan_val().is_integer(),  "NaN not integer")
@@ -1631,27 +1631,27 @@ class iso _TestMPFloatLn is UnitTest
     h.assert_true(MPFloat.nan_val().ln().is_nan(),          "ln(NaN) = NaN")
     h.assert_true(MPFloat.inf_val().ln().is_infinite(),     "ln(+inf) = +inf")
     h.assert_false(MPFloat.inf_val().ln().is_negative(),    "ln(+inf) > 0")
-    h.assert_true(MPFloat.from_f64(-1.0, p).ln().is_nan(), "ln(-1) = NaN")
+    h.assert_true(MPFloat.from[F64](-1.0, p).ln().is_nan(), "ln(-1) = NaN")
     h.assert_true(MPFloat.create(p).ln().is_infinite(),     "ln(0) = -inf")
     h.assert_true(MPFloat.create(p).ln().is_negative(),     "ln(0) is -inf (negative)")
 
     // ln(1) = 0 (exact).
-    h.assert_true(MPFloat.from_f64(1.0, p).ln().is_zero(), "ln(1) = 0")
+    h.assert_true(MPFloat.from[F64](1.0, p).ln().is_zero(), "ln(1) = 0")
 
     // ln(2) and ln(8): references are F64 literals, tolerance bounded by F64 precision.
-    ae_f64(MPFloat.from_f64(2.0, p).ln(),
-       MPFloat.from_f64(0.6931471805599453, p),
+    ae_f64(MPFloat.from[F64](2.0, p).ln(),
+       MPFloat.from[F64](0.6931471805599453, p),
        "ln(2) ≈ 0.6931471805599453")
 
-    ae_f64(MPFloat.from_f64(8.0, p).ln(),
-       MPFloat.from_f64(2.0794415416798357, p),
+    ae_f64(MPFloat.from[F64](8.0, p).ln(),
+       MPFloat.from[F64](2.0794415416798357, p),
        "ln(8) ≈ 2.079441541679836")
 
     // Round-trip: exp(ln(x)) ≈ x for x = 2, 7 — both MPFloat, tight tolerance.
-    let x2: MPFloat = MPFloat.from_f64(2.0, p)
+    let x2: MPFloat = MPFloat.from[F64](2.0, p)
     ae(x2.ln().exp(), x2, "exp(ln(2)) ≈ 2")
 
-    let x7: MPFloat = MPFloat.from_f64(7.0, p)
+    let x7: MPFloat = MPFloat.from[F64](7.0, p)
     ae(x7.ln().exp(), x7, "exp(ln(7)) ≈ 7")
 
 
@@ -1683,25 +1683,25 @@ class iso _TestMPFloatExp is UnitTest
 
     // exp(0) = 1 (exact).
     h.assert_true(MPFloat.create(p).exp().almost_eq(
-      MPFloat.from_f64(1.0, p), tol, tol), "exp(0) = 1")
+      MPFloat.from[F64](1.0, p), tol, tol), "exp(0) = 1")
 
     // exp(1) ≈ 2.718281828459045235.
-    ae(MPFloat.from_f64(1.0, p).exp(),
-       MPFloat.from_f64(2.718281828459045, p),
+    ae(MPFloat.from[F64](1.0, p).exp(),
+       MPFloat.from[F64](2.718281828459045, p),
        "exp(1) ≈ 2.718281828459045")
 
     // exp(-1) ≈ 0.36787944117144233.
-    ae(MPFloat.from_f64(-1.0, p).exp(),
-       MPFloat.from_f64(0.36787944117144233, p),
+    ae(MPFloat.from[F64](-1.0, p).exp(),
+       MPFloat.from[F64](0.36787944117144233, p),
        "exp(-1) ≈ 0.36787944117144233")
 
     // exp(5) ≈ 148.4131591025766.
-    ae(MPFloat.from_f64(5.0, p).exp(),
-       MPFloat.from_f64(148.4131591025766, p),
+    ae(MPFloat.from[F64](5.0, p).exp(),
+       MPFloat.from[F64](148.4131591025766, p),
        "exp(5) ≈ 148.4131591025766")
 
     // Round-trip: ln(exp(x)) ≈ x for x = 3.
-    let x3: MPFloat = MPFloat.from_f64(3.0, p)
+    let x3: MPFloat = MPFloat.from[F64](3.0, p)
     ae(x3.exp().ln(), x3, "ln(exp(3)) ≈ 3")
 
 
@@ -1727,26 +1727,26 @@ class iso _TestMPFloatLog2 is UnitTest
     // Special cases.
     h.assert_true(MPFloat.nan_val().log2().is_nan(),          "log2(NaN) = NaN")
     h.assert_true(MPFloat.inf_val().log2().is_infinite(),     "log2(+inf) = +inf")
-    h.assert_true(MPFloat.from_f64(-1.0, p).log2().is_nan(), "log2(-1) = NaN")
+    h.assert_true(MPFloat.from[F64](-1.0, p).log2().is_nan(), "log2(-1) = NaN")
     h.assert_true(MPFloat.create(p).log2().is_infinite(),     "log2(0) = -inf")
     h.assert_true(MPFloat.create(p).log2().is_negative(),     "log2(0) negative")
 
     // log2(1) = 0 (exact).
-    h.assert_true(MPFloat.from_f64(1.0, p).log2().is_zero(), "log2(1) = 0")
+    h.assert_true(MPFloat.from[F64](1.0, p).log2().is_zero(), "log2(1) = 0")
 
     // log2(2) ≈ 1.
-    ae(MPFloat.from_f64(2.0, p).log2(),
-       MPFloat.from_f64(1.0, p),
+    ae(MPFloat.from[F64](2.0, p).log2(),
+       MPFloat.from[F64](1.0, p),
        "log2(2) ≈ 1")
 
     // log2(8) ≈ 3.
-    ae(MPFloat.from_f64(8.0, p).log2(),
-       MPFloat.from_f64(3.0, p),
+    ae(MPFloat.from[F64](8.0, p).log2(),
+       MPFloat.from[F64](3.0, p),
        "log2(8) ≈ 3")
 
     // log2(0.5) ≈ -1.
-    ae(MPFloat.from_f64(0.5, p).log2(),
-       MPFloat.from_f64(-1.0, p),
+    ae(MPFloat.from[F64](0.5, p).log2(),
+       MPFloat.from[F64](-1.0, p),
        "log2(0.5) ≈ -1")
 
 
@@ -1778,25 +1778,25 @@ class iso _TestMPFloatLog10 is UnitTest
     // Special cases.
     h.assert_true(MPFloat.nan_val().log10().is_nan(),          "log10(NaN) = NaN")
     h.assert_true(MPFloat.inf_val().log10().is_infinite(),     "log10(+inf) = +inf")
-    h.assert_true(MPFloat.from_f64(-1.0, p).log10().is_nan(), "log10(-1) = NaN")
+    h.assert_true(MPFloat.from[F64](-1.0, p).log10().is_nan(), "log10(-1) = NaN")
     h.assert_true(MPFloat.create(p).log10().is_infinite(),     "log10(0) = -inf")
     h.assert_true(MPFloat.create(p).log10().is_negative(),     "log10(0) negative")
 
     // log10(1) = 0 (exact).
-    h.assert_true(MPFloat.from_f64(1.0, p).log10().is_zero(), "log10(1) = 0")
+    h.assert_true(MPFloat.from[F64](1.0, p).log10().is_zero(), "log10(1) = 0")
 
     // log10(10) ≈ 1.
-    ae(MPFloat.from_f64(10.0,   p).log10(), MPFloat.from_f64(1.0, p), "log10(10) ≈ 1")
+    ae(MPFloat.from[F64](10.0,   p).log10(), MPFloat.from[F64](1.0, p), "log10(10) ≈ 1")
 
     // log10(100) ≈ 2.
-    ae(MPFloat.from_f64(100.0,  p).log10(), MPFloat.from_f64(2.0, p), "log10(100) ≈ 2")
+    ae(MPFloat.from[F64](100.0,  p).log10(), MPFloat.from[F64](2.0, p), "log10(100) ≈ 2")
 
     // log10(1000) ≈ 3.
-    ae(MPFloat.from_f64(1000.0, p).log10(), MPFloat.from_f64(3.0, p), "log10(1000) ≈ 3")
+    ae(MPFloat.from[F64](1000.0, p).log10(), MPFloat.from[F64](3.0, p), "log10(1000) ≈ 3")
 
     // log10(0.1) ≈ -1.  from_f64(0.1) is the nearest F64 to 1/10 (not exact in base 256),
     // so the computed value differs from -1 by ~F64_eps; use F64-compatible tolerance.
-    ae_f64(MPFloat.from_f64(0.1, p).log10(), MPFloat.from_f64(-1.0, p), "log10(0.1) ≈ -1")
+    ae_f64(MPFloat.from[F64](0.1, p).log10(), MPFloat.from[F64](-1.0, p), "log10(0.1) ≈ -1")
 
 
 // ── exp2 ──────────────────────────────────────────────────────────────────────
@@ -1824,19 +1824,19 @@ class iso _TestMPFloatExp2 is UnitTest
     h.assert_true(MPFloat.inf_val().neg().exp2().is_zero(),   "exp2(-inf) = 0")
 
     // exp2(0) = 1 (exact).
-    ae(MPFloat.create(p).exp2(),            MPFloat.from_f64(1.0,    p), "exp2(0) = 1")
+    ae(MPFloat.create(p).exp2(),            MPFloat.from[F64](1.0,    p), "exp2(0) = 1")
 
     // exp2(1) = 2.
-    ae(MPFloat.from_f64(1.0,  p).exp2(),   MPFloat.from_f64(2.0,    p), "exp2(1) = 2")
+    ae(MPFloat.from[F64](1.0,  p).exp2(),   MPFloat.from[F64](2.0,    p), "exp2(1) = 2")
 
     // exp2(3) = 8.
-    ae(MPFloat.from_f64(3.0,  p).exp2(),   MPFloat.from_f64(8.0,    p), "exp2(3) = 8")
+    ae(MPFloat.from[F64](3.0,  p).exp2(),   MPFloat.from[F64](8.0,    p), "exp2(3) = 8")
 
     // exp2(-1) = 0.5 (exact in base 256).
-    ae(MPFloat.from_f64(-1.0, p).exp2(),   MPFloat.from_f64(0.5,    p), "exp2(-1) = 0.5")
+    ae(MPFloat.from[F64](-1.0, p).exp2(),   MPFloat.from[F64](0.5,    p), "exp2(-1) = 0.5")
 
     // exp2(10) = 1024.
-    ae(MPFloat.from_f64(10.0, p).exp2(),   MPFloat.from_f64(1024.0, p), "exp2(10) = 1024")
+    ae(MPFloat.from[F64](10.0, p).exp2(),   MPFloat.from[F64](1024.0, p), "exp2(10) = 1024")
 
 
 // ── powi ──────────────────────────────────────────────────────────────────────
@@ -1860,22 +1860,22 @@ class iso _TestMPFloatPowi is UnitTest
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
     }
 
-    let two   = MPFloat.from_f64(2.0,  p)
-    let three = MPFloat.from_f64(3.0,  p)
+    let two   = MPFloat.from[F64](2.0,  p)
+    let three = MPFloat.from[F64](3.0,  p)
 
     // x^0 = 1.
-    ae(two.powi(0),   MPFloat.from_f64(1.0,    p), "2^0 = 1")
-    ae(three.powi(0), MPFloat.from_f64(1.0,    p), "3^0 = 1")
+    ae(two.powi(0),   MPFloat.from[F64](1.0,    p), "2^0 = 1")
+    ae(three.powi(0), MPFloat.from[F64](1.0,    p), "3^0 = 1")
 
     // Positive powers.
-    ae(two.powi(1),   MPFloat.from_f64(2.0,    p), "2^1 = 2")
-    ae(two.powi(3),   MPFloat.from_f64(8.0,    p), "2^3 = 8")
-    ae(two.powi(10),  MPFloat.from_f64(1024.0, p), "2^10 = 1024")
-    ae(three.powi(3), MPFloat.from_f64(27.0,   p), "3^3 = 27")
+    ae(two.powi(1),   MPFloat.from[F64](2.0,    p), "2^1 = 2")
+    ae(two.powi(3),   MPFloat.from[F64](8.0,    p), "2^3 = 8")
+    ae(two.powi(10),  MPFloat.from[F64](1024.0, p), "2^10 = 1024")
+    ae(three.powi(3), MPFloat.from[F64](27.0,   p), "3^3 = 27")
 
     // Negative powers (computed via inv() which uses Newton iteration).
-    ae(two.powi(-1),  MPFloat.from_f64(0.5,    p), "2^(-1) = 0.5")
-    ae(two.powi(-2),  MPFloat.from_f64(0.25,   p), "2^(-2) = 0.25")
+    ae(two.powi(-1),  MPFloat.from[F64](0.5,    p), "2^(-1) = 0.5")
+    ae(two.powi(-2),  MPFloat.from[F64](0.25,   p), "2^(-2) = 0.25")
 
     // NaN and ±∞.
     h.assert_true(MPFloat.nan_val().powi(2).is_nan(),       "NaN^2 = NaN")
@@ -1904,24 +1904,24 @@ class iso _TestMPFloatPow is UnitTest
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
     }
 
-    let two     = MPFloat.from_f64(2.0,  p)
-    let three   = MPFloat.from_f64(3.0,  p)
-    let four    = MPFloat.from_f64(4.0,  p)
+    let two     = MPFloat.from[F64](2.0,  p)
+    let three   = MPFloat.from[F64](3.0,  p)
+    let four    = MPFloat.from[F64](4.0,  p)
     let zero    = MPFloat.create(p)
-    let half    = MPFloat.from_f64(0.5,  p)
-    let neg_one = MPFloat.from_f64(-1.0, p)
-    let neg_two = MPFloat.from_f64(-2.0, p)
+    let half    = MPFloat.from[F64](0.5,  p)
+    let neg_one = MPFloat.from[F64](-1.0, p)
+    let neg_two = MPFloat.from[F64](-2.0, p)
 
     // x^0 = 1.
-    ae(two.pow(zero),  MPFloat.from_f64(1.0, p), "2^0 = 1")
-    ae(zero.pow(zero), MPFloat.from_f64(1.0, p), "0^0 = 1 (convention)")
+    ae(two.pow(zero),  MPFloat.from[F64](1.0, p), "2^0 = 1")
+    ae(zero.pow(zero), MPFloat.from[F64](1.0, p), "0^0 = 1 (convention)")
 
     // Positive base, integer exponents: exp(n×ln(x)).
-    ae(two.pow(three),   MPFloat.from_f64(8.0, p), "2^3 = 8")
-    ae(three.pow(two),   MPFloat.from_f64(9.0, p), "3^2 = 9")
+    ae(two.pow(three),   MPFloat.from[F64](8.0, p), "2^3 = 8")
+    ae(three.pow(two),   MPFloat.from[F64](9.0, p), "3^2 = 9")
 
     // Positive base, fractional exponent: 4^0.5 = sqrt(4) = 2.
-    ae(four.pow(half),   MPFloat.from_f64(2.0, p), "4^0.5 = 2")
+    ae(four.pow(half),   MPFloat.from[F64](2.0, p), "4^0.5 = 2")
 
     // 0^positive = 0.
     h.assert_true(zero.pow(two).is_zero(), "0^2 = 0")
@@ -1930,8 +1930,8 @@ class iso _TestMPFloatPow is UnitTest
     h.assert_true(zero.pow(neg_one).is_nan(), "0^(-1) = NaN")
 
     // Negative base, integer exponent (delegates to powi — exact).
-    ae(neg_two.pow(three), MPFloat.from_f64(-8.0, p), "(-2)^3 = -8")
-    ae(neg_two.pow(two),   MPFloat.from_f64(4.0,  p), "(-2)^2 = 4")
+    ae(neg_two.pow(three), MPFloat.from[F64](-8.0, p), "(-2)^3 = -8")
+    ae(neg_two.pow(two),   MPFloat.from[F64](4.0,  p), "(-2)^2 = 4")
 
     // Negative base, non-integer exponent = NaN.
     h.assert_true(neg_two.pow(half).is_nan(), "(-2)^0.5 = NaN")
@@ -1963,11 +1963,11 @@ class iso _TestMPFloatHighPrec is UnitTest
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
     }
 
-    let one  = MPFloat.from_f64(1.0,  p)
-    let two  = MPFloat.from_f64(2.0,  p)
-    let four = MPFloat.from_f64(4.0,  p)
-    let half = MPFloat.from_f64(0.5,  p)
-    let qtr  = MPFloat.from_f64(0.25, p)
+    let one  = MPFloat.from[F64](1.0,  p)
+    let two  = MPFloat.from[F64](2.0,  p)
+    let four = MPFloat.from[F64](4.0,  p)
+    let half = MPFloat.from[F64](0.5,  p)
+    let qtr  = MPFloat.from[F64](0.25, p)
 
     // ── Basic arithmetic — large values (|x| > 1) ─────────────────────────
 
@@ -1978,7 +1978,7 @@ class iso _TestMPFloatHighPrec is UnitTest
     // 4 / 2 = 2    (exact)
     ae(four.div(two), two, "4/2 = 2 at p=100")
     // 2^50 (exact power of 2 — binary representation is exact in base 256)
-    ae(two.powi(50), MPFloat.from_f64(F64.from[U64](1125899906842624), p), "2^50 at p=100")
+    ae(two.powi(50), MPFloat.from[F64](F64.from[U64](1125899906842624), p), "2^50 at p=100")
 
     // ── Basic arithmetic — small values (|x| < 1) ─────────────────────────
 
@@ -1989,7 +1989,7 @@ class iso _TestMPFloatHighPrec is UnitTest
     // 0.25 / 0.5 = 0.5  (exact)
     ae(qtr.div(half), half, "0.25/0.5 = 0.5 at p=100")
     // (0.5)^10 = 2^{-10} = 1/1024  (exact power of 2)
-    ae(half.powi(10), MPFloat.from_f64(1.0 / 1024.0, p), "0.5^10 = 1/1024 at p=100")
+    ae(half.powi(10), MPFloat.from[F64](1.0 / 1024.0, p), "0.5^10 = 1/1024 at p=100")
 
     // ── sqrt — large and small ─────────────────────────────────────────────
 
@@ -2005,7 +2005,7 @@ class iso _TestMPFloatHighPrec is UnitTest
     // ── ln / exp — large and small ─────────────────────────────────────────
 
     // exp(0) = 1
-    ae(MPFloat.from_f64(0.0, p).exp(), one, "exp(0) = 1 at p=100")
+    ae(MPFloat.from[F64](0.0, p).exp(), one, "exp(0) = 1 at p=100")
     // exp(ln(x)) ≈ x for x > 1
     ae(two.ln().exp(), two, "exp(ln(2)) ≈ 2 at p=100")
     ae(four.ln().exp(), four, "exp(ln(4)) ≈ 4 at p=100")
@@ -2014,7 +2014,7 @@ class iso _TestMPFloatHighPrec is UnitTest
     ae(qtr.ln().exp(),  qtr,  "exp(ln(0.25)) ≈ 0.25 at p=100")
     // exp(-1) × exp(1) = 1
     let e_val  = one.exp()
-    let em_val = MPFloat.from_f64(-1.0, p).exp()
+    let em_val = MPFloat.from[F64](-1.0, p).exp()
     ae(e_val.mul(em_val), one, "exp(1) × exp(-1) = 1 at p=100")
     // ln(a × b) = ln(a) + ln(b)
     ae(two.mul(four).ln(), two.ln().add(four.ln()), "ln(2×4) = ln(2)+ln(4) at p=100")
@@ -2030,7 +2030,7 @@ class iso _TestMPFloatHighPrec is UnitTest
     // ── log10 ──────────────────────────────────────────────────────────────
 
     // log10(10) = 1
-    let ten = MPFloat.from_f64(10.0, p)
+    let ten = MPFloat.from[F64](10.0, p)
     ae(ten.log10(), one, "log10(10) = 1 at p=100")
 
     // ── pow ────────────────────────────────────────────────────────────────
@@ -2063,10 +2063,10 @@ class iso _TestMPFloatTrig is UnitTest
     }
 
     let zero    = MPFloat.create(p)
-    let one     = MPFloat.from_f64(1.0, p)
-    let neg_one = MPFloat.from_f64(-1.0, p)
-    let half    = MPFloat.from_f64(0.5, p)
-    let two     = MPFloat.from_f64(2.0, p)
+    let one     = MPFloat.from[F64](1.0, p)
+    let neg_one = MPFloat.from[F64](-1.0, p)
+    let half    = MPFloat.from[F64](0.5, p)
+    let two     = MPFloat.from[F64](2.0, p)
 
     // ── sin(0) = 0, cos(0) = 1, tan(0) = 0 ──────────────────────────────────
     ae(zero.sin(), zero, "sin(0) = 0")
@@ -2076,9 +2076,9 @@ class iso _TestMPFloatTrig is UnitTest
     // ── Values at standard angles using MPFloat.pi for full-precision arguments ─
     // Using MPFloat.pi(p) rather than F64.pi() so arguments have full p-byte
     // precision, allowing tight-tolerance checks against exact values.
-    let three = MPFloat.from_f64(3.0, p)
-    let four  = MPFloat.from_f64(4.0, p)
-    let six   = MPFloat.from_f64(6.0, p)
+    let three = MPFloat.from[F64](3.0, p)
+    let four  = MPFloat.from[F64](4.0, p)
+    let six   = MPFloat.from[F64](6.0, p)
     let pi  = MPFloat.pi(p)
     let pi6 = pi.div(six)
     let pi3 = pi.div(three)
@@ -2098,15 +2098,15 @@ class iso _TestMPFloatTrig is UnitTest
     // ── Compare against F64 reference for generic values (F64 tolerance) ──────
     let v1: F64  = 1.0
     let v25: F64 = 2.5
-    let x1 = MPFloat.from_f64(v1,  p)
-    let x2 = MPFloat.from_f64(v25, p)
-    ae_f64(x1.sin(), MPFloat.from_f64(v1.sin(),  p), "sin(1) matches F64")
-    ae_f64(x1.cos(), MPFloat.from_f64(v1.cos(),  p), "cos(1) matches F64")
+    let x1 = MPFloat.from[F64](v1,  p)
+    let x2 = MPFloat.from[F64](v25, p)
+    ae_f64(x1.sin(), MPFloat.from[F64](v1.sin(),  p), "sin(1) matches F64")
+    ae_f64(x1.cos(), MPFloat.from[F64](v1.cos(),  p), "cos(1) matches F64")
     let sin25 = x2.sin()
-    let exp25 = MPFloat.from_f64(v25.sin(), p)
+    let exp25 = MPFloat.from[F64](v25.sin(), p)
     h.assert_true(sin25.almost_eq(exp25, f64_tol, f64_tol),
       "sin(2.5) matches F64: got=" + sin25.string() + " exp=" + exp25.string())
-    ae_f64(x2.cos(), MPFloat.from_f64(v25.cos(), p), "cos(2.5) matches F64")
+    ae_f64(x2.cos(), MPFloat.from[F64](v25.cos(), p), "cos(2.5) matches F64")
 
     // ── Pythagorean identity: sin²(x) + cos²(x) = 1 ─────────────────────────
     // Both sin and cos return p-byte results, so mul gives (2p-1)-byte
@@ -2165,7 +2165,7 @@ class iso _TestMPFloatHyp is UnitTest
     }
 
     let zero = MPFloat.create(p)
-    let one  = MPFloat.from_f64(1.0, p)
+    let one  = MPFloat.from[F64](1.0, p)
 
     // ── sinh(0) = 0, cosh(0) = 1, tanh(0) = 0 ───────────────────────────────
     ae(zero.sinh(), zero, "sinh(0) = 0")
@@ -2173,12 +2173,12 @@ class iso _TestMPFloatHyp is UnitTest
     ae(zero.tanh(), zero, "tanh(0) = 0")
 
     // ── Hyperbolic identity: cosh²(x) − sinh²(x) = 1 ────────────────────────
-    let x1 = MPFloat.from_f64(1.0, p)
+    let x1 = MPFloat.from[F64](1.0, p)
     let sh1 = x1.sinh() ; let ch1 = x1.cosh()
     ae(ch1.mul(ch1).sub(sh1.mul(sh1)), one,
       "cosh²(1) − sinh²(1) = 1")
 
-    let x2 = MPFloat.from_f64(2.5, p)
+    let x2 = MPFloat.from[F64](2.5, p)
     let sh2 = x2.sinh() ; let ch2 = x2.cosh()
     ae(ch2.mul(ch2).sub(sh2.mul(sh2)), one,
       "cosh²(2.5) − sinh²(2.5) = 1")
@@ -2188,9 +2188,9 @@ class iso _TestMPFloatHyp is UnitTest
 
     // ── Known values from F64 (F64 tolerance since references are F64-precise) ──
     // sinh(1) ≈ 1.1752011936438014, cosh(1) ≈ 1.5430806348152437
-    ae_f64(x1.sinh(), MPFloat.from_f64(F64(1.0).sinh(), p), "sinh(1) matches F64")
-    ae_f64(x1.cosh(), MPFloat.from_f64(F64(1.0).cosh(), p), "cosh(1) matches F64")
-    ae_f64(x1.tanh(), MPFloat.from_f64(F64(1.0).tanh(), p), "tanh(1) matches F64")
+    ae_f64(x1.sinh(), MPFloat.from[F64](F64(1.0).sinh(), p), "sinh(1) matches F64")
+    ae_f64(x1.cosh(), MPFloat.from[F64](F64(1.0).cosh(), p), "cosh(1) matches F64")
+    ae_f64(x1.tanh(), MPFloat.from[F64](F64(1.0).tanh(), p), "tanh(1) matches F64")
 
     // ── Symmetry: sinh(-x) = -sinh(x), cosh(-x) = cosh(x) ───────────────────
     ae(x1.neg().sinh(), sh1.neg(), "sinh(-1) = -sinh(1)")
@@ -2243,25 +2243,25 @@ class iso _TestMPFloatUnsafeIntConversions is UnitTest
     // I128
     let big: I128 = 0x1234567890ABCDEF1234567890ABCDEF
     try
-      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      let mp_big = MPFloat.from[MPInt](MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
       h.assert_eq[I128](big, mp_big.i128_unsafe(), "i128_unsafe(big)")
     end
 
     // I64
-    h.assert_eq[I64](123, MPFloat.from_f64(123.456).i64_unsafe(), "i64_unsafe(123.456)")
-    h.assert_eq[I64](-123, MPFloat.from_f64(-123.456).i64_unsafe(), "i64_unsafe(-123.456)")
+    h.assert_eq[I64](123, MPFloat.from[F64](123.456).i64_unsafe(), "i64_unsafe(123.456)")
+    h.assert_eq[I64](-123, MPFloat.from[F64](-123.456).i64_unsafe(), "i64_unsafe(-123.456)")
 
     // I32
-    h.assert_eq[I32](123, MPFloat.from_f64(123.456).i32_unsafe(), "i32_unsafe(123.456)")
-    h.assert_eq[I32](-123, MPFloat.from_f64(-123.456).i32_unsafe(), "i32_unsafe(-123.456)")
+    h.assert_eq[I32](123, MPFloat.from[F64](123.456).i32_unsafe(), "i32_unsafe(123.456)")
+    h.assert_eq[I32](-123, MPFloat.from[F64](-123.456).i32_unsafe(), "i32_unsafe(-123.456)")
 
     // I16
-    h.assert_eq[I16](123, MPFloat.from_f64(123.456).i16_unsafe(), "i16_unsafe(123.456)")
-    h.assert_eq[I16](-123, MPFloat.from_f64(-123.456).i16_unsafe(), "i16_unsafe(-123.456)")
+    h.assert_eq[I16](123, MPFloat.from[F64](123.456).i16_unsafe(), "i16_unsafe(123.456)")
+    h.assert_eq[I16](-123, MPFloat.from[F64](-123.456).i16_unsafe(), "i16_unsafe(-123.456)")
 
     // I8
-    h.assert_eq[I8](123, MPFloat.from_f64(123.456).i8_unsafe(), "i8_unsafe(123.456)")
-    h.assert_eq[I8](-123, MPFloat.from_f64(-123.456).i8_unsafe(), "i8_unsafe(-123.456)")
+    h.assert_eq[I8](123, MPFloat.from[F64](123.456).i8_unsafe(), "i8_unsafe(123.456)")
+    h.assert_eq[I8](-123, MPFloat.from[F64](-123.456).i8_unsafe(), "i8_unsafe(-123.456)")
 
 
 class iso _TestMPFloatI8 is UnitTest
@@ -2272,18 +2272,18 @@ class iso _TestMPFloatI8 is UnitTest
 
   fun apply(h: TestHelper) =>
     // I8
-    h.assert_eq[I8](123, MPFloat.from_f64(123.456).i8(), "i8(123.456)")
-    h.assert_eq[I8](I8.max_value(), MPFloat.from_f64(200).i8(), "i8(200) saturates")
-    h.assert_eq[I8](I8.min_value(), MPFloat.from_f64(-200).i8(), "i8(-200) saturates")
-    h.assert_eq[I8](0, MPFloat.from_f64(0.123).i8(), "i8(0.123)")
-    h.assert_eq[I8](0, MPFloat.from_f64(-0.123).i8(), "i8(-0.123)")
+    h.assert_eq[I8](123, MPFloat.from[F64](123.456).i8(), "i8(123.456)")
+    h.assert_eq[I8](I8.max_value(), MPFloat.from[F64](200).i8(), "i8(200) saturates")
+    h.assert_eq[I8](I8.min_value(), MPFloat.from[F64](-200).i8(), "i8(-200) saturates")
+    h.assert_eq[I8](0, MPFloat.from[F64](0.123).i8(), "i8(0.123)")
+    h.assert_eq[I8](0, MPFloat.from[F64](-0.123).i8(), "i8(-0.123)")
 
     // Edge cases around 2^(N-1)
     // I8: [-128, 127]
-    h.assert_eq[I8](127, MPFloat.from_f64(127).i8(), "i8(127)")
-    h.assert_eq[I8](I8.max_value(), MPFloat.from_f64(128).i8(), "i8(128) saturates")
-    h.assert_eq[I8](-128, MPFloat.from_f64(-128).i8(), "i8(-128)")
-    h.assert_eq[I8](I8.min_value(), MPFloat.from_f64(-129).i8(), "i8(-129) saturates")
+    h.assert_eq[I8](127, MPFloat.from[F64](127).i8(), "i8(127)")
+    h.assert_eq[I8](I8.max_value(), MPFloat.from[F64](128).i8(), "i8(128) saturates")
+    h.assert_eq[I8](-128, MPFloat.from[F64](-128).i8(), "i8(-128)")
+    h.assert_eq[I8](I8.min_value(), MPFloat.from[F64](-129).i8(), "i8(-129) saturates")
 
     // Special values
     h.assert_eq[I8](0, MPFloat.nan_val().i8(), "i8(NaN)")
@@ -2299,9 +2299,9 @@ class iso _TestMPFloatI16 is UnitTest
 
   fun apply(h: TestHelper) =>
     // I16
-    h.assert_eq[I16](123, MPFloat.from_f64(123.456).i16(), "i16(123.456)")
-    h.assert_eq[I16](I16.max_value(), MPFloat.from_f64(40000).i16(), "i16(40000) saturates")
-    h.assert_eq[I16](I16.min_value(), MPFloat.from_f64(-40000).i16(), "i16(-40000) saturates")
+    h.assert_eq[I16](123, MPFloat.from[F64](123.456).i16(), "i16(123.456)")
+    h.assert_eq[I16](I16.max_value(), MPFloat.from[F64](40000).i16(), "i16(40000) saturates")
+    h.assert_eq[I16](I16.min_value(), MPFloat.from[F64](-40000).i16(), "i16(-40000) saturates")
 
     // Special values
     h.assert_eq[I16](0, MPFloat.nan_val().i16(), "i16(NaN)")
@@ -2317,9 +2317,9 @@ class iso _TestMPFloatI32 is UnitTest
 
   fun apply(h: TestHelper) =>
     // I32
-    h.assert_eq[I32](123, MPFloat.from_f64(123.456).i32(), "i32(123.456)")
-    h.assert_eq[I32](I32.max_value(), MPFloat.from_f64(3e9).i32(), "i32(3e9) saturates")
-    h.assert_eq[I32](I32.min_value(), MPFloat.from_f64(-3e9).i32(), "i32(-3e9) saturates")
+    h.assert_eq[I32](123, MPFloat.from[F64](123.456).i32(), "i32(123.456)")
+    h.assert_eq[I32](I32.max_value(), MPFloat.from[F64](3e9).i32(), "i32(3e9) saturates")
+    h.assert_eq[I32](I32.min_value(), MPFloat.from[F64](-3e9).i32(), "i32(-3e9) saturates")
 
     // Special values
     h.assert_eq[I32](0, MPFloat.nan_val().i32(), "i32(NaN)")
@@ -2335,49 +2335,49 @@ class iso _TestMPFloatI64 is UnitTest
 
   fun apply(h: TestHelper) =>
     // I64
-    h.assert_eq[I64](123, MPFloat.from_f64(123.456).i64(), "i64(123.456)")
-    h.assert_eq[I64](I64.max_value(), MPFloat.from_f64(2e19).i64(), "i64(2e19) saturates")
-    h.assert_eq[I64](I64.min_value(), MPFloat.from_f64(-2e19).i64(), "i64(-2e19) saturates")
+    h.assert_eq[I64](123, MPFloat.from[F64](123.456).i64(), "i64(123.456)")
+    h.assert_eq[I64](I64.max_value(), MPFloat.from[F64](2e19).i64(), "i64(2e19) saturates")
+    h.assert_eq[I64](I64.min_value(), MPFloat.from[F64](-2e19).i64(), "i64(-2e19) saturates")
 
     // Truncation of decimals
-    h.assert_eq[I64](1, MPFloat.from_f64(1.9).i64(), "i64(1.9)")
-    h.assert_eq[I64](-1, MPFloat.from_f64(-1.9).i64(), "i64(-1.9)")
-    h.assert_eq[I64](0, MPFloat.from_f64(0.5).i64(), "i64(0.5)")
-    h.assert_eq[I64](0, MPFloat.from_f64(-0.5).i64(), "i64(-0.5)")
+    h.assert_eq[I64](1, MPFloat.from[F64](1.9).i64(), "i64(1.9)")
+    h.assert_eq[I64](-1, MPFloat.from[F64](-1.9).i64(), "i64(-1.9)")
+    h.assert_eq[I64](0, MPFloat.from[F64](0.5).i64(), "i64(0.5)")
+    h.assert_eq[I64](0, MPFloat.from[F64](-0.5).i64(), "i64(-0.5)")
 
     // Large values (within I64 range)
     let big: I64 = 0x1234567890ABCDEF
     try
-      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF", 16)?, 64)
+      let mp_big = MPFloat.from[MPInt](MPInt.from_string("1234567890ABCDEF", 16)?, 64)
       h.assert_eq[I64](big, mp_big.i64(), "i64(big)")
 
       let neg_big: I64 = -big
-      let mp_neg_big = MPFloat.from_mpint(MPInt.from_string("-1234567890ABCDEF", 16)?, 64)
+      let mp_neg_big = MPFloat.from[MPInt](MPInt.from_string("-1234567890ABCDEF", 16)?, 64)
       h.assert_eq[I64](neg_big, mp_neg_big.i64(), "i64(neg_big)")
 
       // Overflow behavior (saturation like F64)
       // 2^64 + 1 saturates to I64.max_value()
       let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) + MPInt.from[ILong](1)
-      let mp_overflow = MPFloat.from_mpint(overflow, 68)
+      let mp_overflow = MPFloat.from[MPInt](overflow, 68)
       h.assert_eq[I64](I64.max_value(), mp_overflow.i64(), "i64(2^64 + 1) saturates")
 
       // Boundary checks around 2^63
       let p2_63_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](63))) - MPInt.from[ILong](1)
-      h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(p2_63_minus_1, 64).i64(), "i64(2^63 - 1)")
+      h.assert_eq[I64](I64.max_value(), MPFloat.from[MPInt](p2_63_minus_1, 64).i64(), "i64(2^63 - 1)")
 
       let p2_63 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](63)))
-      h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(p2_63, 64).i64(), "i64(2^63) saturates")
+      h.assert_eq[I64](I64.max_value(), MPFloat.from[MPInt](p2_63, 64).i64(), "i64(2^63) saturates")
 
       let n2_63 = -p2_63
-      h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(n2_63, 64).i64(), "i64(-2^63)")
+      h.assert_eq[I64](I64.min_value(), MPFloat.from[MPInt](n2_63, 64).i64(), "i64(-2^63)")
 
       let n2_63_minus_1 = n2_63 - MPInt.from[ILong](1)
-      h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(n2_63_minus_1, 64).i64(), "i64(-2^63 - 1) saturates")
+      h.assert_eq[I64](I64.min_value(), MPFloat.from[MPInt](n2_63_minus_1, 64).i64(), "i64(-2^63 - 1) saturates")
 
       // Huge values
       let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
-      h.assert_eq[I64](I64.max_value(), MPFloat.from_mpint(huge).i64(), "i64(2^1000) saturates")
-      h.assert_eq[I64](I64.min_value(), MPFloat.from_mpint(-huge).i64(), "i64(-2^1000) saturates")
+      h.assert_eq[I64](I64.max_value(), MPFloat.from[MPInt](huge).i64(), "i64(2^1000) saturates")
+      h.assert_eq[I64](I64.min_value(), MPFloat.from[MPInt](-huge).i64(), "i64(-2^1000) saturates")
     else
       h.fail("MPInt arithmetic failed in tests")
     end
@@ -2396,50 +2396,50 @@ class iso _TestMPFloatI128 is UnitTest
 
   fun apply(h: TestHelper) =>
     // Basic integers
-    h.assert_eq[I128](0, MPFloat.from_f64(0.0).i128(), "i128(0.0)")
-    h.assert_eq[I128](1, MPFloat.from_f64(1.0).i128(), "i128(1.0)")
-    h.assert_eq[I128](-1, MPFloat.from_f64(-1.0).i128(), "i128(-1.0)")
-    h.assert_eq[I128](123456789, MPFloat.from_f64(123456789.0).i128(), "i128(123456789.0)")
+    h.assert_eq[I128](0, MPFloat.from[F64](0.0).i128(), "i128(0.0)")
+    h.assert_eq[I128](1, MPFloat.from[F64](1.0).i128(), "i128(1.0)")
+    h.assert_eq[I128](-1, MPFloat.from[F64](-1.0).i128(), "i128(-1.0)")
+    h.assert_eq[I128](123456789, MPFloat.from[F64](123456789.0).i128(), "i128(123456789.0)")
 
     // Truncation of decimals
-    h.assert_eq[I128](1, MPFloat.from_f64(1.9).i128(), "i128(1.9)")
-    h.assert_eq[I128](-1, MPFloat.from_f64(-1.9).i128(), "i128(-1.9)")
-    h.assert_eq[I128](0, MPFloat.from_f64(0.5).i128(), "i128(0.5)")
-    h.assert_eq[I128](0, MPFloat.from_f64(-0.5).i128(), "i128(-0.5)")
+    h.assert_eq[I128](1, MPFloat.from[F64](1.9).i128(), "i128(1.9)")
+    h.assert_eq[I128](-1, MPFloat.from[F64](-1.9).i128(), "i128(-1.9)")
+    h.assert_eq[I128](0, MPFloat.from[F64](0.5).i128(), "i128(0.5)")
+    h.assert_eq[I128](0, MPFloat.from[F64](-0.5).i128(), "i128(-0.5)")
 
     // Large values (within I128 range)
     let big: I128 = 0x1234567890ABCDEF1234567890ABCDEF
     try
-      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      let mp_big = MPFloat.from[MPInt](MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
       h.assert_eq[I128](big, mp_big.i128(), "i128(big)")
 
       let neg_big: I128 = -big
-      let mp_neg_big = MPFloat.from_mpint(MPInt.from_string("-1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      let mp_neg_big = MPFloat.from[MPInt](MPInt.from_string("-1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
       h.assert_eq[I128](neg_big, mp_neg_big.i128(), "i128(neg_big)")
 
       // Overflow behavior (saturation like F64)
       // 2^128 + 1 saturates to I128.max_value()
       let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128))) + MPInt.from[ILong](1)
-      let mp_overflow = MPFloat.from_mpint(overflow, 136)
+      let mp_overflow = MPFloat.from[MPInt](overflow, 136)
       h.assert_eq[I128](I128.max_value(), mp_overflow.i128(), "i128(2^128 + 1) saturates")
 
       // Boundary checks around 2^127
       let p2_127_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](127))) - MPInt.from[ILong](1)
-      h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(p2_127_minus_1, 128).i128(), "i128(2^127 - 1)")
+      h.assert_eq[I128](I128.max_value(), MPFloat.from[MPInt](p2_127_minus_1, 128).i128(), "i128(2^127 - 1)")
 
       let p2_127 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](127)))
-      h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(p2_127, 128).i128(), "i128(2^127) saturates")
+      h.assert_eq[I128](I128.max_value(), MPFloat.from[MPInt](p2_127, 128).i128(), "i128(2^127) saturates")
 
       let n2_127 = -p2_127
-      h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(n2_127, 128).i128(), "i128(-2^127)")
+      h.assert_eq[I128](I128.min_value(), MPFloat.from[MPInt](n2_127, 128).i128(), "i128(-2^127)")
 
       let n2_127_minus_1 = n2_127 - MPInt.from[ILong](1)
-      h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(n2_127_minus_1, 128).i128(), "i128(-2^127 - 1) saturates")
+      h.assert_eq[I128](I128.min_value(), MPFloat.from[MPInt](n2_127_minus_1, 128).i128(), "i128(-2^127 - 1) saturates")
 
       // Huge values
       let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
-      h.assert_eq[I128](I128.max_value(), MPFloat.from_mpint(huge).i128(), "i128(2^1000) saturates")
-      h.assert_eq[I128](I128.min_value(), MPFloat.from_mpint(-huge).i128(), "i128(-2^1000) saturates")
+      h.assert_eq[I128](I128.max_value(), MPFloat.from[MPInt](huge).i128(), "i128(2^1000) saturates")
+      h.assert_eq[I128](I128.min_value(), MPFloat.from[MPInt](-huge).i128(), "i128(-2^1000) saturates")
     else
       h.fail("MPInt arithmetic failed in tests")
     end
@@ -2503,13 +2503,13 @@ class iso _TestMPFloatConversions is UnitTest
     // Specific values round-trip
     let vals64: Array[F64] = [0.0; 1.0; -1.0; 0.5; -0.5; 0.25; 123.456; 1e10; 1e-10; F64.min_normalised(); F64.epsilon(); F64.min_value(); F64.max_value(); F64.pi(); F64.e()]
     for v in vals64.values() do
-      let mpf = MPFloat.from_f64(v)
+      let mpf = MPFloat.from[F64](v)
       h.assert_eq[F64](v, mpf.f64(), "F64 round-trip failed for " + v.string())
     end
 
     let vals32: Array[F32] = [0.0; 1.0; -1.0; 0.5; -0.5; 0.25; 123.456; 1e5; 1e-5; F32.min_normalised(); F32.epsilon(); F32.min_value(); F32.max_value(); F32.pi(); F32.e()]
     for v in vals32.values() do
-      let mpf = MPFloat.from_f32(v)
+      let mpf = MPFloat.from[F32](v)
       h.assert_eq[F32](v, mpf.f32(), "F32 round-trip failed for " + v.string())
     end
 
@@ -2527,11 +2527,11 @@ class iso _TestMPFloatConversions is UnitTest
     h.assert_true(MPFloat.inf_val(false).f32() < 0, "-Inf sign F32")
 
     // Negative zero
-    let neg_zero_f64 = MPFloat.from_f64(-0.0)
+    let neg_zero_f64 = MPFloat.from[F64](-0.0)
     h.assert_eq[F64](-0.0, neg_zero_f64.f64(), "-0.0 round-trip F64")
     h.assert_true(neg_zero_f64.f64().bits() == 0x8000000000000000, "-0.0 sign bit F64")
 
-    let neg_zero_f32 = MPFloat.from_f32(-0.0)
+    let neg_zero_f32 = MPFloat.from[F32](-0.0)
     h.assert_eq[F32](-0.0, neg_zero_f32.f32(), "-0.0 round-trip F32")
     h.assert_true(neg_zero_f32.f32().bits() == 0x80000000, "-0.0 sign bit F32")
 
@@ -2539,7 +2539,7 @@ class iso _TestMPFloatConversions is UnitTest
     let rand = Rand
     for i in Range(0, 100) do
       let f = F64.from_bits(rand.u64())
-      let rt_f = MPFloat.from_f64(f).f64()
+      let rt_f = MPFloat.from[F64](f).f64()
       if f.nan() then
         h.assert_true(rt_f.nan(), "Random round-trip [" + i.string() + "] failed for F64=NaN")
       elseif f.infinite() then
@@ -2554,7 +2554,7 @@ class iso _TestMPFloatConversions is UnitTest
     end
     for i in Range(0, 100) do
       let f = F32.from_bits(rand.u32())
-      let rt_f = MPFloat.from_f32(f).f32()
+      let rt_f = MPFloat.from[F32](f).f32()
       if f.nan() then
         h.assert_true(rt_f.nan(), "Random round-trip [" + i.string() + "] failed for F32=NaN")
       elseif f.infinite() then
@@ -2568,8 +2568,8 @@ class iso _TestMPFloatConversions is UnitTest
       end
     end
     for i in Range(0, 100) do
-      let mpf = MPFloat.from_f64(F64.from_bits(rand.u64()))
-      let rt_mpf = MPFloat.from_f64(mpf.f64())
+      let mpf = MPFloat.from[F64](F64.from_bits(rand.u64()))
+      let rt_mpf = MPFloat.from[F64](mpf.f64())
       if mpf.is_nan() then
         h.assert_true(rt_mpf.is_nan(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f64=NaN")
       elseif mpf.is_infinite() then
@@ -2581,8 +2581,8 @@ class iso _TestMPFloatConversions is UnitTest
       end
     end
     for i in Range(0, 100) do
-      let mpf = MPFloat.from_f32(F32.from_bits(rand.u32()))
-      let rt_mpf = MPFloat.from_f32(mpf.f32())
+      let mpf = MPFloat.from[F32](F32.from_bits(rand.u32()))
+      let rt_mpf = MPFloat.from[F32](mpf.f32())
       if mpf.is_nan() then
         h.assert_true(rt_mpf.is_nan(), "Random round-trip [" + i.string() + "] failed for MPFloat.from_f32=NaN")
       elseif mpf.is_infinite() then
@@ -2601,18 +2601,18 @@ class iso _TestMPFloatU8 is UnitTest
 
   fun apply(h: TestHelper) =>
     // U8
-    h.assert_eq[U8](123, MPFloat.from_f64(123.456).u8(), "u8(123.456)")
-    h.assert_eq[U8](U8.max_value(), MPFloat.from_f64(400).u8(), "u8(400) saturates")
-    h.assert_eq[U8](U8.min_value(), MPFloat.from_f64(-200).u8(), "u8(-200) saturates")
-    h.assert_eq[U8](0, MPFloat.from_f64(0.123).u8(), "u8(0.123)")
-    h.assert_eq[U8](0, MPFloat.from_f64(-0.123).u8(), "u8(-0.123)")
+    h.assert_eq[U8](123, MPFloat.from[F64](123.456).u8(), "u8(123.456)")
+    h.assert_eq[U8](U8.max_value(), MPFloat.from[F64](400).u8(), "u8(400) saturates")
+    h.assert_eq[U8](U8.min_value(), MPFloat.from[F64](-200).u8(), "u8(-200) saturates")
+    h.assert_eq[U8](0, MPFloat.from[F64](0.123).u8(), "u8(0.123)")
+    h.assert_eq[U8](0, MPFloat.from[F64](-0.123).u8(), "u8(-0.123)")
 
     // Edge cases around 2^N
     // U8: [0, 255]
-    h.assert_eq[U8](255, MPFloat.from_f64(255).u8(), "u8(255)")
-    h.assert_eq[U8](U8.max_value(), MPFloat.from_f64(256).u8(), "u8(256) saturates")
-    h.assert_eq[U8](0, MPFloat.from_f64(0).u8(), "u8(0)")
-    h.assert_eq[U8](U8.min_value(), MPFloat.from_f64(-1).u8(), "u8(-1) saturates")
+    h.assert_eq[U8](255, MPFloat.from[F64](255).u8(), "u8(255)")
+    h.assert_eq[U8](U8.max_value(), MPFloat.from[F64](256).u8(), "u8(256) saturates")
+    h.assert_eq[U8](0, MPFloat.from[F64](0).u8(), "u8(0)")
+    h.assert_eq[U8](U8.min_value(), MPFloat.from[F64](-1).u8(), "u8(-1) saturates")
 
     // Special values
     h.assert_eq[U8](0, MPFloat.nan_val().u8(), "u8(NaN)")
@@ -2628,9 +2628,9 @@ class iso _TestMPFloatU16 is UnitTest
 
   fun apply(h: TestHelper) =>
     // U16
-    h.assert_eq[U16](123, MPFloat.from_f64(123.456).u16(), "u16(123.456)")
-    h.assert_eq[U16](U16.max_value(), MPFloat.from_f64(400000).u16(), "u16(400000) saturates")
-    h.assert_eq[U16](U16.min_value(), MPFloat.from_f64(-40000).u16(), "u16(-40000) saturates")
+    h.assert_eq[U16](123, MPFloat.from[F64](123.456).u16(), "u16(123.456)")
+    h.assert_eq[U16](U16.max_value(), MPFloat.from[F64](400000).u16(), "u16(400000) saturates")
+    h.assert_eq[U16](U16.min_value(), MPFloat.from[F64](-40000).u16(), "u16(-40000) saturates")
 
     // Special values
     h.assert_eq[U16](0, MPFloat.nan_val().u16(), "u16(NaN)")
@@ -2646,9 +2646,9 @@ class iso _TestMPFloatU32 is UnitTest
 
   fun apply(h: TestHelper) =>
     // U32
-    h.assert_eq[U32](123, MPFloat.from_f64(123.456).u32(), "u32(123.456)")
-    h.assert_eq[U32](U32.max_value(), MPFloat.from_f64(3e12).u32(), "u32(3e12) saturates")
-    h.assert_eq[U32](U32.min_value(), MPFloat.from_f64(-3e9).u32(), "u32(-3e9) saturates")
+    h.assert_eq[U32](123, MPFloat.from[F64](123.456).u32(), "u32(123.456)")
+    h.assert_eq[U32](U32.max_value(), MPFloat.from[F64](3e12).u32(), "u32(3e12) saturates")
+    h.assert_eq[U32](U32.min_value(), MPFloat.from[F64](-3e9).u32(), "u32(-3e9) saturates")
 
     // Special values
     h.assert_eq[U32](0, MPFloat.nan_val().u32(), "u32(NaN)")
@@ -2664,41 +2664,41 @@ class iso _TestMPFloatU64 is UnitTest
 
   fun apply(h: TestHelper) =>
     // U64
-    h.assert_eq[U64](123, MPFloat.from_f64(123.456).u64(), "u64(123.456)")
-    h.assert_eq[U64](U64.max_value(), MPFloat.from_f64(2e24).u64(), "u64(2e19) saturates")
-    h.assert_eq[U64](U64.min_value(), MPFloat.from_f64(-2e19).u64(), "u64(-2e19) saturates")
+    h.assert_eq[U64](123, MPFloat.from[F64](123.456).u64(), "u64(123.456)")
+    h.assert_eq[U64](U64.max_value(), MPFloat.from[F64](2e24).u64(), "u64(2e19) saturates")
+    h.assert_eq[U64](U64.min_value(), MPFloat.from[F64](-2e19).u64(), "u64(-2e19) saturates")
 
     // Truncation of decimals
-    h.assert_eq[U64](1, MPFloat.from_f64(1.9).u64(), "u64(1.9)")
-    h.assert_eq[U64](0, MPFloat.from_f64(-1.9).u64(), "u64(-1.9)")
-    h.assert_eq[U64](0, MPFloat.from_f64(0.5).u64(), "u64(0.5)")
-    h.assert_eq[U64](0, MPFloat.from_f64(-0.5).u64(), "u64(-0.5)")
+    h.assert_eq[U64](1, MPFloat.from[F64](1.9).u64(), "u64(1.9)")
+    h.assert_eq[U64](0, MPFloat.from[F64](-1.9).u64(), "u64(-1.9)")
+    h.assert_eq[U64](0, MPFloat.from[F64](0.5).u64(), "u64(0.5)")
+    h.assert_eq[U64](0, MPFloat.from[F64](-0.5).u64(), "u64(-0.5)")
 
     // Large values (within U64 range)
     let big: U64 = 0x1234567890ABCDEF
     try
-      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF", 16)?, 64)
+      let mp_big = MPFloat.from[MPInt](MPInt.from_string("1234567890ABCDEF", 16)?, 64)
       h.assert_eq[U64](big, mp_big.u64(), "u64(big)")
 
       // Overflow behavior (saturation like F64)
       // 2^64 + 1 saturates to U64.max_value()
       let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) + MPInt.from[ILong](1)
-      let mp_overflow = MPFloat.from_mpint(overflow, 68)
+      let mp_overflow = MPFloat.from[MPInt](overflow, 68)
       h.assert_eq[U64](U64.max_value(), mp_overflow.u64(), "u64(2^64 + 1) saturates")
 
       // Boundary checks around 2^64
       let p2_64_minus_1 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64))) - MPInt.from[ILong](1)
-      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64_minus_1, 68).u64(), "u64(2^64 - 1)")
+      h.assert_eq[U64](U64.max_value(), MPFloat.from[MPInt](p2_64_minus_1, 68).u64(), "u64(2^64 - 1)")
 
       let p2_64 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](64)))
-      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(p2_64, 64).u64(), "u64(2^64) max value")
+      h.assert_eq[U64](U64.max_value(), MPFloat.from[MPInt](p2_64, 64).u64(), "u64(2^64) max value")
 
       let n2_64_plus_1 = p2_64 + MPInt.from[ILong](1)
-      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(n2_64_plus_1, 68).u64(), "u64(2^64 + 1)")
+      h.assert_eq[U64](U64.max_value(), MPFloat.from[MPInt](n2_64_plus_1, 68).u64(), "u64(2^64 + 1)")
 
       // Huge values
       let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
-      h.assert_eq[U64](U64.max_value(), MPFloat.from_mpint(huge).u64(), "u64(2^1000) saturates")
+      h.assert_eq[U64](U64.max_value(), MPFloat.from[MPInt](huge).u64(), "u64(2^1000) saturates")
     else
       h.fail("MPInt arithmetic failed in tests")
     end
@@ -2717,46 +2717,46 @@ class iso _TestMPFloatU128 is UnitTest
 
   fun apply(h: TestHelper) =>
     // Basic integers
-    h.assert_eq[U128](0, MPFloat.from_f64(0.0).u128(), "u128(0.0)")
-    h.assert_eq[U128](1, MPFloat.from_f64(1.0).u128(), "u128(1.0)")
-    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-1.0).u128(), "u128(-1.0)")
-    h.assert_eq[U128](123456789, MPFloat.from_f64(123456789.0).u128(), "u128(123456789.0)")
+    h.assert_eq[U128](0, MPFloat.from[F64](0.0).u128(), "u128(0.0)")
+    h.assert_eq[U128](1, MPFloat.from[F64](1.0).u128(), "u128(1.0)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from[F64](-1.0).u128(), "u128(-1.0)")
+    h.assert_eq[U128](123456789, MPFloat.from[F64](123456789.0).u128(), "u128(123456789.0)")
 
     // Truncation of decimals
-    h.assert_eq[U128](1, MPFloat.from_f64(1.9).u128(), "u128(1.9)")
-    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-1.9).u128(), "u128(-1.9)")
-    h.assert_eq[U128](0, MPFloat.from_f64(0.5).u128(), "u128(0.5)")
-    h.assert_eq[U128](U128.min_value(), MPFloat.from_f64(-0.5).u128(), "u128(-0.5)")
+    h.assert_eq[U128](1, MPFloat.from[F64](1.9).u128(), "u128(1.9)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from[F64](-1.9).u128(), "u128(-1.9)")
+    h.assert_eq[U128](0, MPFloat.from[F64](0.5).u128(), "u128(0.5)")
+    h.assert_eq[U128](U128.min_value(), MPFloat.from[F64](-0.5).u128(), "u128(-0.5)")
 
     // Large values (within U128 range)
     let big: U128 = 0x1234567890ABCDEF1234567890ABCDEF
     try
-      let mp_big = MPFloat.from_mpint(MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      let mp_big = MPFloat.from[MPInt](MPInt.from_string("1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
       h.assert_eq[U128](big, mp_big.u128(), "u128(big)")
 
-      let mp_neg_big = MPFloat.from_mpint(MPInt.from_string("-1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
+      let mp_neg_big = MPFloat.from[MPInt](MPInt.from_string("-1234567890ABCDEF1234567890ABCDEF", 16)?, 128)
       h.assert_eq[U128](U128.min_value(), mp_neg_big.u128(), "u128(neg_big)")
 
       // Overflow behavior (saturation like F64)
       // 2^128 + 1 saturates to U128.max_value()
       let overflow = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128))) + MPInt.from[ILong](1)
-      let mp_overflow = MPFloat.from_mpint(overflow, 136)
+      let mp_overflow = MPFloat.from[MPInt](overflow, 136)
       h.assert_eq[U128](U128.max_value(), mp_overflow.u128(), "u128(2^128 + 1) saturates")
 
       // Boundary checks around 2^128
       let p2_128 = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](128)))
-      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128, 128).u128(), "u128(2^128 saturates)")
+      h.assert_eq[U128](U128.max_value(), MPFloat.from[MPInt](p2_128, 128).u128(), "u128(2^128 saturates)")
 
       let p2_128_minus_1 = p2_128 - MPInt.from[ILong](1)
-      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(p2_128_minus_1, 128).u128(), "u128(2^128 - 1)")
+      h.assert_eq[U128](U128.max_value(), MPFloat.from[MPInt](p2_128_minus_1, 128).u128(), "u128(2^128 - 1)")
 
       let p2_128_minus_2 = p2_128_minus_1 - MPInt.from[ILong](1)
-      h.assert_eq[U128](U128.max_value() - 1, MPFloat.from_mpint(p2_128_minus_2, 128).u128(), "u128(-2^128 - 2)")
+      h.assert_eq[U128](U128.max_value() - 1, MPFloat.from[MPInt](p2_128_minus_2, 128).u128(), "u128(-2^128 - 2)")
 
       // Huge values
       let huge = (MPInt.from[ULong](1).bit_shl(MPInt.from[ILong](1000)))
-      h.assert_eq[U128](U128.max_value(), MPFloat.from_mpint(huge).u128(), "u128(2^1000) saturates")
-      h.assert_eq[U128](U128.min_value(), MPFloat.from_mpint(-huge).u128(), "u128(-2^1000) saturates")
+      h.assert_eq[U128](U128.max_value(), MPFloat.from[MPInt](huge).u128(), "u128(2^1000) saturates")
+      h.assert_eq[U128](U128.min_value(), MPFloat.from[MPInt](-huge).u128(), "u128(-2^1000) saturates")
     else
       h.fail("MPInt arithmetic failed in tests")
     end
@@ -2772,3 +2772,167 @@ class iso _TestMPFloatU128 is UnitTest
       let t = rand.u128()
       h.assert_eq[U128](t, MPFloat.from[U128](t).u128(), "Random [" + i.string() + "] u128(" + t.string() + ")")
     end
+
+
+// ---------------------------------------------------------------------------
+// MPFloat format tests
+// ---------------------------------------------------------------------------
+
+class iso _TestMPFloatFormatDefault is UnitTest
+  fun name(): String => "MPFloat/format/default"
+
+  fun apply(h: TestHelper) =>
+    // No spec: same as 'g' with full stored precision, trailing zeros stripped.
+    let v = MPFloat.from[F64](1.5, 128)
+    let s = v.format()
+    h.assert_true(s.contains("1.5"), "expected '1.5' in '" + s + "'")
+
+    // Zero.
+    let z = MPFloat.from[F64](0.0, 128)
+    h.assert_eq[String](z.format(), "0.0")
+
+    // Negative.
+    let neg = MPFloat.from[F64](-3.0, 128)
+    let sn = neg.format()
+    h.assert_true(sn.contains("-"), "expected '-' in '" + sn + "'")
+
+
+class iso _TestMPFloatFormatE is UnitTest
+  fun name(): String => "MPFloat/format/e"
+
+  fun apply(h: TestHelper) =>
+    let v = MPFloat.from[F64](12345.6789, 128)
+    // {:.4e} → 4 digits after decimal in mantissa = 5 sig digits.
+    let s = v.format(".4e")
+    h.assert_eq[String](s, "1.2346e+04")
+
+    // {:.2e} on a negative value.
+    let neg = MPFloat.from[F64](-0.00123, 128)
+    let sn = neg.format(".2e")
+    h.assert_eq[String](sn, "-1.23e-03")
+
+    // Upper-case E.
+    let su = v.format(".4E")
+    h.assert_eq[String](su, "1.2346E+04")
+
+    // Zero.
+    let z = MPFloat.from[F64](0.0, 128)
+    h.assert_eq[String](z.format(".3e"), "0.000e+00")
+
+
+class iso _TestMPFloatFormatF is UnitTest
+  fun name(): String => "MPFloat/format/f"
+
+  fun apply(h: TestHelper) =>
+    let v = MPFloat.from[F64](3.14159, 128)
+    h.assert_eq[String](v.format(".2f"), "3.14")
+    h.assert_eq[String](v.format(".4f"), "3.1416")
+    h.assert_eq[String](v.format(".0f"), "3")
+
+    // Zero fractional digits with # flag keeps the dot.
+    h.assert_eq[String](v.format("#.0f"), "3.")
+
+    // Large integer part.
+    let big = MPFloat.from[F64](100000.0, 128)
+    h.assert_eq[String](big.format(".2f"), "100000.00")
+
+    // Grouping.
+    h.assert_eq[String](big.format(",.2f"), "100,000.00")
+    h.assert_eq[String](big.format("_.2f"), "100_000.00")
+
+    // Negative.
+    let neg = MPFloat.from[F64](-2.5, 128)
+    h.assert_eq[String](neg.format(".1f"), "-2.5")
+
+
+class iso _TestMPFloatFormatG is UnitTest
+  fun name(): String => "MPFloat/format/g"
+
+  fun apply(h: TestHelper) =>
+    // Small value: fixed notation.
+    let v1 = MPFloat.from[F64](123.456, 128)
+    h.assert_eq[String](v1.format(".6g"), "123.456")
+
+    // Large exponent: scientific notation.
+    let v2 = MPFloat.from[F64](1.23e10, 128)
+    let s2 = v2.format(".4g")
+    h.assert_true(s2.contains("e") or s2.contains("E"),
+      "expected sci notation in '" + s2 + "'")
+
+    // Trailing zeros stripped.
+    let v3 = MPFloat.from[F64](1.0, 128)
+    h.assert_eq[String](v3.format(".6g"), "1")
+
+    // # flag keeps trailing zeros.
+    h.assert_eq[String](v3.format("#.6g"), "1.00000")
+
+
+class iso _TestMPFloatFormatPct is UnitTest
+  fun name(): String => "MPFloat/format/percent"
+
+  fun apply(h: TestHelper) =>
+    let v = MPFloat.from[F64](0.753, 128)
+    h.assert_eq[String](v.format(".1%"), "75.3%")
+    h.assert_eq[String](v.format(".0%"), "75%")
+
+
+class iso _TestMPFloatFormatIntCodes is UnitTest
+  fun name(): String => "MPFloat/format/int_codes"
+
+  fun apply(h: TestHelper) =>
+    // Truncate toward zero then format as integer.
+    let v = MPFloat.from[F64](255.9, 128)
+    h.assert_eq[String](v.format("d"), "255")
+    h.assert_eq[String](v.format("x"), "ff")
+    h.assert_eq[String](v.format("X"), "FF")
+    h.assert_eq[String](v.format("#x"), "0xff")
+    h.assert_eq[String](v.format("b"), "11111111")
+    h.assert_eq[String](v.format("o"), "377")
+
+    // Negative truncation.
+    let neg = MPFloat.from[F64](-7.9, 128)
+    h.assert_eq[String](neg.format("d"), "-7")
+
+
+class iso _TestMPFloatFormatWidth is UnitTest
+  fun name(): String => "MPFloat/format/width_align"
+
+  fun apply(h: TestHelper) =>
+    let v = MPFloat.from[F64](3.14, 128)
+    // Right-align (default for numbers).
+    h.assert_eq[String](v.format("10.2f"), "      3.14")
+    // Left-align.
+    h.assert_eq[String](v.format("<10.2f"), "3.14      ")
+    // Center.
+    h.assert_eq[String](v.format("^10.2f"), "   3.14   ")
+    // Zero-pad (AlignNumeric).
+    h.assert_eq[String](v.format("010.2f"), "0000003.14")
+    // Sign plus.
+    h.assert_eq[String](v.format("+.2f"), "+3.14")
+
+
+class iso _TestMPFloatFormatSpecial is UnitTest
+  fun name(): String => "MPFloat/format/special"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[String](MPFloat.nan_val().format(), "nan")
+    h.assert_eq[String](MPFloat.inf_val(true).format(), "inf")
+    h.assert_eq[String](MPFloat.inf_val(false).format(), "-inf")
+    h.assert_eq[String](MPFloat.nan_val().format("E"), "NAN")
+    h.assert_eq[String](MPFloat.inf_val(true).format("E"), "INF")
+    // + sign flag forces the + prefix on positive infinity.
+    h.assert_eq[String](MPFloat.inf_val(true).format("+e"), "+inf")
+
+    // Width on special values.
+    h.assert_eq[String](MPFloat.nan_val().format("10"), "       nan")
+
+
+class iso _TestMPFloatFormatInFormat is UnitTest
+  """Use MPFloat and MPInt inside Format patterns."""
+  fun name(): String => "MPFloat/format/in_Format"
+
+  fun apply(h: TestHelper) =>
+    let pi = MPFloat.from[F64](3.14159, 128)
+    let n  = MPInt.from[U64](42)
+    let s  = Format("pi={:.2f} n={:08b}", [pi; n])
+    h.assert_eq[String](s, "pi=3.14 n=00101010")

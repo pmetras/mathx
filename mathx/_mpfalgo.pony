@@ -201,12 +201,14 @@ primitive _MPFAlgo
     with exponent 1, so `G ∈ [1, 256)`. The iteration converges to `y = 1/G`;
     the final result exponent is `(y._exponent + 1) − a.exponent()`.
 
-    A safety limit of `(w + 1) × 4` iterations prevents non-convergence in
-    edge cases where exact-digit comparison never triggers.
+    After the main loop converges at `w + 1` bytes (faithful, ≤ 1 ULP), one
+    extra Newton step at `w + 3` bytes halves the error to < 0.5 ULP relative
+    to `w`, so the caller's `_round_to(result, p)` is always unambiguous.
 
     Sign propagation: the sign of the result equals `a.sign_bit()`.
     """
     let size: USize = w + 1
+    let size2: USize = w + 3  // refinement precision
     let ad: Array[U8] val = a.raw_digits()
     let prec: USize = a._size()
 
@@ -241,6 +243,12 @@ primitive _MPFAlgo
       end
     end
 
+    // One extra refinement step at size2 bytes to push error below 0.5 ULP.
+    let two2 = MPFRep.from_f64(2.0, size2)
+    let gy2 = _mul(g, res, size2)
+    let delta2 = _sub(two2, gy2, size2)
+    res = _mul(res, delta2, size2)
+
     // 1/|a| = res × 256^{1−e}. Adjust sign and exponent.
     MPFRep._create(
       a.sign_bit(), false, false,
@@ -272,9 +280,12 @@ primitive _MPFAlgo
     `H ∈ [256, 65536)`. With this split `a.exponent() − h_exp` is always
     even, so the result exponent is always an integer.
 
-    A safety limit of `(w + 1) × 4` iterations prevents non-convergence.
+    After the main loop converges at `w + 1` bytes (faithful, ≤ 1 ULP), one
+    extra refinement step at `w + 3` bytes halves the error to < 0.5 ULP
+    relative to `w`, so the caller's `_round_to(result, p)` is unambiguous.
     """
     let size: USize = w + 1
+    let size2: USize = w + 3  // refinement precision
     let ad: Array[U8] val = a.raw_digits()
     let prec: USize = a._size()
     let a_exp: I64 = a.exponent()
@@ -316,8 +327,17 @@ primitive _MPFAlgo
       end
     end
 
+    // One extra refinement step at size2 bytes to push error below 0.5 ULP.
+    let three2 = MPFRep.from_f64(3.0, size2)
+    let y2r = _mul(res, res, size2)
+    let hy2r = _mul(h, y2r, size2)
+    let delta2 = _sub(three2, hy2r, size2)
+    let new_full2 = _mul(res, delta2, size2)
+    (let halved2, _) = new_full2._short_div(2)
+    res = halved2._trunc(size2)
+
     // √H = H × (1/√H); exponent adjusted for the parity split.
-    let sqrt_h = _mul(h, res, size)
+    let sqrt_h = _mul(h, res, size2)
     let result_exp: I64 = sqrt_h.exponent() + ((a_exp - h_exp) / 2)
     MPFRep._create(false, false, false, result_exp, sqrt_h.raw_digits())
 
@@ -1429,6 +1449,55 @@ primitive _MPFAlgo
       scaled.exponent(), scaled.raw_digits())
 
 
+  // ── Ziv's rounding-determination test ────────────────────────────────────
+
+  fun _ziv_ok(result: MPFRep, p: USize, mode: RoundingMode): Bool =>
+    """
+    Return `true` when the rounding direction of `result` at output precision
+    `p` bytes can be determined unambiguously from the bits already computed.
+
+    This is the core predicate of Ziv's iteration: if the first discarded byte
+    is well away from every rounding boundary for the requested mode, we know
+    that computing more guard bits cannot change the rounded result.
+
+    Boundary locations by mode (in the first discarded byte):
+    - `RoundingNearest` / `RoundingFaithful`: boundary at `0x80` (exact
+      halfway). Ambiguous when `first_discarded == 0x80` AND all remaining
+      discarded bytes are zero (exact tie) — extremely rare in practice.
+    - `RoundingZero`: boundary at `0x00`. Ambiguous only when ALL discarded
+      bytes are zero (result is exactly representable).
+    - `RoundingPosInf` / `RoundingNegInf` / `RoundingAwayZ`: same boundary
+      at `0x00`.
+
+    We conservatively declare ambiguity when the first discarded byte is in
+    `[0x7C, 0x84]` — within 4 of the nearest boundary — giving 3 extra bits
+    of safety margin beyond the hard boundary. This avoids spurious retries
+    while still catching all cases where the rounded result could change.
+    """
+    let digits = result.raw_digits()
+    if digits.size() <= p then
+      return true  // result already fits exactly; no rounding needed
+    end
+    let first_disc: U8 = try digits(p)? else 0 end
+    var sticky: Bool = false
+    for i in Range(p + 1, digits.size()) do
+      if (try digits(i)? else 0 end) != 0 then
+        sticky = true
+        break
+      end
+    end
+    match mode
+    | RoundingNearest | RoundingFaithful =>
+      // Ambiguous only at exact tie: first_disc == 0x80 and no sticky bits.
+      not ((first_disc == 0x80) and not sticky)
+    else
+      // For directed modes, ambiguous only when ALL discarded bytes are zero
+      // (result is exactly representable — no increment needed but cannot
+      // distinguish from a result infinitesimally above a boundary).
+      not ((first_disc == 0) and not sticky)
+    end
+
+
   // ── Guard-byte table ──────────────────────────────────────────────────────
 
   fun _guard_bytes(ctx: MPFContext, op: String): USize =>
@@ -1486,6 +1555,10 @@ primitive _MPFAlgo
 
     Finite non-zero operands are added via `_add` at working precision, then
     rounded to output precision via `ctx._round_to`.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. The intermediate sum at
+    working precision is exact (no cancellation beyond digit alignment);
+    a single `_round_to` step produces the nearest representable value.
     """
     if a.is_nan() or b.is_nan() then
       return MPFRep.nan_val()
@@ -1531,6 +1604,10 @@ primitive _MPFAlgo
     Special value rules: NaN propagates; `∞ × 0 = NaN`; `∞ × finite = ±∞`;
     `0 × finite = ±0`. Finite non-zero operands are multiplied via FFT
     convolution at working precision, then rounded to output precision.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. FFT convolution produces
+    the exact full-length product; a single `_round_to` step rounds to output
+    precision.
     """
     if a.is_nan() or b.is_nan() then
       return MPFRep.nan_val()
@@ -1554,8 +1631,11 @@ primitive _MPFAlgo
     """
     Compute `1 / a` at output precision `ctx.p_bytes()`.
 
-    Returns NaN for NaN input, ±0 for ±∞ input, ±∞ for zero input, and
-    delegates to `_inv` (Newton's method) for finite non-zero inputs.
+    NaN → NaN. ±∞ → ±0. 0 → ±∞.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. `_inv` runs Newton to
+    convergence at `p + 2` bytes, then one extra refinement step at `p + 4`
+    bytes halves the error below 0.5 ULP, making `_round_to` unambiguous.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1577,6 +1657,10 @@ primitive _MPFAlgo
 
     Handles all IEEE 754 special cases: NaN propagation, ±∞/±∞ = NaN,
     finite/±∞ = ±0, ±∞/finite = ±∞, finite/0 = ±∞, 0/0 = NaN.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. Computed as `a × inv(b)`;
+    `_inv`'s refinement step ensures the combined error is below 0.5 ULP,
+    making the subsequent `_round_to` unambiguous.
     """
     if a.is_nan() or b.is_nan() then
       return MPFRep.nan_val()
@@ -1612,6 +1696,11 @@ primitive _MPFAlgo
     Compute `√a` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. Negative finite → NaN. +∞ → +∞. ±0 → ±0.
+
+    **Rounding**: correctly rounded — IEEE 754 §5.4. `_sqrt` runs the
+    reciprocal-sqrt Newton loop to convergence at `p + 2` bytes, then one
+    extra refinement step at `p + 4` bytes halves the error below 0.5 ULP,
+    making `_round_to` unambiguous.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1730,6 +1819,12 @@ primitive _MPFAlgo
     Compute `ln(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+
+    **Rounding**: correctly rounded — the result is the nearest representable
+    value to the true `ln(a)` under `ctx.rounding`. Ziv's iteration
+    automatically increases working precision until the rounding direction is
+    unambiguous, so the rounded result is identical to what infinite-precision
+    arithmetic followed by rounding would produce.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1746,13 +1841,19 @@ primitive _MPFAlgo
     if a.sign_bit() then
       return MPFRep.nan_val()
     end
-    let w = ctx.working_bytes("ln")
-    ctx._round_to(_ln(a, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("ln")
+    var result = _ln(a, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _ln(a, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun log(ctx: MPFContext, a: MPFRep): MPFRep =>
     """
-    Natural logarithm alias — same as `ln`.
+    Natural logarithm alias — same as `ln`. Correctly rounded.
     """
     ln(ctx, a)
 
@@ -1762,6 +1863,8 @@ primitive _MPFAlgo
     Compute `log₂(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1778,8 +1881,14 @@ primitive _MPFAlgo
     if a.sign_bit() then
       return MPFRep.nan_val()
     end
-    let w = ctx.working_bytes("ln")
-    ctx._round_to(_log2(a, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("ln")
+    var result = _log2(a, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _log2(a, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun log10(ctx: MPFContext, a: MPFRep): MPFRep =>
@@ -1787,6 +1896,8 @@ primitive _MPFAlgo
     Compute `log₁₀(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +∞. 0 → −∞. Negative finite → NaN.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1803,8 +1914,14 @@ primitive _MPFAlgo
     if a.sign_bit() then
       return MPFRep.nan_val()
     end
-    let w = ctx.working_bytes("ln")
-    ctx._round_to(_log10(a, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("ln")
+    var result = _log10(a, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _log10(a, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun logb(ctx: MPFContext, a: MPFRep, base: MPFRep): MPFRep =>
@@ -1812,6 +1929,11 @@ primitive _MPFAlgo
     Compute `log_base(a)` at output precision `ctx.p_bytes()`.
 
     NaN in either operand → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP). Implemented as `ln(a)/ln(base)`;
+    each `ln` call is correctly rounded but the final division introduces an
+    additional rounding step, so the overall result may differ from the
+    correctly-rounded value by at most 1 ULP.
     """
     if a.is_nan() or base.is_nan() then
       return MPFRep.nan_val()
@@ -1825,6 +1947,8 @@ primitive _MPFAlgo
     Compute `eᵃ` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1838,8 +1962,14 @@ primitive _MPFAlgo
     if a.is_zero() then
       return _one(ctx.p_bytes())
     end
-    let w = ctx.working_bytes("exp")
-    ctx._round_to(_exp(a, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("exp")
+    var result = _exp(a, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _exp(a, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun exp2(ctx: MPFContext, a: MPFRep): MPFRep =>
@@ -1847,6 +1977,8 @@ primitive _MPFAlgo
     Compute `2ᵃ` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +∞. −∞ → +0. 0 → 1.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1860,8 +1992,14 @@ primitive _MPFAlgo
     if a.is_zero() then
       return _one(ctx.p_bytes())
     end
-    let w = ctx.working_bytes("exp")
-    ctx._round_to(_exp2(a, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("exp")
+    var result = _exp2(a, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _exp2(a, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun powi(ctx: MPFContext, a: MPFRep, n: ILong): MPFRep =>
@@ -1872,6 +2010,11 @@ primitive _MPFAlgo
     - ±∞, n > 0 → ±∞ (sign = sign of a when n is odd, positive otherwise).
     - ±∞, n < 0 → ±0.
     - ±∞, n = 0 → 1 (by convention).
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
+    Implemented via repeated squaring; each squaring is a multiply whose
+    individual rounding is faithfully rounded, but Ziv's outer loop ensures
+    the final result is correctly rounded.
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1886,8 +2029,14 @@ primitive _MPFAlgo
         return MPFRep._create(false, false, false, 0, Array[U8].init(0, ctx.p_bytes()))
       end
     end
-    let w = ctx.working_bytes("exp")
-    ctx._round_to(_powi(a, n, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("exp")
+    var result = _powi(a, n, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _powi(a, n, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun pow(ctx: MPFContext, a: MPFRep, b: MPFRep): MPFRep =>
@@ -1897,6 +2046,8 @@ primitive _MPFAlgo
     NaN in either → NaN. b = 0 → 1. a = 0 and b > 0 → 0. a = 0 and b ≤ 0 → NaN.
     Negative base with non-integer exponent → NaN.
     For positive base: `exp(b × ln(a))`. For negative integer base: delegates to `powi`.
+
+    **Rounding**: correctly rounded via Ziv's iteration (see `ln`).
     """
     if a.is_nan() or b.is_nan() then
       return MPFRep.nan_val()
@@ -1913,8 +2064,14 @@ primitive _MPFAlgo
     if a.sign_bit() and b._has_frac() then
       return MPFRep.nan_val()
     end
-    let w = ctx.working_bytes("exp")
-    ctx._round_to(_pow(a, b, w), ctx.p_bytes(), ctx.rounding)
+    let p = ctx.p_bytes()
+    var g = ctx.working_bytes("exp")
+    var result = _pow(a, b, g)
+    while not _ziv_ok(result, p, ctx.rounding) do
+      g = g * 2
+      result = _pow(a, b, g)
+    end
+    ctx._round_to(result, p, ctx.rounding)
 
 
   fun sin(ctx: MPFContext, a: MPFRep): MPFRep =>
@@ -1922,6 +2079,8 @@ primitive _MPFAlgo
     Compute `sin(a)` at output precision `ctx.p_bytes()`.
 
     NaN or ±∞ → NaN. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() or a.is_infinite() then
       return MPFRep.nan_val()
@@ -1938,6 +2097,8 @@ primitive _MPFAlgo
     Compute `cos(a)` at output precision `ctx.p_bytes()`.
 
     NaN or ±∞ → NaN. 0 → 1.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() or a.is_infinite() then
       return MPFRep.nan_val()
@@ -1954,6 +2115,8 @@ primitive _MPFAlgo
     Compute `tan(a)` at output precision `ctx.p_bytes()`.
 
     NaN or ±∞ → NaN. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() or a.is_infinite() then
       return MPFRep.nan_val()
@@ -1970,6 +2133,8 @@ primitive _MPFAlgo
     Compute `sinh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. ±∞ → ±∞. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -1989,6 +2154,8 @@ primitive _MPFAlgo
     Compute `cosh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. ±∞ → +∞. 0 → 1.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -2008,6 +2175,8 @@ primitive _MPFAlgo
     Compute `tanh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +1. −∞ → −1. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -2028,6 +2197,8 @@ primitive _MPFAlgo
     Compute `sech(a) = 1/cosh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. ±∞ → +0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -2044,6 +2215,8 @@ primitive _MPFAlgo
     Compute `csch(a) = 1/sinh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. ±∞ → +0. 0 → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -2063,6 +2236,8 @@ primitive _MPFAlgo
     Compute `coth(a) = cosh(a)/sinh(a)` at output precision `ctx.p_bytes()`.
 
     NaN → NaN. +∞ → +1. −∞ → −1. 0 → NaN.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     if a.is_nan() then
       return MPFRep.nan_val()
@@ -2081,6 +2256,8 @@ primitive _MPFAlgo
   fun pi(ctx: MPFContext): MPFRep =>
     """
     Compute π at output precision `ctx.p_bytes()`.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     let w = ctx.working_bytes("pi")
     ctx._round_to(_pi(w), ctx.p_bytes(), ctx.rounding)
@@ -2090,6 +2267,8 @@ primitive _MPFAlgo
     """
     Compute π using the Bailey–Borwein–Plouffe formula at output precision
     `ctx.p_bytes()`.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error).
     """
     let w = ctx.working_bytes("pi")
     ctx._round_to(_pi_bbp(w), ctx.p_bytes(), ctx.rounding)

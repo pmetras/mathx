@@ -10,6 +10,7 @@ use "../mathx"
 //use "../mathx/gmp"
 
 use "../pony_testx"
+use "../formatx"
 
 use "collections"
 use "random"
@@ -1347,7 +1348,7 @@ class iso _TestMPIntFromMPFloat is UnitTest
     // Positive integers: exact round-trip through MPFloat.from_mpint.
     let rt = {(h2: TestHelper, v: ILong) =>
       let n  = MPInt.from[ILong](v)
-      let f  = MPFloat.from_mpint(n, 64)
+      let f  = MPFloat.from[MPInt](n, 64)
       let n2 = try MPInt.from_mpfloat(f)? else MPInt.from[ILong](-1) end
       h2.assert_true(n == n2, "round-trip " + v.string())
     }
@@ -1380,7 +1381,7 @@ class iso _TestMPIntFromMPFloat is UnitTest
       try MPInt.from_string("100000000000000000000")?
       else MPInt.from[ILong](0)
       end
-    let ie20 = try MPInt.from_mpfloat(MPFloat.from_mpint(e20, 96))? else MPInt.from[ILong](0) end
+    let ie20 = try MPInt.from_mpfloat(MPFloat.from[MPInt](e20, 96))? else MPInt.from[ILong](0) end
     h.assert_true(ie20 == e20, "round-trip 10^20 with prec=96")
 
     // 29-digit value: exact round-trip with sufficient precision.
@@ -1388,7 +1389,7 @@ class iso _TestMPIntFromMPFloat is UnitTest
       try MPInt.from_string("12345678901234567890123456789")?
       else MPInt.from[ILong](0)
       end
-    let id29 = try MPInt.from_mpfloat(MPFloat.from_mpint(d29, 128))? else MPInt.from[ILong](0) end
+    let id29 = try MPInt.from_mpfloat(MPFloat.from[MPInt](d29, 128))? else MPInt.from[ILong](0) end
     h.assert_true(id29 == d29, "round-trip 29-digit integer with prec=128")
 
 
@@ -1502,3 +1503,68 @@ class iso _TestMPIntFromStringLargeExponent is UnitTest
       end
     h.assert_true(big.is_positive(), "1@1000 is positive")
     h.assert_true(big.string().size() == 1001, "1@1000 has 1001 decimal digits")
+
+
+// ---------------------------------------------------------------------------
+// MPInt format tests
+// ---------------------------------------------------------------------------
+
+class iso _TestMPIntFormatDefault is UnitTest
+  fun name(): String => "MPInt/format/default"
+
+  fun apply(h: TestHelper) =>
+    h.assert_eq[String](MPInt.from[U64](0).format(), "0")
+    h.assert_eq[String](MPInt.from[U64](42).format(), "42")
+    h.assert_eq[String](MPInt.from[I64](-99).format(), "-99")
+
+
+class iso _TestMPIntFormatBases is UnitTest
+  fun name(): String => "MPInt/format/bases"
+
+  fun apply(h: TestHelper) =>
+    let v = MPInt.from[U64](255)
+    h.assert_eq[String](v.format("d"), "255")
+    h.assert_eq[String](v.format("x"), "ff")
+    h.assert_eq[String](v.format("X"), "FF")
+    h.assert_eq[String](v.format("b"), "11111111")
+    h.assert_eq[String](v.format("o"), "377")
+    h.assert_eq[String](v.format("#x"), "0xff")
+    h.assert_eq[String](v.format("#X"), "0XFF")
+    h.assert_eq[String](v.format("#b"), "0b11111111")
+    h.assert_eq[String](v.format("#o"), "0o377")
+
+
+class iso _TestMPIntFormatWidth is UnitTest
+  fun name(): String => "MPInt/format/width_align"
+
+  fun apply(h: TestHelper) =>
+    let v = MPInt.from[U64](42)
+    h.assert_eq[String](v.format("8d"), "      42")
+    h.assert_eq[String](v.format("<8d"), "42      ")
+    h.assert_eq[String](v.format("^8d"), "   42   ")
+    h.assert_eq[String](v.format("08d"), "00000042")
+    h.assert_eq[String](v.format("+d"), "+42")
+    h.assert_eq[String](MPInt.from[I64](-42).format("8d"), "     -42")
+
+
+class iso _TestMPIntFormatGrouping is UnitTest
+  fun name(): String => "MPInt/format/grouping"
+
+  fun apply(h: TestHelper) =>
+    let v = MPInt.from[U64](1000000)
+    h.assert_eq[String](v.format(",d"), "1,000,000")
+    h.assert_eq[String](v.format("_d"), "1_000_000")
+
+    // Hex grouping (4 digits).
+    let h16 = MPInt.from[U64](0xDEADBEEF)
+    h.assert_eq[String](h16.format("_x"), "dead_beef")
+
+
+class iso _TestMPIntFormatPrecision is UnitTest
+  fun name(): String => "MPInt/format/precision"
+
+  fun apply(h: TestHelper) =>
+    // Precision on integers = minimum digit count (zero-pad on left).
+    let v = MPInt.from[U64](42)
+    h.assert_eq[String](v.format(".8d"), "00000042")
+    h.assert_eq[String](v.format(".4x"), "002a")
