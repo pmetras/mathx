@@ -101,7 +101,7 @@ class val MPFloat is (Formattable & Stringable)
   their reciprocals), `logb`, and `pi`.
   """
 
-  let _rep: MPFRep
+  let _rep: MPFRep val
   """
   The pure representation: sign, exponent, and digit array.
   All structural queries are delegated here.
@@ -114,10 +114,10 @@ class val MPFloat is (Formattable & Stringable)
   """
 
 
-  new val _from(r: MPFRep, c: MPFContext) =>
+  new val _from(r: MPFRep val, c: MPFContext) =>
     """
     Private canonical constructor used by all arithmetic results.
-    Callers supply an already-rounded `MPFRep` from `_ctx` and the context.
+    Callers supply an already-rounded `MPFRep` from `_MPFAlgo` and the context.
     """
     _rep = r
     _ctx = c
@@ -541,7 +541,7 @@ class val MPFloat is (Formattable & Stringable)
     _rep.sign_bit()
 
 
-  fun rep(): MPFRep =>
+  fun rep(): MPFRep val =>
     """
     Return the pure representation of this value as an `MPFRep`.
 

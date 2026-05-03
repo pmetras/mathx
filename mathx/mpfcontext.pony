@@ -79,7 +79,7 @@ class val MPFContext
     _MPFAlgo._guard_bytes(this, op)
 
 
-  fun val _round_to(rep: MPFRep, prec: USize, mode: RoundingMode): MPFRep =>
+  fun val _round_to(rep: MPFRep box, prec: USize, mode: RoundingMode): MPFRep val =>
     """
     Round `rep` to `prec` most-significant base-256 digits using `mode`.
 
@@ -115,14 +115,12 @@ class val MPFContext
 
     // Already fits: zero-pad if needed, no rounding.
     if p <= prec then
-      if p == prec then
-        return rep
-      end
+      let src = rep.raw_digits()
       let padded: Array[U8] val = recover
         let d = Array[U8].create(prec)
         var i: USize = 0
         while i < p do
-          try d.push(rep.raw_digits()(i)?) end
+          try d.push(src(i)?) end
           i = i + 1
         end
         while d.size() < prec do
@@ -170,7 +168,7 @@ class val MPFContext
       end
 
     // Truncate to prec digits.
-    var truncated: MPFRep = rep._trunc(prec)
+    let truncated: MPFRep val = rep._trunc(prec)
 
     if not increment then
       return truncated

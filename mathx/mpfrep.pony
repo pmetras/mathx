@@ -7,13 +7,16 @@ use "collections"
 use "debug"
 
 
-class val MPFRep is (Formattable & Stringable)
+class ref MPFRep is (Formattable & Stringable)
   """
   The pure representation of an arbitrary-precision floating-point number.
 
   `MPFRep` stores the sign, special-value flags, base-256 exponent and mantissa
-  digits of a number. The type is `class val` (globally immutable) so that instances
-  can be freely shared across actors and stored in collections.
+  digits of a number. The default capability is `ref` (mutable), which allows
+  internal arithmetic loops in `_MPFAlgo` to update intermediate results in
+  place without allocating a new instance at every step. Callers that need a
+  sendable, globally-immutable value consume the `iso^` returned by the
+  constructors into a `val` viewpoint before storing it (e.g. in `MPFloat._rep`).
 
   Representation invariant (for a finite, non-zero value):
 
@@ -53,40 +56,44 @@ class val MPFRep is (Formattable & Stringable)
   either direction.
   """
 
-  let _sign: Bool
+  var _sign: Bool
     """
     Sign bit: `true` when the value is strictly negative or is −0.
     Ignored when `_nan` is `true`.
     """
 
-  let _nan: Bool
+  var _nan: Bool
     """
     `true` when the number is Not-a-Number. When set, `_inf`, `_sign` and
     `_digits` are irrelevant.
     """
 
-  let _inf: Bool
+  var _inf: Bool
     """
     `true` when the number is ±∞. Sign is given by `_sign`.
     Ignored when `_nan` is `true`.
     """
 
-  let _exponent: I64
+  var _exponent: I64
     """
     Base-256 exponent `e` such that `|value| = 0.d₀d₁… × 256^e`.
     For the common arithmetic operations `e = 1` is used internally
     (the first digit `d₀` is the integer part).
     """
 
-  let _digits: Array[U8] val
+  var _digits: Array[U8] val
     """
     Big-endian base-256 mantissa digits (index 0 = most significant).
     For a finite non-zero number `_digits(0) ≠ 0` (normalised).
     For zero the array may be all-zeros or empty.
+    Immutable `val` so the array can safely be captured inside `recover`
+    blocks and passed to sendable-parameter constructors. `_update` swaps
+    the pointer (no copy) to reuse the `MPFRep` struct across Newton/Taylor
+    iterations without allocating a new struct on every step.
     """
 
 
-  new val _create(
+  new iso _create(
     sgn: Bool,
     nan: Bool,
     inf: Bool,
@@ -96,6 +103,9 @@ class val MPFRep is (Formattable & Stringable)
     """
     Private canonical constructor. All constructors and internal operations
     produce their result through this entry point.
+
+    Returns an `iso^` so that callers may consume it to `val` (for storage in
+    `MPFloat._rep`) or to `ref` (for mutable accumulator reuse in `_MPFAlgo`).
     """
     _sign = sgn
     _nan = nan
@@ -104,7 +114,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = digits
 
 
-  new val create(p_bytes: USize = 14) =>
+  new iso create(p_bytes: USize = 14) =>
     """
     Create a positive zero with `p_bytes` base-256 mantissa bytes
     (default 14, corresponding to the 112-bit F128 significand).
@@ -119,7 +129,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = Array[U8].init(0, p_bytes)
 
 
-  new val nan_val() =>
+  new iso nan_val() =>
     """
     Create a Not-a-Number representation.
     """
@@ -130,7 +140,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = Array[U8].create()
 
 
-  new val inf_val(positive: Bool = true) =>
+  new iso inf_val(positive: Bool = true) =>
     """
     Create an infinite representation. Pass `positive = false` for −∞.
     """
@@ -141,7 +151,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = Array[U8].create()
 
 
-  new val from_f64(f: F64, p_bytes: USize = 14) =>
+  new iso from_f64(f: F64, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` from the `F64` value `f` using `p_bytes` base-256
     mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
@@ -199,7 +209,7 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  new val from_f32(f: F32, p_bytes: USize = 14) =>
+  new iso from_f32(f: F32, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` from the `F32` value `f` using `p_bytes` base-256
     mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
@@ -253,7 +263,7 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  new val from_mpint(n: MPInt, p_bytes: USize = 14) =>
+  new iso from_mpint(n: MPInt, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` from the `MPInt` value `n` using `p_bytes` base-256
     mantissa bytes (default 14).
@@ -297,7 +307,7 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  new val from_mpfloat_rep(f: MPFRep, p_bytes: USize = 14) =>
+  new iso from_mpfloat_rep(f: MPFRep val, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` whose value equals `f` but with `p_bytes` base-256
     mantissa bytes (default 14). Useful for changing the working precision of
@@ -319,7 +329,7 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  new val from_ulong(n: ULong, p_bytes: USize = 14) =>
+  new iso from_ulong(n: ULong, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` whose value equals the unsigned integer `n` with
     `p_bytes` base-256 mantissa bytes (default 14).
@@ -344,7 +354,7 @@ class val MPFRep is (Formattable & Stringable)
     _exponent = _digits.size().i64()
 
 
-  new \do_not_use\ val min_normalized(p_bytes: USize = 14) =>
+  new \do_not_use\ iso min_normalized(p_bytes: USize = 14) =>
     """
     The smallest normalised representation.
 
@@ -359,7 +369,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = Array[U8].init(0, p_bytes)
 
 
-  new val epsilon(p_bytes: USize = 14) =>
+  new iso epsilon(p_bytes: USize = 14) =>
     """
     The machine epsilon for the given precision: the smallest positive value ε
     such that `1 + ε ≠ 1` in base 256, i.e. `ε = 256^(1 − p_bytes)`.
@@ -382,7 +392,7 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  new val min_value() =>
+  new iso min_value() =>
     """
     The minimum representable value is −∞ (`-inf`).
     """
@@ -393,7 +403,7 @@ class val MPFRep is (Formattable & Stringable)
     _digits = Array[U8].create()
 
 
-  new val max_value() =>
+  new iso max_value() =>
     """
     The maximum representable value is +∞ (`+inf`).
     """
@@ -446,7 +456,7 @@ class val MPFRep is (Formattable & Stringable)
     (r.u8(), r.shr(8))
 
 
-  fun _inc_first(): MPFRep =>
+  fun _inc_first(): MPFRep val =>
     """
     Return a new `MPFRep` identical to `this` but with the most-significant
     digit (`_digits(0)`) incremented by 1. No carry propagation is performed;
@@ -463,7 +473,7 @@ class val MPFRep is (Formattable & Stringable)
     MPFRep._create(_sign, _nan, _inf, _exponent, d)
 
 
-  fun _trunc(n: USize): MPFRep =>
+  fun _trunc(n: USize): MPFRep val =>
     """
     Return a new `MPFRep` containing only the `n` most-significant base-256
     digits of `this`. Used internally to bound intermediate results in Newton
@@ -472,17 +482,13 @@ class val MPFRep is (Formattable & Stringable)
 
     This is a pure truncation (no rounding). Output rounding is the
     responsibility of `MPFContext._round_to`.
+
+    Uses `Array.trim` on the `val` field — shares the backing store, no copy.
     """
-    let s: USize = _size().min(n)
-    let d: Array[U8] val = recover
-      let a = Array[U8].init(0, s)
-      _digits.copy_to(a, 0, 0, s)
-      a
-    end
-    MPFRep._create(_sign, _nan, _inf, _exponent, d)
+    MPFRep._create(_sign, _nan, _inf, _exponent, _digits.trim(0, _size().min(n)))
 
 
-  fun _neg_comp(): MPFRep =>
+  fun _neg_comp(): MPFRep val =>
     """
     Return the byte-level two's-complement negation of `_digits`. This is
     NOT a mathematical float negation — it is a fixed-point unsigned complement
@@ -603,13 +609,14 @@ class val MPFRep is (Formattable & Stringable)
     false
 
 
-  fun _trunc_frac(): MPFRep =>
+  fun _trunc_frac(): MPFRep val =>
     """
     Return `this` with the fractional part removed (truncated toward zero).
     Internal alias equivalent to `trunc()` on `MPFloat`. Called by division
     and floored-division routines to obtain the integer part.
     """
     if not is_finite() then
+      // Reuse the val reference — no copy needed.
       return MPFRep._create(_sign, _nan, _inf, _exponent, _digits)
     end
     if is_zero() then
@@ -619,12 +626,39 @@ class val MPFRep is (Formattable & Stringable)
       return MPFRep.create(_size())
     end
     let e: USize = _exponent.usize().min(_size())
+    // Zero the fractional bytes in a new array (trim can't zero-fill the tail).
     let d: Array[U8] val = recover
       let a = Array[U8].init(0, _size())
       _digits.copy_to(a, 0, 0, e)
       a
     end
     MPFRep._create(_sign, false, false, _exponent, d)
+
+
+  fun _clone(): MPFRep iso^ =>
+    """
+    Return a fresh copy of this `MPFRep` as an owned `iso^`.
+    Useful when a loop needs a mutable `ref` accumulator seeded from a `box`
+    or `val` source: `var acc: MPFRep ref = some_box._clone()`.
+    """
+    MPFRep._create(_sign, _nan, _inf, _exponent, _digits)
+
+
+  fun ref _update(that: MPFRep box) =>
+    """
+    Replace every field of this `MPFRep` with the values from `that` in place,
+    reusing the existing struct instead of allocating a new one.
+    Called in Newton and Taylor loops to avoid per-iteration struct allocation.
+
+    The digit array pointer is swapped (no byte copy) since `_digits` is `val`:
+    `that._digits` (a fresh `val` produced by each arithmetic step) is installed
+    directly, saving the cost of allocating a new `MPFRep` struct on every step.
+    """
+    _sign     = that.sign_bit()
+    _nan      = that.is_nan()
+    _inf      = that.is_infinite()
+    _exponent = that.exponent()
+    _digits   = that.raw_digits()
 
 
   //- Accessors ----------------------------------------------------------------
@@ -642,7 +676,7 @@ class val MPFRep is (Formattable & Stringable)
 
   fun raw_digits(): Array[U8] val =>
     """
-    Return the internal base-256 mantissa as a big-endian `Array[U8]`.
+    Return the internal base-256 mantissa as a big-endian `Array[U8] val`.
 
     Together with `exponent()` this determines the magnitude exactly:
     `|value| = 0.d₀d₁… × 256^exponent()`. The first byte `d₀` is always
@@ -664,7 +698,7 @@ class val MPFRep is (Formattable & Stringable)
 
   //- Magnitude arithmetic (structural, no rounding) --------------------------
 
-  fun _cmp_mag(that: MPFRep): Compare =>
+  fun _cmp_mag(that: MPFRep box): Compare =>
     """
     Compare the magnitudes `|this|` and `|that|`. Returns `Greater` if
     `|this| > |that|`, `Less` if `|this| < |that|`, `Equal` otherwise.
@@ -724,19 +758,16 @@ class val MPFRep is (Formattable & Stringable)
     end
 
 
-  fun _add_mag(that: MPFRep, sgn: Bool): MPFRep =>
+  fun _add_mag(that: MPFRep box, sgn: Bool, w: USize = USize.max_value()): MPFRep val =>
     """
-    Add the magnitudes `|this|` and `|that|` and return the sum with the
-    given sign `sgn`. Both operands must be finite. The result exponent
-    equals `max(this._exponent, that._exponent)`, incremented by one when a
-    carry propagates out of the most-significant column.
+    Add the magnitudes `|this|` and `|that|` and return the sum with sign
+    `sgn`. Both operands must be finite.
 
-    Operands are aligned on their most-significant digit before addition.
-    The result precision equals `max(|this|_digits, shift + |that|_digits)`
-    where `shift` is the exponent difference, so no precision is lost.
+    `w` caps the output to at most `w` most-significant bytes (default:
+    unlimited). Pass the working precision to skip a separate `_trunc` call.
 
-    The result is returned at full working precision (no output rounding).
-    Rounding is applied by the caller (`MPFContext`).
+    The result exponent equals `max(this._exponent, that._exponent)`,
+    incremented by one when a carry propagates out of the MSB column.
     """
     // Align both operands: put the one with larger exponent first.
     (let ea, let eb, let ad, let bd, let na, let nb) =
@@ -747,16 +778,20 @@ class val MPFRep is (Formattable & Stringable)
       end
     let shift: USize = (ea - eb).usize()
 
-    // When b falls entirely below a's precision, the sum equals a.
+    // When b falls entirely below a's precision, the sum equals a (capped at w).
     if shift >= na then
-      return MPFRep._create(sgn, false, false, ea, ad)
+      return MPFRep._create(sgn, false, false, ea, ad.trim(0, na.min(w)))
     end
 
-    // One guard digit at index 0 absorbs a possible carry out of column 0.
+    // Run the addition loop over all prec columns (carry propagates LSB→MSB).
+    // Write the carry out of the MSB to an outer var (value type — Pony allows
+    // writing outer var bindings of machine-word types from inside recover).
+    // Trim to w bytes in-place before leaving the recover block (zero extra
+    // allocation for the common no-carry case).
     let prec: USize = na.max(shift + nb)
-    let result_size: USize = prec + 1
-    let raw: Array[U8] val = recover
-      let res = Array[U8].init(0, result_size)
+    var carry_out: U8 = 0
+    let d: Array[U8] val = recover
+      let res = Array[U8].init(0, prec)
       try
         var carry: U16 = 0
         var col: USize = prec
@@ -771,37 +806,39 @@ class val MPFRep is (Formattable & Stringable)
             end
           (let sum, let c2) = _addc(ai, bi, carry)
           carry = c2
-          res.update(col + 1, sum)?
+          res.update(col, sum)?
         until col == 0 end
-        res.update(0, _lowb(carry))?
+        carry_out = _lowb(carry)
       end
+      // Trim in-place to w bytes: adjusts internal length, no copy.
+      res.trim_in_place(0, prec.min(w))
       res
     end
 
-    let carry_digit: U8 = try raw(0)? else 0 end
-    if carry_digit == 0 then
-      // No carry: strip the guard digit, exponent stays ea.
-      let d: Array[U8] val = recover
-        let a2 = Array[U8].init(0, prec)
-        raw.copy_to(a2, 1, 0, prec)
-        a2
-      end
+    if carry_out == 0 then
+      // No carry: result is exactly d (already trimmed), exponent stays ea.
       MPFRep._create(sgn, false, false, ea, d)
     else
-      // Carry out: one extra leading digit, exponent becomes ea + 1.
-      MPFRep._create(sgn, false, false, ea + 1, raw)
+      // Carry out (rare): prepend the carry byte, exponent becomes ea + 1.
+      let d2: Array[U8] val = recover
+        let out = Array[U8].init(0, d.size() + 1)
+        try out.update(0, carry_out)? end
+        d.copy_to(out, 0, 1, d.size())
+        out
+      end
+      MPFRep._create(sgn, false, false, ea + 1, d2)
     end
 
 
-  fun _sub_mag(that: MPFRep, sgn: Bool): MPFRep =>
+  fun _sub_mag(that: MPFRep box, sgn: Bool, w: USize = USize.max_value()): MPFRep val =>
     """
     Subtract the magnitude `|that|` from `|this|`, where `|this| ≥ |that|`
     (enforced by the caller via `_cmp_mag`). Returns the difference with sign
     `sgn`. Both operands must be finite. The result is normalised: leading
     zero bytes are stripped and the exponent adjusted accordingly.
 
-    The result is returned at full working precision (no output rounding).
-    Rounding is applied by the caller (`MPFContext`).
+    `w` caps the output to at most `w` most-significant bytes (default:
+    unlimited). Pass the working precision to skip a separate `_trunc` call.
     """
     let ea: I64 = _exponent
     let eb: I64 = that._exponent
@@ -810,7 +847,10 @@ class val MPFRep is (Formattable & Stringable)
     let nb: USize = that._size()
     let result_size: USize = na.max(shift + nb)
     let max_b: U16 = U8.max_value().u16()
-    let raw: Array[U8] val = recover
+    // Compute the subtraction, find leading zeros, strip them, and trim to w
+    // bytes in a single recover block — no separate allocation.
+    var leading: USize = 0
+    let d: Array[U8] val = recover
       let res = Array[U8].init(0, result_size)
       try
         var carry: U16 = max_b + 1
@@ -827,35 +867,36 @@ class val MPFRep is (Formattable & Stringable)
           carry = ((max_b + ai) - bi) + _highb(carry).u16()
           res.update(col, _lowb(carry))?
         until col == 0 end
+        // Find first non-zero byte inline.
+        var lead: USize = 0
+        while (lead < result_size) and (res(lead)? == 0) do
+          lead = lead + 1
+        end
+        leading = lead
+        if lead == result_size then
+          // All zero — return empty array as sentinel; handled below.
+          Array[U8].create()
+        else
+          let keep = (result_size - lead).min(w)
+          // trim_in_place: adjust length to [lead, lead+keep), no copy.
+          res.trim_in_place(lead, lead + keep)
+          res
+        end
+      else
+        Array[U8].create()
       end
-      res
     end
 
-    // Normalise: find the first non-zero byte and adjust the exponent.
-    let raw_size: USize = raw.size()
-    var leading: USize = 0
-    try
-      while (leading < raw_size) and (raw(leading)? == 0) do
-        leading = leading + 1
-      end
-    end
-    if leading == raw_size then
+    if d.size() == 0 then
       return MPFRep.create(na)
     end
-
-    let new_size: USize = raw_size - leading
     let new_exp: I64 = ea - leading.i64()
-    let d: Array[U8] val = recover
-      let a2 = Array[U8].init(0, new_size)
-      raw.copy_to(a2, leading, 0, new_size)
-      a2
-    end
     MPFRep._create(sgn, false, false, new_exp, d)
 
 
   //- Short arithmetic (structural, scalar operand) ---------------------------
 
-  fun _short_add(b: U8): MPFRep =>
+  fun _short_add(b: U8): MPFRep val =>
     """
     Short addition: add the single byte `b` to the least-significant digit of
     `this`, propagating carry toward the most-significant digit.
@@ -884,7 +925,7 @@ class val MPFRep is (Formattable & Stringable)
     MPFRep._create(_sign, _nan, _inf, _exponent, d)
 
 
-  fun _short_mul(b: U8): MPFRep =>
+  fun _short_mul(b: U8): MPFRep val =>
     """
     Short multiplication: multiply `this` by the single byte `b`.
     The result has the same digit count as `this`. Any overflow beyond the
@@ -914,7 +955,7 @@ class val MPFRep is (Formattable & Stringable)
     MPFRep._create(_sign, _nan, _inf, _exponent, d)
 
 
-  fun _short_div(b: U8): (MPFRep, U8) =>
+  fun _short_div(b: U8): (MPFRep val, U8) =>
     """
     Short division: divide `this` by the single byte `b`. Returns
     `(quotient, remainder)`. The quotient has the same digit count as `this`.
@@ -942,7 +983,7 @@ class val MPFRep is (Formattable & Stringable)
     (MPFRep._create(_sign, _nan, _inf, _exponent, d), remain.u8())
 
 
-  fun digit_shl(n: USize = 1): MPFRep =>
+  fun digit_shl(n: USize = 1): MPFRep val =>
     """
     Left-shift by `n` base-256 digit positions: drop the `n` most-significant
     digits and zero-pad on the right. Equivalent to multiplying by `256^n`
@@ -2647,14 +2688,9 @@ class val MPFRep is (Formattable & Stringable)
     let upper = fspec.type_char == 'X'
 
     // Extract absolute integer value from digits.
-    let abs_digits: Array[U8] val = if _sign then
-        _create(false, false, false, _exponent, _digits)._digits
-      else
-        _digits
-      end
-
-    // Convert base-256 integer to target base string.
-    let raw: String val = _b256_to_base(abs_digits, base, upper)
+    // Convert base-256 integer to target base string using the magnitude digits.
+    // _digits holds the absolute value; sign does not affect the digit array.
+    let raw: String val = _b256_to_base(_digits, base, upper)
 
     // Precision zero-padding for integers.
     let padded: String val = match fspec.precision
