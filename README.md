@@ -48,10 +48,10 @@ You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use G
 [ ] Evaluate if we rename `raw_digits` and `???` to `bits` and `from_bits` to be compatible with `F64` or `F32`? The signature is different...
 [ ] Write extensive tests for `from_string` to check coverage.
 [ ] Check all constructors to see if precision is defined correctly and compatible with GMPFR: If there is an overflow interpreting the value and it can't be coded with the desired precision, the number becomes `-inf` or `inf`.
-[ ] Optimize working directly on the `_digits` array instead of creating a new `MPFloat` at each operation.
-[ ] Evaluate if worth replacing some `while ... end` loops by `for i in Range...` loops, for easier readability.
+[x] Optimize working directly on the `_digits` array instead of creating a new `MPFloat` at each operation.
+[x] Evaluate if worth replacing some `while ... end` loops by `for i in Range...` loops, for easier readability.
 [ ] Correct `almost_eq` function to use `MPFloat` instead of `F64`.
-[ ] See if pi calculation by Kudnovsky calculation can be optimized by using `MPInt`.
+[x] See if pi calculation by Kudnovsky calculation can be optimized by using `MPInt`.
 [ ] Test that digit separators `_` are accepted in `from_string`.
 [ ] Option to add digit separators `_` in `exact_string`.
 [x] See if `i128`, `i64`, `i32`, `i16` and `i8` can be optimized to prevent creating a new `MPFloat`, using `I128.from_bits`.
@@ -72,7 +72,7 @@ This is the follow-up step of the plan: optimizations. A class ref MPFRep would 
 [ ] Do we introduce `zero` and `one` constructors/constants?
 [ ] Remove the `\do_not_use\` methods.
 [ ] Check the transformations between `MPFRep` and `MPInt`.
-[ ] Path to exact rounding...
+[x] Path to exact rounding...
 [x] Implement `Formattable`.
 
 
@@ -86,7 +86,8 @@ This is the follow-up step of the plan: optimizations. A class ref MPFRep would 
 [ ] Instead of creating GMPF classes from MPF with the same name, what about having a `_GMPFAlgo` that is a mapping to MPF and that can be substituted to `_MPFAlgo`?
 [x] Treatment of special values must be consistent. `_mul` must do it like `_add`. What is the strategy? Helper methods `_*` are optimized and don't check for special values but only public-facing methods? Explain the rule that must consistently be applied. Check all methods.
 [x] Check that helper methods are used consistently. They must not be inlined in the code. Also, there must not be duplicate helper methods.
-[ ] Correct Chudnovsky algorithm for pi. 
+[x] Correct Chudnovsky algorithm for pi. 
+[x] What happens with the first estimate that uses `F64` in `inv` calculation, if `MPFRep` is very small or very large (outside of bounds of `F64`)?
 
 
 ### Anomalies

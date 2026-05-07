@@ -7,7 +7,7 @@ use "collections"
 use "debug"
 
 
-class ref MPFRep is (Formattable & Stringable)
+class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
   """
   The pure representation of an arbitrary-precision floating-point number.
 
@@ -307,7 +307,7 @@ class ref MPFRep is (Formattable & Stringable)
     end
 
 
-  new iso from_mpfloat_rep(f: MPFRep val, p_bytes: USize = 14) =>
+  new iso from_mpfrep(f: MPFRep val, p_bytes: USize = 14) =>
     """
     Create a new `MPFRep` whose value equals `f` but with `p_bytes` base-256
     mantissa bytes (default 14). Useful for changing the working precision of
@@ -694,6 +694,43 @@ class ref MPFRep is (Formattable & Stringable)
     Always `false` for NaN.
     """
     _sign and not _nan
+
+
+  fun eq(that: MPFRep box): Bool =>
+    """
+    Value equality: `true` iff both values represent the same number.
+
+    IEEE 754 rules apply:
+    - NaN ≠ NaN (always `false` when either operand is NaN).
+    - +0 = −0.
+    - Two infinities are equal iff they have the same sign.
+    - Finite values are equal iff sign, exponent, and all digits agree
+      (after stripping trailing zero bytes).
+    """
+    if _nan or that.is_nan() then return false end
+    if _inf or that.is_infinite() then
+      return _inf and that.is_infinite() and (_sign == that.sign_bit())
+    end
+    // +0 = -0: ignore sign for zero values.
+    let a_zero = is_zero()
+    let b_zero = that.is_zero()
+    if a_zero or b_zero then return a_zero and b_zero end
+    if _sign != that.sign_bit() then return false end
+    if _exponent != that.exponent() then return false end
+    // Compare digits, ignoring trailing zeros on either side.
+    let ad = _digits
+    let bd = that.raw_digits()
+    let n: USize = ad.size().max(bd.size())
+    try
+      for i in Range(0, n) do
+        let a_byte: U8 = if i < ad.size() then ad(i)? else 0 end
+        let b_byte: U8 = if i < bd.size() then bd(i)? else 0 end
+        if a_byte != b_byte then return false end
+      end
+    end
+    true
+
+  fun ne(that: MPFRep box): Bool => not eq(that)
 
 
   //- Magnitude arithmetic (structural, no rounding) --------------------------
@@ -1987,6 +2024,37 @@ class ref MPFRep is (Formattable & Stringable)
       `dec_exp = len(str) − b`.
 
     Both paths are always exact — no scaling error, no Newton undershooting.
+
+    **DoS counter-measure — exact vs approximate path:**
+
+    Let `k = _exponent − _size()` and `gate = _size() + 150`. The exact MPInt
+    paths above require computing either `N × 2^{8k}` (integer shift) or
+    `N × 5^{8|k|}` (fractional scaling). The `5^{8|k|}` term grows rapidly:
+    when `|k|` is large relative to `_size()` the intermediate `MPInt` can
+    reach millions of digits, making the call both slow and memory-hungry for
+    adversarially constructed values.
+
+    When `|k| ≥ gate` (`k ≤ −gate` or `k ≥ gate`) the method falls back to an
+    **approximate F64 path**:
+    - `inexact` is always `true`.
+    - The mantissa carries only ≈ 15–17 significant decimal digits (F64 precision),
+      regardless of the stored `MPFRep` precision.
+    - Values that overflow F64 (roughly `|value| > 1.8 × 10^308`) return the
+      sentinel tuple `("1", 1000, true)` — do **not** interpret the dec_exp
+      literally; it signals "too large for exact representation".
+    - Values that underflow F64 (roughly `|value| < 5 × 10^-324`) return the
+      sentinel tuple `("0", −1000, true)` — similarly a non-literal sentinel for
+      "too small for exact representation".
+    - A `Debug` line is emitted on every fallback invocation.
+
+    The proportional gate keeps the exact-path output bounded to at most
+    `(2×_size() + 150) × 2.41` decimal digits — feasible for any sane precision.
+    A flat gate of 150 was too tight for high-precision values (e.g. π stored at
+    437 bytes has `k = −436` but only produces a ~3500-digit string, well within
+    the capabilities of `MPInt`).
+
+    For a 14-byte (112-bit, ≈ F128) `MPFRep`, `gate = 164`, so the exact path
+    covers values roughly in `(10^{−395}, 10^{+395})`.
     """
     if _nan then
       return ("nan".clone(), 0, false)
@@ -2009,8 +2077,13 @@ class ref MPFRep is (Formattable & Stringable)
     let n_int: MPInt = _digits_as_mpint()
 
     let k_bytes: I64 = _exponent - prec.i64()
+    // Gate: allow exact MPInt path when |k_bytes| < prec + 150.
+    // Flat 150 was too tight for high-precision values (e.g. π at 437 bytes has
+    // k_bytes = −436).  The proportional gate keeps the output string bounded to
+    // at most ~(2×prec + 150) × 2.41 decimal digits — feasible for any sane prec.
+    let gate: I64 = prec.i64() + 150
 
-    if (k_bytes >= 0) and (k_bytes < 150) then
+    if (k_bytes >= 0) and (k_bytes < gate) then
       let b: USize = k_bytes.usize() * 8
       let shifted: MPInt =
         if b > 0 then
@@ -2031,7 +2104,7 @@ class ref MPFRep is (Formattable & Stringable)
         s
       end
       (consume result, dec_exp, false)
-    elseif (k_bytes < 0) and (k_bytes > -150) then
+    elseif (k_bytes < 0) and (k_bytes > -gate) then
       let b: USize = ((-k_bytes) * 8).usize()
       let five_pow: MPInt =
         MPInt.from[ILong](5).pow(MPInt.from[ILong](b.ilong()))

@@ -1,10 +1,3 @@
-"""
-# Prime numbers
-
-Prime numbers functionalities library, inspired by https://github.com/adri326/pony-primes
-
-For information about prime numbers, visit the [PrimePages](https://primes.utm.edu/index.html)
-"""
 
 use "../assertx"
 use "../bitsx"
@@ -15,6 +8,10 @@ primitive Prime[A: UnsignedInteger[A] val = USize]
   """
   Primitive for regular prime operations: primality test, coprimality test, GCD
   and LCM, next prime and prime factorization
+
+  Prime numbers functionalities library, inspired by https://github.com/adri326/pony-primes
+
+  For information about prime numbers, visit the [PrimePages](https://primes.utm.edu/index.html)
   """
 
   fun is_prime(num: A): Bool =>

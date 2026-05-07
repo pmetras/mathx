@@ -1,12 +1,12 @@
 // Multi-precision floating point numbers — thin public wrapper.
 //
-// `MPFloat` is the stable public API.  Internally it bundles two orthogonal
+// `MPFloat` is the stable public API. Internally it bundles two orthogonal
 // components:
 //
 //   - `_rep: MPFRep`      — the pure representation (sign, exponent, digits)
 //   - `_ctx: MPFContext`  — the precision and rounding policy (no arithmetic)
 //
-// All arithmetic calls `_MPFAlgo.op(_ctx, ...)` directly.  `_MPFAlgo`
+// All arithmetic calls `_MPFAlgo.op(_ctx, ...)` directly. `_MPFAlgo`
 // handles special values, runs the algorithm at working precision, and rounds
 // the result to output precision via `_ctx._round_to`.
 
@@ -49,6 +49,8 @@ class val MPFloat is (Formattable & Stringable)
   Both `from_string` and `string`/`exact_string` use full multi-precision
   arithmetic; precision is limited only by `prec` bits, not by F64.
 
+  ## Precision
+
   The precision `prec` is the number of bits for the mantissa (significand).
   The precision of a `MPFloat` is set when the instance is created. It is
   expected that all `MPFloat`s involved in operations use the same
@@ -69,7 +71,14 @@ class val MPFloat is (Formattable & Stringable)
   doing it, and there's even a constructor to create a new `MPFloat` from
   another one and changing its precision.
 
-  ## Rounding guarantees
+  ## Rounding#
+
+  Rounding mode is set when creating the `MPFloat`. In a binary operation,
+  rounding of the result is given by the rounding mode of the first operand.
+  If you need more control over the rounding of the result, you must use a lower
+  API and have a look at [`MPFRep`](mpfrep).
+
+  ### Rounding guarantees
 
   Every operation rounds its result to the output precision under
   `rounding_mode()`. Two levels of guarantee are provided:
@@ -109,7 +118,7 @@ class val MPFloat is (Formattable & Stringable)
 
   let _ctx: MPFContext
   """
-  The precision and rounding policy.  Passed as first argument to `_MPFAlgo`
+  The precision and rounding policy. Passed as first argument to `_MPFAlgo`
   operations; not an arithmetic dispatcher.
   """
 
@@ -202,7 +211,10 @@ class val MPFloat is (Formattable & Stringable)
     significant digits the string contains. For special values NaN and infinites,
     case is significative.
     """
-    if base != 10 then error end  // TODO: implement parsing for bases other than 10
+    if base != 10 then
+      error
+    end  // TODO: implement parsing for bases other than 10
+
     let c = MPFContext(prec, rnd)
     _rep = _MPFAlgo.from_string(c, s)?
     _ctx = c
@@ -232,7 +244,7 @@ class val MPFloat is (Formattable & Stringable)
     _ctx = MPFContext(prec, rnd)
     iftype A <: MPFloat then
       let f: MPFloat = n
-      _rep = MPFRep.from_mpfloat_rep(f._rep, p)
+      _rep = MPFRep.from_mpfrep(f._rep, p)
     elseif A <: F64 then
       _rep = MPFRep.from_f64(n.f64(), p)
     elseif A <: F32 then
@@ -307,40 +319,23 @@ class val MPFloat is (Formattable & Stringable)
   new val pi(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
     The pi constant, calculated with the specified `prec` accuracy (number of
-    bits, default 128 giving ~38 decimal digits). The rounding
-    mode `rnd` is not used yet (TODO).
+    bits, default 128 giving ~38 decimal digits).
 
-    Uses Machin's formula:
-      π = 16·arctan(1/5) − 4·arctan(1/239)
-    where each arctan is computed by the Taylor series
-      arctan(x) = x − x³/3 + x⁵/5 − x⁷/7 + ⋯
-    Both arguments are small (< 0.25), giving fast geometric convergence.
+    Uses Chudnovsky's algorithm.
     """
     let c = MPFContext(prec, rnd)
     _rep = _MPFAlgo.pi(c)
     _ctx = c
 
 
-  new val pi_chudnovsky(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
+  new val e(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
     """
-    Compute π using the Chudnovsky algorithm at the given precision.
-
-    TODO: Fix bug
-    ⚠ Warning: this implementation currently gives only ~4 correct digits —
-    see `_MPFAlgo._pi_chudnovsky` for the known bug description.
+    Euler's number `e ≈ 2.71828…` at the given precision (bits, default 128
+    giving ~38 decimal digits). Computed as `exp(1)` via Ziv's iteration,
+    correctly rounded to ≤ 0.5 ULP.
     """
     let c = MPFContext(prec, rnd)
-    _rep = _MPFAlgo.pi_chudnovsky(c)
-    _ctx = c
-
-
-  new val pi_bbp(prec: USize = 128, rnd: RoundingMode = RoundingNearest) =>
-    """
-    Compute π using the Bailey–Borwein–Plouffe (BBP) formula:
-    `π = Σ_{k=0}^∞ (1/16^k) × [4/(8k+1) − 2/(8k+4) − 1/(8k+5) − 1/(8k+6)]`.
-    """
-    let c = MPFContext(prec, rnd)
-    _rep = _MPFAlgo.pi_bbp(c)
+    _rep = _MPFAlgo.e(c)
     _ctx = c
 
 
@@ -350,7 +345,7 @@ class val MPFloat is (Formattable & Stringable)
     """
     Get the precision of the `MPFloat` mantissa (significand) in bits.
 
-    Note: This method is kept while the `precision2` return type is not corrected in
+    TODO Note: This method is kept while the `precision2` return type is not corrected in
     stdlib, for compatibility with GMP implementation.
     """
     _ctx.precision
@@ -481,8 +476,8 @@ class val MPFloat is (Formattable & Stringable)
     let max_mag = if abs_this < abs_that then abs_that else abs_this end
     let p_bits: USize = p * 8
     let ctx_p = MPFContext(p_bits, _ctx.rounding)
-    let rel_part = (_from(MPFRep.from_mpfloat_rep(rel_tol._rep, ctx_p.p_bytes()), ctx_p) * max_mag)
-    let abs_part = _from(MPFRep.from_mpfloat_rep(abs_tol._rep, ctx_p.p_bytes()), ctx_p)
+    let rel_part = (_from(MPFRep.from_mpfrep(rel_tol._rep, ctx_p.p_bytes()), ctx_p) * max_mag)
+    let abs_part = _from(MPFRep.from_mpfrep(abs_tol._rep, ctx_p.p_bytes()), ctx_p)
     let threshold = if rel_part < abs_part then abs_part else rel_part end
     diff <= threshold
 
@@ -513,7 +508,7 @@ class val MPFloat is (Formattable & Stringable)
 
     The integer part of the value occupies the first `e` bytes of
     `raw_digits()` (when `e > 0`); bytes at position `e` and beyond represent
-    the fractional part.  A non-positive exponent means the value is strictly
+    the fractional part. A non-positive exponent means the value is strictly
     in the open interval `(−1, 1)`.
     """
     _rep.exponent()
@@ -524,7 +519,7 @@ class val MPFloat is (Formattable & Stringable)
     Return the internal base-256 mantissa as a big-endian `Array[U8]`.
 
     Together with `exponent()` this determines the magnitude exactly:
-    `|value| = 0.d₀d₁… × 256^exponent()`.  The first byte `d₀` is always
+    `|value| = 0.d₀d₁… × 256^exponent()`. The first byte `d₀` is always
     non-zero for finite non-zero values.
 
     This accessor is intended for low-level conversions such as
@@ -546,7 +541,7 @@ class val MPFloat is (Formattable & Stringable)
     Return the pure representation of this value as an `MPFRep`.
 
     The `MPFRep` contains the same sign, exponent, and digit array as `this`,
-    without the rounding mode.  Intended for interoperability with `MPFContext`
+    without the rounding mode. Intended for interoperability with `MPFContext`
     and `_MPFAlgo`.
     """
     _rep
@@ -670,7 +665,7 @@ class val MPFloat is (Formattable & Stringable)
 
     Parity split: for odd `_exponent` use `H = MPFloat(exp=1, same digits)`
     so `H ∈ [1, 256)`; for even `_exponent` use `H = MPFloat(exp=2, same
-    digits)` so `H ∈ [256, 65536)`.  With this choice `_exponent − h_exp`
+    digits)` so `H ∈ [256, 65536)`. With this choice `_exponent − h_exp`
     is always even, so the result exponent
 
       `sqrt_h._exponent + (_exponent − h_exp) / 2`
@@ -709,7 +704,16 @@ class val MPFloat is (Formattable & Stringable)
     - ±0 → `("0", 0, false)`
 
     Only base 10 is currently implemented; other bases return `("", 0, true)`.
-    The `inexact` flag is always `false` (rounding is a future TODO).
+
+    **DoS counter-measure**: let `gate = _size() + 150`. When `|k| ≥ gate`
+    where `k = _exponent − _size()`, the exact MPInt path is skipped to avoid
+    unbounded memory use, and the method falls back to an approximate F64 path
+    (~15 significant digits). In this case `inexact = true` and values outside
+    the F64 range return sentinel tuples: `("1", 1000, true)` for overflow and
+    `("0", -1000, true)` for underflow. The proportional gate keeps the output
+    string bounded to at most `(2×_size() + 150) × 2.41` decimal characters.
+    For the default 14-byte precision, `gate = 164` and the exact path covers
+    values roughly in `(10^{−395}, 10^{+395})`.
     """
     _rep.exact_string(base)
 
@@ -781,7 +785,7 @@ class val MPFloat is (Formattable & Stringable)
 
   fun _trunc_frac(): MPFloat =>
     """
-    Internal alias for `trunc()`.  Called by `divrem`, `fld_unsafe`, and
+    Internal alias for `trunc()`. Called by `divrem`, `fld_unsafe`, and
     `divrem_unsafe` to obtain the truncated-toward-zero integer part without
     going through the public API.
     """
@@ -822,7 +826,7 @@ class val MPFloat is (Formattable & Stringable)
     Truncated remainder of `this / that`: the value `r` satisfying
     `this = trunc(this / that) × that + r`.
 
-    `r` has the same sign as `this` (the dividend).  For integer-valued
+    `r` has the same sign as `this` (the dividend). For integer-valued
     operands this is equivalent to `this mod that` in the C / truncation sense.
 
     Special cases are inherited from `divrem`.
@@ -855,7 +859,7 @@ class val MPFloat is (Formattable & Stringable)
     Floored remainder of `this / that`: the value `r` satisfying
     `this = fld(this, that) × that + r`.
 
-    `r` has the same sign as `that` (the divisor).  The relationship
+    `r` has the same sign as `that` (the divisor). The relationship
     `mod(this, that) = rem(this, that) + that` holds whenever the signs of
     `this` and `that` differ and the truncated remainder is non-zero.
 
@@ -931,7 +935,7 @@ class val MPFloat is (Formattable & Stringable)
     """
     Drop the `n` most-significant base-256 digits and shift the remaining
     digits toward the most-significant position, padding with `n` zero bytes
-    at the least-significant end.  The exponent is unchanged.
+    at the least-significant end. The exponent is unchanged.
 
     When `n ≥ _size()` the result is all-zero (the value becomes exactly zero).
     Used internally by some transcendental algorithms; exposed for testing.
@@ -1495,14 +1499,14 @@ class val MPFloat is (Formattable & Stringable)
   fun trunc(): MPFloat =>
     """
     Truncation toward zero: the nearest integer to `this` in the direction of
-    zero.  Equivalently, the integer part of `this` with the fractional
+    zero. Equivalently, the integer part of `this` with the fractional
     base-256 bytes discarded.
 
-    Representation: `value = 0.d₀d₁… × 256^e`.  The first `e` bytes
+    Representation: `value = 0.d₀d₁… × 256^e`. The first `e` bytes
     (`d₀…d_{e−1}`) are the integer part; bytes at index `e` and beyond are
     fractional and are dropped.
 
-    - NaN → NaN.  ±∞ → ±∞.  ±0 → ±0.
+    - NaN → NaN. ±∞ → ±∞. ±0 → ±0.
     - Purely fractional (`_exponent ≤ 0`) → +0.
     - All-integer (`_exponent ≥ _size()`) → `this` unchanged.
     - Mixed → keeps the first `_exponent` bytes, drops the rest.
@@ -1516,7 +1520,7 @@ class val MPFloat is (Formattable & Stringable)
     """
     Floor: the largest integer less than or equal to `this`.
 
-    - NaN → NaN.  ±∞ → ±∞.  ±0 → ±0.
+    - NaN → NaN. ±∞ → ±∞. ±0 → ±0.
     - Non-negative or exact integer → `trunc(this)`.
     - Negative with a non-zero fractional part → `trunc(this) − 1`.
 
@@ -1533,7 +1537,7 @@ class val MPFloat is (Formattable & Stringable)
     """
     Ceiling: the smallest integer greater than or equal to `this`.
 
-    - NaN → NaN.  ±∞ → ±∞.  ±0 → ±0.
+    - NaN → NaN. ±∞ → ±∞. ±0 → ±0.
     - Non-positive or exact integer → `trunc(this)`.
     - Positive with a non-zero fractional part → `trunc(this) + 1`.
 
@@ -1551,7 +1555,7 @@ class val MPFloat is (Formattable & Stringable)
     Round to the nearest integer, with ties broken away from zero (i.e.
     `round(0.5) = 1`, `round(−0.5) = −1`).
 
-    - NaN → NaN.  ±∞ → ±∞.  ±0 → ±0.
+    - NaN → NaN. ±∞ → ±∞. ±0 → ±0.
     - Non-negative: `floor(this + 0.5)`.
     - Negative: `ceil(this − 0.5)`.
 
@@ -1640,7 +1644,7 @@ class val MPFloat is (Formattable & Stringable)
     0
 
 
-  fun ldexp(x: MPFloat, e: I32): MPFloat =>
+  fun ldexp(x: MPFloat, n: I32): MPFloat =>
     """
     Multiply `MPFloat` x number by integral power of 2
     """

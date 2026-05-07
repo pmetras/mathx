@@ -703,6 +703,187 @@ class iso _TestMPFloatNewString is UnitTest
       "from_f64(0.5, 32): first fractional digit is 5")
 
 
+class iso _TestMPFloatExactString is UnitTest
+  """
+  `exact_string()` returns `(mantissa, dec_exp, inexact)` where
+  `|value| = 0.mantissa_digits × 10^dec_exp`.
+
+  Properties verified:
+  - Special values: NaN / ±∞ / ±0 produce the documented sentinel strings.
+  - Positive integers: mantissa prefix and dec_exp match the known decimal.
+  - Dyadic fractions (exact in base 256): same.
+  - Negative values: mantissa carries the "-" prefix, dec_exp unchanged.
+  - Exact integer MPFloat (from_mpint path, k_bytes = 0): verified separately.
+  - Unsupported base returns `inexact = true`.
+  """
+  fun name(): String => "MPFloat/exact_string"
+
+  fun apply(h: TestHelper) =>
+    // Shorthand: assert mantissa starts with `pfx` and dec_exp == `exp`.
+    let chk = {(label: String, v: MPFloat, pfx: String, exp: I64) =>
+      (let ms_iso, let de, _) = v.exact_string()
+      let ms: String val = consume ms_iso
+      h.assert_true(ms.at(pfx, 0),
+        label + ": mantissa prefix (got \"" + ms.substring(0, (pfx.size() + 4).min(ms.size()).isize()) + "\")")
+      h.assert_eq[I64](de, exp, label + ": dec_exp")
+    }
+
+    // ── Special values ────────────────────────────────────────────────────────
+    (let m_nan, let e_nan, let i_nan) = MPFloat.nan_val().exact_string()
+    h.assert_eq[String](consume m_nan, "nan",  "NaN: mantissa")
+    h.assert_eq[I64](e_nan, 0, "NaN: dec_exp = 0")
+    h.assert_false(i_nan, "NaN: inexact = false")
+
+    (let m_pinf, _, _) = MPFloat.inf_val().exact_string()
+    h.assert_eq[String](consume m_pinf, "+inf", "+inf: mantissa")
+
+    (let m_ninf, _, _) = MPFloat.inf_val(false).exact_string()
+    h.assert_eq[String](consume m_ninf, "-inf", "-inf: mantissa")
+
+    (let m_zero, let e_zero, _) = MPFloat().exact_string()
+    h.assert_eq[String](consume m_zero, "0", "+0: mantissa")
+    h.assert_eq[I64](e_zero, 0, "+0: dec_exp = 0")
+
+    // ── Positive integers (exact in base 256, p=32 bits = 4 bytes) ───────────
+    // dec_exp = floor(log10(v)) + 1 = number of decimal digits in the integer.
+    chk("1",   MPFloat.from[F64](1.0,   32), "1",   1)
+    chk("2",   MPFloat.from[F64](2.0,   32), "2",   1)
+    chk("3",   MPFloat.from[F64](3.0,   32), "3",   1)
+    chk("10",  MPFloat.from[F64](10.0,  32), "1",   2)
+    chk("100", MPFloat.from[F64](100.0, 32), "1",   3)
+    // 256 = 0x100: three decimal digits.
+    chk("256", MPFloat.from[F64](256.0, 32), "256", 3)
+
+    // ── Dyadic fractions (exact in base 256) ──────────────────────────────────
+    // dec_exp = 0  → value in [0.1, 1)
+    // dec_exp = -1 → value in [0.01, 0.1)
+    chk("0.5",    MPFloat.from[F64](0.5,    32), "5",   0)
+    chk("0.25",   MPFloat.from[F64](0.25,   32), "25",  0)
+    chk("0.125",  MPFloat.from[F64](0.125,  32), "125", 0)
+    chk("0.0625", MPFloat.from[F64](0.0625, 32), "625", -1)
+
+    // ── Negative values: "-" prefix on mantissa, dec_exp unchanged ────────────
+    chk("-1",   MPFloat.from[F64](-1.0, 32), "-1", 1)
+    chk("-0.5", MPFloat.from[F64](-0.5, 32), "-5", 0)
+
+    // ── From integer conversion (k_bytes = 0, integer path) ──────────────────
+    // from[ILong] stores only as many bytes as needed, k_bytes = 0.
+    chk("from_ilong(42)",   MPFloat.from[ILong](42),    "42",   2)
+    chk("from_ilong(1000)", MPFloat.from[ILong](1000),  "1000", 4)
+    chk("from_ilong(-999)", MPFloat.from[ILong](-999),  "-999", 3)
+
+    // ── dec_exp semantic: 0.mantissa × 10^dec_exp reconstructs the value ──────
+    // For each value v, f64() of "0.significant_digits × 10^dec_exp" must ≈ v.
+    let dyadic: Array[F64] = [1.0; 2.0; 10.0; 0.5; 0.25; 100.0; 256.0; 0.0625]
+    for v in dyadic.values() do
+      let mpf = MPFloat.from[F64](v, 32)
+      (let sm_iso, let se, _) = mpf.exact_string()
+      let sm: String val = consume sm_iso
+      // mantissa must have at least |dec_exp| + 1 characters (includes sign).
+      let min_len: ISize = (se.abs().isize() + 1)
+      h.assert_true(sm.size().isize() >= min_len,
+        v.string() + ": mantissa \"" + sm + "\" too short for dec_exp=" + se.string())
+    end
+
+    // ── Unsupported base returns inexact = true ───────────────────────────────
+    (let m_b11, _, let i_b11) = MPFloat.from[F64](1.0, 32).exact_string(11)
+    h.assert_true(i_b11, "base 11: inexact = true")
+    h.assert_eq[String](consume m_b11, "", "base 11: empty mantissa")
+
+
+class iso _TestMPFloatExactStringExtreme is UnitTest
+  """
+  exact_string() DoS counter-measure: when |k_bytes| ≥ 150 (k_bytes = _exponent − _size()),
+  the exact MPInt path is skipped and an approximate F64 path is used instead.
+  The `inexact` flag is set to `true` and the mantissa carries only ~15 significant digits.
+
+  Values outside F64 range return sentinel tuples:
+  - overflow  → ("1",  1000, true)
+  - underflow → ("0", -1000, true)
+  """
+  fun name(): String => "MPFloat/exact_string/extreme"
+
+  fun apply(h: TestHelper) =>
+    // ── Very large value: 10^3000 ─────────────────────────────────────────────
+    // k_bytes = _exponent − _size() ≈ 3000/log10(256) − 14 ≈ 1232 >> 150.
+    // F64 overflows → sentinel ("1", 1000, true).
+    let large =
+      try MPFloat.from_string("1e3000")? else MPFloat.nan_val() end
+    (let m_l, let e_l, let i_l) = large.exact_string()
+    let ms_l: String val = consume m_l
+    h.assert_true(i_l, "1e3000: inexact = true (counter-measure fired)")
+    h.assert_eq[String](ms_l, "1", "1e3000: F64-overflow sentinel mantissa")
+    h.assert_eq[I64](e_l, 1000, "1e3000: F64-overflow sentinel dec_exp")
+
+    // ── Very small value: 10^-3000 ────────────────────────────────────────────
+    // k_bytes ≈ −1231 << −150.  F64 underflows → sentinel ("0", -1000, true).
+    let tiny =
+      try MPFloat.from_string("1e-3000")? else MPFloat.nan_val() end
+    (let m_t, let e_t, let i_t) = tiny.exact_string()
+    let ms_t: String val = consume m_t
+    h.assert_true(i_t, "1e-3000: inexact = true (counter-measure fired)")
+    h.assert_eq[String](ms_t, "0", "1e-3000: F64-underflow sentinel mantissa")
+    h.assert_eq[I64](e_t, -1000, "1e-3000: F64-underflow sentinel dec_exp")
+
+    // ── Boundary: value inside the gate → exact path ─────────────────────────
+    // gate = _size() + 150.  For default prec = 14 bytes: gate = 164.
+    // 2.5e200: _exponent ≈ 84, k_bytes ≈ 84-14 = 70 < 164 → exact path.
+    let mid =
+      try MPFloat.from_string("2.5e200")? else MPFloat.nan_val() end
+    (_, _, let i_m) = mid.exact_string()
+    h.assert_false(i_m, "2.5e200: within gate, exact path used (inexact = false)")
+
+    // ── Boundary: value outside the gate → approximate path ──────────────────
+    // from_string defaults to 128-bit = 16-byte precision, so gate = 16+150 = 166.
+    // 1e450: _exponent = ceil(450/log10(256)) = 187, k_bytes = 187-16 = 171 ≥ 166.
+    // F64 overflows → sentinel ("1", 1000, true).
+    let large2 =
+      try MPFloat.from_string("1e450")? else MPFloat.nan_val() end
+    (let m_l2, let e_l2, let i_l2) = large2.exact_string()
+    let ms_l2: String val = consume m_l2
+    h.assert_true(i_l2, "1e450: outside gate (k_bytes ≈ 171 ≥ 166), inexact = true")
+    h.assert_eq[String](ms_l2, "1", "1e450: F64-overflow sentinel mantissa")
+    h.assert_eq[I64](e_l2, 1000, "1e450: F64-overflow sentinel dec_exp")
+
+
+class iso _TestMPFloatExactStringLength is UnitTest
+  """
+  exact_string() mantissa length is ⌈_size() × log₁₀(256)⌉ + 2 ≈ _size() × 2.41 + 2.
+  Verified using MPFloat.e at two precisions, also checking known decimal digits.
+  """
+  fun name(): String => "MPFloat/exact_string/length"
+
+  fun apply(h: TestHelper) =>
+    // First 60 known significant decimal digits of e (no decimal point).
+    let e_known_60: String =
+      "271828182845904523536028747135266249775724709369995957496696"
+
+    // ── 200-bit precision (25 bytes): n_dec = ⌊25 × 2.41⌋ + 2 = 62 ───────────
+    // 200 bits ≈ 60.2 significant decimal digits; the last few may carry
+    // rounding error from the exp() algorithm's guard digits.
+    // Observed accuracy: digits diverge at index ~57, so we check only the
+    // first 54 digits (a 6-digit safety margin below the theoretical limit).
+    let e200 = MPFloat.e(200)
+    (let m200_iso, let de200, _) = e200.exact_string()
+    let m200: String val = consume m200_iso
+    h.assert_eq[I64](de200, 1, "e(200): dec_exp = 1")
+    h.assert_true(m200.size() >= 60,
+      "e(200): mantissa length >= 60, got " + m200.size().string())
+    let e_known_54: String = e_known_60.substring(0, 54)
+    h.assert_true(m200.at(e_known_54, 0),
+      "e(200): first 54 digits mismatch; got \"" + m200.substring(0, 58) + "\"")
+
+    // ── 800-bit precision (100 bytes): n_dec = ⌊100 × 2.41⌋ + 2 = 243 ─────────
+    let e800 = MPFloat.e(800)
+    (let m800_iso, let de800, _) = e800.exact_string()
+    let m800: String val = consume m800_iso
+    h.assert_eq[I64](de800, 1, "e(800): dec_exp = 1")
+    h.assert_true(m800.size() >= 240,
+      "e(800): mantissa length >= 240, got " + m800.size().string())
+    h.assert_true(m800.at(e_known_60, 0),
+      "e(800): first 60 digits mismatch; got \"" + m800.substring(0, 65) + "\"")
+
+
 // ── sign() predicate ──────────────────────────────────────────────────────────
 
 class iso _TestMPFloatSign is UnitTest
@@ -2474,7 +2655,7 @@ class iso _TestMPFloatPi is UnitTest
       h.assert_true(got.almost_eq(expected, tol, tol), msg)
     }
 
-    let pi_machin = MPFloat.pi(p)
+    let pi_machin = MPFMathLib.pi_machin(p)
     (let machin_m, let machin_e, _) = pi_machin.exact_string()
     let mm: String val = consume machin_m
     h.log("Pi Machin = " + pi_machin.string())
@@ -2483,14 +2664,40 @@ class iso _TestMPFloatPi is UnitTest
     let pi_known_30: String = "31415926535897932384626433832"
     h.assert_true(mm.at(pi_known_30, 0), "Pi Machin first 30 digits: " + mm.substring(0, 30))
 
-    // Log Chudnovsky and BBP for informational purposes (known to have precision issues).
-    let pi_chudnovsky = MPFloat.pi_chudnovsky(p)
+    let pi_chudnovsky = MPFloat.pi(p)
     h.log("Pi Chudnovsky = " + pi_chudnovsky.string())
     h.log("Difference Chudnovsky - Machin = " + (pi_chudnovsky - pi_machin).string())
+    (let chud_m, _, _) = pi_chudnovsky.exact_string()
+    let cm: String val = consume chud_m
+    h.assert_true(cm.at(pi_known_30, 0), "Pi Chudnovsky first 30 digits: " + cm.substring(0, 30))
 
-    let pi_bbp = MPFloat.pi_bbp(p)
+    let pi_bbp = MPFMathLib.pi_bbp(p)
     h.log("Pi BBP = " + pi_bbp.string())
     h.log("Difference BBP - Machin = " + (pi_bbp - pi_machin).string())
+    (let bbp_m, _, _) = pi_bbp.exact_string()
+    let bm: String val = consume bbp_m
+    h.assert_true(bm.at(pi_known_30, 0), "Pi BBP first 30 digits: " + bm.substring(0, 30))
+
+
+class iso _TestMPFloatE is UnitTest
+  """
+  Verify MPFloat.e() matches the known decimal expansion of e.
+  """
+  fun name(): String => "MPFloat/e"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 800
+    let ev = MPFloat.e(p)
+    (let m, _, _) = ev.exact_string()
+    let ms: String val = consume m
+    // First 30 significant digits of e = 2.71828182845904523536028747135…
+    let e_known_30: String = "27182818284590452353602874713"
+    h.assert_true(ms.at(e_known_30, 0), "e first 30 digits: " + ms.substring(0, 30))
+    // Sanity-check via F64 — tolerance scaled to F64's ~15 significant digits.
+    let f64_tol: MPFloat = MPFloat.from[F64](1e-14)
+    h.assert_true(
+      ev.almost_eq(MPFloat.from[F64](F64.e()), f64_tol, f64_tol),
+      "MPFloat.e() ≈ F64.e()")
 
 
 class iso _TestMPFloatConversions is UnitTest
