@@ -279,6 +279,7 @@ actor Main is TestList
     test(_TestMPIntFromMPFloat)
     test(_TestMPIntKaratsubaAsymmetric)
     test(_TestMPIntFromStringLargeExponent)
+    test(_TestMPIntMathFactorial)
     test(_TestMPFloatConversions)
 
     // Formattable: MPFloat and MPInt

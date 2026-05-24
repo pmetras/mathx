@@ -151,207 +151,49 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     _digits = Array[U8].create()
 
 
-  new iso from_f64(f: F64, p_bytes: USize = 14) =>
+  new iso from[A: ((Number | MPInt | MPFRep) & Real[A] val)](n: A,
+                                                             p_bytes: USize = 14) =>
     """
-    Create a new `MPFRep` from the `F64` value `f` using `p_bytes` base-256
+    Create a new `MPFRep` from any numeric value `n` with `p_bytes` base-256
     mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
 
-    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises
-    `f` so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
+    Accepts:
+    - `MPFRep` — precision-change copy (truncates, no rounding)
+    - `MPInt`  — exact integer conversion (truncated to `p_bytes`)
+    - `F64`    — preserves special values (NaN, ±∞, ±0)
+    - `F32`    — preserves special values (NaN, ±∞, ±0)
+    - `ULong`, `USize`, `U8`…`U128` — exact unsigned integer
+    - `ILong`, `ISize`, `I8`…`I128` — exact signed integer (via MPInt)
+
+    The conversion bodies live in `_MPFAlgo._from_*`; this constructor
+    delegates to them and unpacks the returned `val` into `this`.
     """
-    if f.nan() then
-      _sign = false
-      _nan = true
-      _inf = false
-      _exponent = 0
-      _digits = Array[U8].create()
-    elseif f.infinite() then
-      _sign = f < 0.0
-      _nan = false
-      _inf = true
-      _exponent = 0
-      _digits = Array[U8].create()
-    elseif f == 0.0 then
-      _sign = (f.bits() == 0x8000000000000000)
-      _nan = false
-      _inf = false
-      _exponent = 0
-      _digits = Array[U8].init(0, p_bytes)
-    else
-      _sign = f < 0.0
-      _nan = false
-      _inf = false
-
-      // Normalise exactly using frexp.
-      // value = m × 2^e = 0.d0d1… × 256^expn = frac × 2^(8×expn)
-      // We want 1/256 ≤ frac < 1.
-      // Since 0.5 ≤ m < 1, e − 8×expn must be in [−7, 0].
-      (let m, let e_u32) = f.abs().frexp()
-      let e = e_u32.i32().i64()
-      let expn = (e.f64() / 8.0).ceil().i64()
-      let shift = e - (expn * 8)
-      var frac = m.f64() * F64(2).pow(shift.f64())
-      _exponent = expn
-
-      let base: F64 = 256.0
-      _digits = recover
-        let d = Array[U8].init(0, p_bytes)
-        var i: USize = 0
-        while i < p_bytes do
-          frac = frac * base
-          let di: U8 = frac.u8()
-          try d.update(i, di)? end
-          frac = frac - di.f64()
-          i = i + 1
-        end
-        d
+    let rep: MPFRep val =
+      iftype A <: MPFRep then
+        let r: MPFRep val = n
+        r._trunc(p_bytes)
+      elseif A <: MPInt then
+        let m: MPInt = n
+        _MPFAlgo._from_mpint(m, p_bytes)
+      elseif A <: F64 then
+        _MPFAlgo._from_f64(n.f64(), p_bytes)
+      elseif A <: F32 then
+        _MPFAlgo._from_f32(n.f32(), p_bytes)
+      elseif A <: (I8 | I16 | I32 | I64 | I128 | ILong | ISize) then
+        _MPFAlgo._from_mpint(MPInt.from[I128](n.i128()), p_bytes)
+      elseif A <: U128 then
+        _MPFAlgo._from_mpint(MPInt.from[U128](n.u128()), p_bytes)
+      elseif A <: (U8 | U16 | U32 | U64 | ULong | USize) then
+        _MPFAlgo._from_ulong(n.ulong(), p_bytes)
+      else
+        Debug("[MPFRep.from] Unknown type. Constructor failed! Adapt MPFRep code.")
+        MPFRep._create(false, false, false, 0, Array[U8].init(0, p_bytes))
       end
-    end
-
-
-  new iso from_f32(f: F32, p_bytes: USize = 14) =>
-    """
-    Create a new `MPFRep` from the `F32` value `f` using `p_bytes` base-256
-    mantissa bytes (default 14 ≈ 112 bits ≈ 33 decimal digits).
-
-    Special values (NaN, ±∞, ±0) are preserved. The conversion normalises
-    `f` so that `0.d₀d₁… × 256^_exponent` with `d₀ ≠ 0` for non-zero values.
-    """
-    if f.nan() then
-      _sign = false
-      _nan = true
-      _inf = false
-      _exponent = 0
-      _digits = Array[U8].create()
-    elseif f.infinite() then
-      _sign = f < 0.0
-      _nan = false
-      _inf = true
-      _exponent = 0
-      _digits = Array[U8].create()
-    elseif f == 0.0 then
-      _sign = (f.bits() == 0x80000000)
-      _nan = false
-      _inf = false
-      _exponent = 0
-      _digits = Array[U8].init(0, p_bytes)
-    else
-      _sign = f < 0.0
-      _nan = false
-      _inf = false
-
-      (let m, let e_u32) = f.abs().frexp()
-      let e = e_u32.i32().i64()
-      let expn = (e.f32() / 8.0).ceil().i64()
-      let shift = e - (expn * 8)
-      var frac = m * F32(2).pow(shift.f32())
-      _exponent = expn
-
-      let base: F32 = 256.0
-      _digits = recover
-        let d = Array[U8].init(0, p_bytes)
-        var i: USize = 0
-        while i < p_bytes do
-          frac = frac * base
-          let di: U8 = frac.u8()
-          try d.update(i, di)? end
-          frac = frac - di.f32()
-          i = i + 1
-        end
-        d
-      end
-    end
-
-
-  new iso from_mpint(n: MPInt, p_bytes: USize = 14) =>
-    """
-    Create a new `MPFRep` from the `MPInt` value `n` using `p_bytes` base-256
-    mantissa bytes (default 14).
-
-    The conversion is exact up to the requested precision: the magnitude of
-    `n` is represented without error as long as `n` fits within `p_bytes × 8`
-    bits. Larger values are truncated to `p_bytes` bytes.
-
-    Special cases:
-    - Zero → `+0` (positive zero regardless of any sign on the MPInt zero).
-    - Sign is preserved: a negative `MPInt` produces a negative `MPFRep`.
-
-    Algorithm: `MPInt.raw_digits()` provides the absolute value as a big-endian
-    `Array[U8]` (each base-65536 word split into two bytes, MSW first, leading
-    zeros stripped). The result maps directly onto the `MPFRep` layout:
-    `_exponent` = total byte count of the full magnitude (before truncation).
-    This is O(n) in the word count.
-    """
-    if n.is_zero() then
-      _sign = false
-      _nan = false
-      _inf = false
-      _exponent = 0
-      _digits = Array[U8].init(0, p_bytes)
-      return
-    end
-
-    _sign = n.is_negative()
-    _nan  = false
-    _inf  = false
-
-    let mag = n.raw_digits()
-    let total: USize = mag.size()
-    _exponent = total.i64()
-
-    _digits = recover
-      let keep: USize = total.min(p_bytes)
-      let d = Array[U8].create(keep)
-      mag.copy_to(d, 0, 0, keep)
-      d
-    end
-
-
-  new iso from_mpfrep(f: MPFRep val, p_bytes: USize = 14) =>
-    """
-    Create a new `MPFRep` whose value equals `f` but with `p_bytes` base-256
-    mantissa bytes (default 14). Useful for changing the working precision of
-    an existing representation.
-
-    The result is truncated to `p_bytes` (no rounding — rounding is the
-    responsibility of `MPFContext`).
-    """
-    _sign = f._sign
-    _nan = f._nan
-    _inf = f._inf
-    _exponent = f._exponent
-
-    _digits = recover
-      let size = p_bytes.min(f._size())
-      let d = Array[U8].init(0, p_bytes)
-      f._digits.copy_to(d, 0, 0, size)
-      d
-    end
-
-
-  new iso from_ulong(n: ULong, p_bytes: USize = 14) =>
-    """
-    Create a new `MPFRep` whose value equals the unsigned integer `n` with
-    `p_bytes` base-256 mantissa bytes (default 14).
-    """
-    _sign = false
-    _nan = false
-    _inf = false
-
-    let base: ULong = ULong(256)
-    var q: ULong = n
-
-    _digits = recover
-      let d: Array[U8] = Array[U8].create(p_bytes)
-      while q >= base do
-        (q, let r) = q.divrem(base)
-        d.push(r.u8())
-      end
-      d.push(q.u8())
-      d.reverse_in_place()
-      d
-    end
-    _exponent = _digits.size().i64()
+    _sign = rep._sign
+    _nan = rep._nan
+    _inf = rep._inf
+    _exponent = rep._exponent
+    _digits = rep._digits
 
 
   new \do_not_use\ iso min_normalized(p_bytes: USize = 14) =>
@@ -1089,7 +931,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     Convert the current `MPFRep` to `F64`. Overflows are converted to ±∞;
     underflows to 0.
 
-    This always holds: `MPFRep.from_f64(f).f64() == f` for any finite `F64`.
+    This always holds: `MPFRep.from[F64](f).f64() == f` for any finite `F64`.
 
     The algorithm limits mantissa accumulation to 16 digits (128 bits, covering
     F64's 53-bit mantissa) to prevent intermediate overflow. The exponent
@@ -1149,7 +991,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     Convert the current `MPFRep` to `F32`. Overflows are converted to ±∞;
     underflows to 0.
 
-    This always holds: `MPFRep.from_f32(f).f32() == f` for any finite `F32`.
+    This always holds: `MPFRep.from[F32](f).f32() == f` for any finite `F32`.
 
     The algorithm limits mantissa accumulation to 16 digits to prevent
     intermediate overflow. The exponent scaling is split when outside

@@ -148,3 +148,22 @@ class iso _TestMPIntBytewidth is UnitTest
     h.assert_true(MPInt.from[ILong](65535).bitwidth() == MPInt.from[ILong](17),          "bitwidth(65535) = 17")
     h.assert_true(MPInt.from[ILong](65536).bitwidth() == MPInt.from[ILong](18),          "bitwidth(65536) = 18")
     h.assert_true(MPInt.from[ILong](-127).bitwidth()  == MPInt.from[ILong](127).bitwidth(), "bitwidth(-x) = bitwidth(x)")
+
+
+class iso _TestMPIntMathFactorial is UnitTest
+  fun name(): String => "MPIntMath/factorial"
+
+  fun apply(h: TestHelper) =>
+    let check = {(n: ILong, expected: String) =>
+      h.assert_eq[String](MPIntMath.factorial(n).string(), expected,
+        "factorial(" + n.string() + ")")
+    }
+    check(0,  "1")
+    check(1,  "1")
+    check(2,  "2")
+    check(5,  "120")
+    check(10, "3628800")
+    check(12, "479001600")
+    check(20, "2432902008176640000")
+    check(25, "15511210043330985984000000")
+    check(50, "30414093201713378043612608166064768844377641568960512000000000000")

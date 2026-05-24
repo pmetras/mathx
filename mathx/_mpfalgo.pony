@@ -49,6 +49,100 @@ primitive _MPFAlgo
      a pure computation.
   """
 
+  // ── Conversion from external types ────────────────────────────────────────
+
+  fun _from_f64(f: F64, p: USize): MPFRep val =>
+    if f.nan() then
+      MPFRep._create(false, true, false, 0, Array[U8].create())
+    elseif f.infinite() then
+      MPFRep._create(f < 0.0, false, true, 0, Array[U8].create())
+    elseif f == 0.0 then
+      MPFRep._create(f.bits() == 0x8000000000000000, false, false, 0, Array[U8].init(0, p))
+    else
+      let sgn = f < 0.0
+      (let m, let e_u32) = f.abs().frexp()
+      let bit_exp = e_u32.i32().i64()
+      let expn = (bit_exp.f64() / 8.0).ceil().i64()
+      let shift = bit_exp - (expn * 8)
+      var frac = m.f64() * F64(2).pow(shift.f64())
+      let digits: Array[U8] val = recover
+        let d = Array[U8].init(0, p)
+        var i: USize = 0
+        while i < p do
+          frac = frac * 256.0
+          let di: U8 = frac.u8()
+          try d.update(i, di)? end
+          frac = frac - di.f64()
+          i = i + 1
+        end
+        d
+      end
+      MPFRep._create(sgn, false, false, expn, digits)
+    end
+
+
+  fun _from_f32(f: F32, p: USize): MPFRep val =>
+    if f.nan() then
+      MPFRep._create(false, true, false, 0, Array[U8].create())
+    elseif f.infinite() then
+      MPFRep._create(f < 0.0, false, true, 0, Array[U8].create())
+    elseif f == 0.0 then
+      MPFRep._create(f.bits() == 0x80000000, false, false, 0, Array[U8].init(0, p))
+    else
+      let sgn = f < 0.0
+      (let m, let e_u32) = f.abs().frexp()
+      let bit_exp = e_u32.i32().i64()
+      let expn = (bit_exp.f32() / 8.0).ceil().i64()
+      let shift = bit_exp - (expn * 8)
+      var frac = m * F32(2).pow(shift.f32())
+      let digits: Array[U8] val = recover
+        let d = Array[U8].init(0, p)
+        var i: USize = 0
+        while i < p do
+          frac = frac * 256.0
+          let di: U8 = frac.u8()
+          try d.update(i, di)? end
+          frac = frac - di.f32()
+          i = i + 1
+        end
+        d
+      end
+      MPFRep._create(sgn, false, false, expn, digits)
+    end
+
+
+  fun _from_mpint(n: MPInt, p: USize): MPFRep val =>
+    if n.is_zero() then
+      return MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
+    end
+    let mag = n.raw_digits()
+    let total: USize = mag.size()
+    let digits: Array[U8] val = recover
+      let keep = total.min(p)
+      let d = Array[U8].create(keep)
+      mag.copy_to(d, 0, 0, keep)
+      d
+    end
+    MPFRep._create(n.is_negative(), false, false, total.i64(), digits)
+
+
+
+  fun _from_ulong(n: ULong, p: USize): MPFRep val =>
+    let base: ULong = 256
+    var q: ULong = n
+    let digits: Array[U8] val = recover
+      let d = Array[U8].create(p)
+      while q >= base do
+        (q, let r) = q.divrem(base)
+        d.push(r.u8())
+      end
+      d.push(q.u8())
+      d.reverse_in_place()
+      d
+    end
+    MPFRep._create(false, false, false, digits.size().i64(), digits)
+
+
   // ── Addition / Subtraction ─────────────────────────────────────────────────
 
   fun _add(a: MPFRep box, b: MPFRep box, w: USize): MPFRep val =>
@@ -253,9 +347,9 @@ primitive _MPFAlgo
         fg = (fg / 256.0) + ad(i)?.f64()
       until i == 0 end
     end
-    var res: MPFRep ref = MPFRep.from_f64(1.0 / fg, size)
+    var res: MPFRep ref = MPFRep.from[F64](1.0 / fg, size)
 
-    let two: MPFRep val = MPFRep.from_f64(2.0, size)
+    let two: MPFRep val = MPFRep.from[F64](2.0, size)
     var iters: USize = 0
     let max_iters: USize = size * 4
     while iters < max_iters do
@@ -327,9 +421,9 @@ primitive _MPFAlgo
       until k == 0 end
     end
     let fg_h: F64 = if h_exp == 1 then fg else fg * base_f end
-    var res: MPFRep ref = MPFRep.from_f64(1.0 / fg_h.sqrt(), size)
+    var res: MPFRep ref = MPFRep.from[F64](1.0 / fg_h.sqrt(), size)
 
-    let three: MPFRep val = MPFRep.from_f64(3.0, size)
+    let three: MPFRep val = MPFRep.from[F64](3.0, size)
     var iters: USize = 0
     let max_iters: USize = size * 4
     while iters < max_iters do
@@ -374,7 +468,7 @@ primitive _MPFAlgo
 
     // Post-correction: if |r| ≥ |b|, q was off by 1.
     if (not r.is_zero()) and (r._cmp_mag(b) != Less) then
-      let one: MPFRep val = MPFRep.from_f64(1.0, w)
+      let one: MPFRep val = MPFRep.from[F64](1.0, w)
       if a.sign_bit() == b.sign_bit() then
         q = _add(q, one, w)
       else
@@ -398,7 +492,7 @@ primitive _MPFAlgo
     """
     (let q: MPFRep val, let r: MPFRep box) = _divrem(a, b, w)
     if (not r.is_zero()) and (a.sign_bit() != b.sign_bit()) then
-      return _sub(q, MPFRep.from_f64(1.0, w), w)
+      return _sub(q, MPFRep.from[F64](1.0, w), w)
     end
     q
 
@@ -492,7 +586,7 @@ primitive _MPFAlgo
           (let q: MPFRep val, _) = term._short_div(k.u8())
           q
         else
-          _div(term, MPFRep.from_f64(k.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](k.f64(), p2), p2)
         end
       let new_sum = _add(sum, addend, p2)
 
@@ -518,7 +612,7 @@ primitive _MPFAlgo
     let p2: USize = w + 4
     let d: Array[U8] val = recover Array[U8].init(0x55, p2) end
     let third: MPFRep val = MPFRep._create(false, false, false, 0, d)
-    let two: MPFRep val = MPFRep.from_f64(2.0, p2)
+    let two: MPFRep val = MPFRep.from[F64](2.0, p2)
     _mul(_atanh_series(third, p2), two, p2)._trunc(w)
 
 
@@ -531,7 +625,7 @@ primitive _MPFAlgo
     factorials. Works best for `|r| ≤ ln(2)/2 ≈ 0.347`.
     """
     let p2: USize = w + 2
-    let one = MPFRep.from_f64(1.0, p2)
+    let one = MPFRep.from[F64](1.0, p2)
     var term: MPFRep ref = one._clone()
     var sum:  MPFRep ref = one._clone()
     var k: USize = 1
@@ -543,7 +637,7 @@ primitive _MPFAlgo
           (let q: MPFRep val, _) = term._short_div(k.u8())
           q
         else
-          _div(term, MPFRep.from_f64(k.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](k.f64(), p2), p2)
         end
       term._update(divided)
       let new_sum = _add(sum, divided, p2)
@@ -582,13 +676,13 @@ primitive _MPFAlgo
           (let q: MPFRep val, _) = term._short_div(d1.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](d1.f64(), p2), p2)
         end)
       term._update(if d2 <= 255 then
           (let q: MPFRep val, _) = term._short_div(d2.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](d2.f64(), p2), p2)
         end)
       let new_sum = _add(sum, term, p2)
 
@@ -613,7 +707,7 @@ primitive _MPFAlgo
     """
     let p2: USize = w + 2
     let neg_r2 = _neg_rep(_mul(r, r, p2))
-    let one = MPFRep.from_f64(1.0, p2)
+    let one = MPFRep.from[F64](1.0, p2)
     var term: MPFRep ref = one._clone()
     var sum:  MPFRep ref = one._clone()
     var k: USize = 1
@@ -627,13 +721,13 @@ primitive _MPFAlgo
           (let q: MPFRep val, _) = term._short_div(d1.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d1.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](d1.f64(), p2), p2)
         end)
       term._update(if d2 <= 255 then
           (let q: MPFRep val, _) = term._short_div(d2.u8())
           q
         else
-          _div(term, MPFRep.from_f64(d2.f64(), p2), p2)
+          _div(term, MPFRep.from[F64](d2.f64(), p2), p2)
         end)
       let new_sum = _add(sum, term, p2)
 
@@ -739,8 +833,8 @@ primitive _MPFAlgo
     let divisor: U8 = U8(1).shl(n_inner.u8())
     (let u: MPFRep val, _) = m._short_div(divisor)
 
-    let one: MPFRep val = MPFRep.from_f64(1.0, p2)
-    let two: MPFRep val = MPFRep.from_f64(2.0, p2)
+    let one: MPFRep val = MPFRep.from[F64](1.0, p2)
+    let two: MPFRep val = MPFRep.from[F64](2.0, p2)
     let t: MPFRep val = _div(_sub(u, one, p2), _add(u, one, p2), p2)
     let ln_u: MPFRep val = _mul(_atanh_series(t, p2), two, p2)
 
@@ -748,7 +842,7 @@ primitive _MPFAlgo
     let correction: MPFRep val = if ln2_factor == 0 then
         MPFRep._create(false, false, false, 0, Array[U8].init(0, p2))
       else
-        let fac: MPFRep val = MPFRep.from_f64(ln2_factor.f64(), p2)
+        let fac: MPFRep val = MPFRep.from[F64](ln2_factor.f64(), p2)
         _mul(fac, ln2, p2)
       end
     _add(correction, ln_u, p2)._trunc(w)
@@ -778,12 +872,12 @@ primitive _MPFAlgo
 
     let n256_f: MPFRep val = _div(x, ln256, p2)._trunc_frac()
     let n256: ILong = _round_to_ilong(n256_f)
-    let n256_mpf: MPFRep val = MPFRep.from_f64(n256.f64(), p2)
+    let n256_mpf: MPFRep val = MPFRep.from[F64](n256.f64(), p2)
     let r1: MPFRep val = _sub(x, _mul(n256_mpf, ln256, p2), p2)
 
     let n2_f: MPFRep val = _div(r1, ln2, p2)._trunc_frac()
     let n2: ILong = _round_to_ilong(n2_f)
-    let n2_mpf: MPFRep val = MPFRep.from_f64(n2.f64(), p2)
+    let n2_mpf: MPFRep val = MPFRep.from[F64](n2.f64(), p2)
     // r = r1 − n2 × ln2.
     let r: MPFRep val = _sub(r1, _mul(n2_mpf, ln2, p2), p2)
 
@@ -828,7 +922,7 @@ primitive _MPFAlgo
     let d23: Array[U8] val = recover Array[U8].init(0xAA, p2) end
     let third: MPFRep val     = MPFRep._create(false, false, false, 0, d3)
     let two_third: MPFRep val = MPFRep._create(false, false, false, 0, d23)
-    let two: MPFRep val       = MPFRep.from_f64(2.0, p2)
+    let two: MPFRep val       = MPFRep.from[F64](2.0, p2)
     let ln2_v: MPFRep val  = _mul(_atanh_series(third, p2), two, p2)
     let ln5_v: MPFRep val  = _mul(_atanh_series(two_third, p2), two, p2)
     let ln10_v: MPFRep val = _add(ln2_v, ln5_v, p2)._trunc(w + 4)
@@ -871,7 +965,7 @@ primitive _MPFAlgo
     """
     var base_r: MPFRep val = if n < 0 then _inv(a, w) else a._clone() end
     var exp_n: ILong = if n < 0 then -n else n end
-    var result: MPFRep val = MPFRep.from_f64(1.0, w)
+    var result: MPFRep val = MPFRep.from[F64](1.0, w)
     while exp_n > 0 do
       if (exp_n and 1) == 1 then
         result = _mul(result, base_r, w)
@@ -912,14 +1006,14 @@ primitive _MPFAlgo
     """
     let x: MPFRep val = _extend(a, w)
     let pi_val: MPFRep val = _pi(w)
-    let two: MPFRep val = MPFRep.from_f64(2.0, w)
-    let half: MPFRep val = MPFRep.from_f64(0.5, w)
+    let two: MPFRep val = MPFRep.from[F64](2.0, w)
+    let half: MPFRep val = MPFRep.from[F64](0.5, w)
     let pi_half: MPFRep val = _div(pi_val, two, w)
     // round-to-nearest: n = floor(x/pi_half + 0.5)
     let ratio: MPFRep val = _div(x, pi_half, w)
     let n_f: MPFRep val = _add(ratio, half, w)._trunc_frac()
     let n: ILong = _round_to_ilong(n_f)
-    let n_mpf: MPFRep val = MPFRep.from_f64(n.f64(), w)
+    let n_mpf: MPFRep val = MPFRep.from[F64](n.f64(), w)
     // r = x − n × pi_half
     let r: MPFRep val = _sub(x, _mul(n_mpf, pi_half, w), w)
     let k: ILong = ((n % 4) + 4) % 4
@@ -1017,7 +1111,7 @@ primitive _MPFAlgo
     let p2: USize = w + 4
     let ex: MPFRep val = _exp(a, p2)
     let emx: MPFRep val = _exp(_neg_rep(a), p2)
-    let two: MPFRep val = MPFRep.from_f64(2.0, p2)
+    let two: MPFRep val = MPFRep.from[F64](2.0, p2)
     _div(_sub(ex, emx, p2), two, p2)._trunc(w)
 
 
@@ -1030,7 +1124,7 @@ primitive _MPFAlgo
     let p2: USize = w + 4
     let ex: MPFRep val = _exp(a, p2)
     let emx: MPFRep val = _exp(_neg_rep(a), p2)
-    let two: MPFRep val = MPFRep.from_f64(2.0, p2)
+    let two: MPFRep val = MPFRep.from[F64](2.0, p2)
     _div(_add(ex, emx, p2), two, p2)._trunc(w)
 
 
@@ -1097,16 +1191,16 @@ primitive _MPFAlgo
     Delivers ~14.18 decimal digits per term so only ~0.17p iterations are needed.
     """
     let p: USize = w + 4
-    let k_640320: MPFRep val = MPFRep.from_ulong(640320, p)
+    let k_640320: MPFRep val = MPFRep.from[ULong](640320, p)
     let k_c3: MPFRep val = _mul(_mul(k_640320, k_640320, p), k_640320, p)
-    let k_8: MPFRep val = MPFRep.from_f64(8.0, p)
+    let k_8: MPFRep val = MPFRep.from[F64](8.0, p)
     // Precompute −8/C^3 once; applied at every step.
     let neg_8_inv_c3: MPFRep val = _neg_rep(_mul(k_8, _inv(k_c3, p), p))
 
     // s_0 = 1, a_0 = 13591409; term_0 = s_0 × a_0
-    var s_k: MPFRep val = MPFRep.from_f64(1.0, p)
-    var a_k: MPFRep val = MPFRep.from_ulong(13591409, p)
-    let delta_a: MPFRep val = MPFRep.from_ulong(545140134, p)
+    var s_k: MPFRep val = MPFRep.from[F64](1.0, p)
+    var a_k: MPFRep val = MPFRep.from[ULong](13591409, p)
+    let delta_a: MPFRep val = MPFRep.from[ULong](545140134, p)
 
     var sum: MPFRep val = a_k
     var prev_sum: MPFRep val = sum
@@ -1116,10 +1210,10 @@ primitive _MPFAlgo
     while k < max_k do
       // s_{k+1} = s_k × (−8/C^3) × (6k+1)(6k+3)(6k+5) / (k+1)^3
       let k6: USize = 6 * k
-      let f1: MPFRep val = MPFRep.from_ulong((k6 + 1).ulong(), p)
-      let f2: MPFRep val = MPFRep.from_ulong((k6 + 3).ulong(), p)
-      let f3: MPFRep val = MPFRep.from_ulong((k6 + 5).ulong(), p)
-      let kp1: MPFRep val = MPFRep.from_ulong((k + 1).ulong(), p)
+      let f1: MPFRep val = MPFRep.from[ULong]((k6 + 1).ulong(), p)
+      let f2: MPFRep val = MPFRep.from[ULong]((k6 + 3).ulong(), p)
+      let f3: MPFRep val = MPFRep.from[ULong]((k6 + 5).ulong(), p)
+      let kp1: MPFRep val = MPFRep.from[ULong]((k + 1).ulong(), p)
       let num_s: MPFRep val = _mul(_mul(f1, f2, p), f3, p)
       let den_s: MPFRep val = _mul(_mul(kp1, kp1, p), kp1, p)
       s_k = _mul(s_k, _mul(neg_8_inv_c3, _div(num_s, den_s, p), p), p)
@@ -1137,7 +1231,7 @@ primitive _MPFAlgo
 
     // π = C^{3/2} / (12 × sum)  where  C^{3/2} = C × √C
     let c_3_2: MPFRep val = _mul(k_640320, _sqrt(k_640320, p), p)
-    let k_12: MPFRep val = MPFRep.from_f64(12.0, p)
+    let k_12: MPFRep val = MPFRep.from[F64](12.0, p)
     _div(c_3_2, _mul(k_12, sum, p), p)._trunc(w)
 
 
@@ -1296,13 +1390,13 @@ primitive _MPFAlgo
 
     let p2: USize = p_digits + 2
     let n_max_exact: USize = ((p2.f64() * 14.0).usize() + 50).min(300)
-    let ten_mp: MPFRep val = MPFRep.from_f64(10.0, p2)
+    let ten_mp: MPFRep val = MPFRep.from[F64](10.0, p2)
 
     let scaled: MPFRep val =
       if dec_exp >= 0 then
-        var n_mp: MPFRep val = MPFRep.from_mpint(n_int, p2)
+        var n_mp: MPFRep val = MPFRep.from[MPInt](n_int, p2)
         if dec_exp > 0 then
-          var scale: MPFRep val = MPFRep.from_f64(1.0, p2)
+          var scale: MPFRep val = MPFRep.from[F64](1.0, p2)
           var sbase: MPFRep val = ten_mp
           var sn: I64 = dec_exp
           while sn > 0 do
@@ -1341,8 +1435,8 @@ primitive _MPFAlgo
           end
           MPFRep._create(false, false, false, new_exp, new_digits)
         else
-          var n_mp: MPFRep val = MPFRep.from_mpint(n_int, p2)
-          var scale: MPFRep val = MPFRep.from_f64(1.0, p2)
+          var n_mp: MPFRep val = MPFRep.from[MPInt](n_int, p2)
+          var scale: MPFRep val = MPFRep.from[F64](1.0, p2)
           var sbase: MPFRep val = ten_mp
           var sn: I64 = (-dec_exp)
           while sn > 0 do
@@ -1698,7 +1792,7 @@ primitive _MPFAlgo
     end
     if r._has_frac() or (not r.is_zero()) then
       if a.sign_bit() != b.sign_bit() then
-        let one: MPFRep val = MPFRep.from_f64(1.0, p)
+        let one: MPFRep val = MPFRep.from[F64](1.0, p)
         return ctx._round_to(_sub(q, one, w), p, ctx.rounding)
       end
     end
@@ -1874,7 +1968,7 @@ primitive _MPFAlgo
       return MPFRep.inf_val(true)
     end
     if a.is_zero() then
-      return MPFRep.from_f64(1.0, ctx.p_bytes())
+      return MPFRep.from[F64](1.0, ctx.p_bytes())
     end
     let p = ctx.p_bytes()
     var g = ctx.working_bytes("exp")
@@ -1904,7 +1998,7 @@ primitive _MPFAlgo
       return MPFRep.inf_val(true)
     end
     if a.is_zero() then
-      return MPFRep.from_f64(1.0, ctx.p_bytes())
+      return MPFRep.from[F64](1.0, ctx.p_bytes())
     end
     let p = ctx.p_bytes()
     var g = ctx.working_bytes("exp")
@@ -1935,7 +2029,7 @@ primitive _MPFAlgo
     end
     if a.is_infinite() then
       if n == 0 then
-        return MPFRep.from_f64(1.0, ctx.p_bytes())
+        return MPFRep.from[F64](1.0, ctx.p_bytes())
       elseif n > 0 then
         let result_sign = a.sign_bit() and ((n and 1) != 0)
         return MPFRep._create(result_sign, false, true, 0, Array[U8].create())
@@ -1967,7 +2061,7 @@ primitive _MPFAlgo
       return MPFRep.nan_val()
     end
     if b.is_zero() then
-      return MPFRep.from_f64(1.0, ctx.p_bytes())
+      return MPFRep.from[F64](1.0, ctx.p_bytes())
     end
     if a.is_zero() then
       if b.sign_bit() then
@@ -2018,7 +2112,7 @@ primitive _MPFAlgo
       return MPFRep.nan_val()
     end
     if a.is_zero() then
-      return MPFRep.from_f64(1.0, ctx.p_bytes())
+      return MPFRep.from[F64](1.0, ctx.p_bytes())
     end
     let w = ctx.working_bytes("trig")
     ctx._round_to(_cos(a, w), ctx.p_bytes(), ctx.rounding)
@@ -2078,7 +2172,7 @@ primitive _MPFAlgo
       return MPFRep.inf_val(true)
     end
     if a.is_zero() then
-      return MPFRep.from_f64(1.0, ctx.p_bytes())
+      return MPFRep.from[F64](1.0, ctx.p_bytes())
     end
     let w = ctx.working_bytes("trig")
     ctx._round_to(_cosh(a, w), ctx.p_bytes(), ctx.rounding)
@@ -2186,7 +2280,7 @@ primitive _MPFAlgo
     Delegates to the public `exp` method with argument `1`, inheriting its
     Ziv-iteration correct rounding (≤ 0.5 ULP error).
     """
-    exp(ctx, MPFRep.from_f64(1.0, ctx.working_bytes("exp")))
+    exp(ctx, MPFRep.from[F64](1.0, ctx.working_bytes("exp")))
 
 
   fun from_string(ctx: MPFContext, s: String): MPFRep val ? =>

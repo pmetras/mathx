@@ -244,20 +244,19 @@ class val MPFloat is (Formattable & Stringable)
     _ctx = MPFContext(prec, rnd)
     iftype A <: MPFloat then
       let f: MPFloat = n
-      _rep = MPFRep.from_mpfrep(f._rep, p)
-    elseif A <: F64 then
-      _rep = MPFRep.from_f64(n.f64(), p)
-    elseif A <: F32 then
-      _rep = MPFRep.from_f32(n.f32(), p)
+      _rep = f._rep._trunc(p)
     elseif A <: MPInt then
-      let m: MPInt = n
-      _rep = MPFRep.from_mpint(m, p)
+      _rep = MPFRep.from[MPInt](n, p)
+    elseif A <: F64 then
+      _rep = MPFRep.from[F64](n, p)
+    elseif A <: F32 then
+      _rep = MPFRep.from[F32](n, p)
     elseif A <: (I8 | I16 | I32 | I64 | I128 | ILong | ISize) then
-      // Signed integer types: convert via I128 (exact for all).
-      _rep = MPFRep.from_mpint(MPInt.from[I128](n.i128()), p)
-    elseif A <: (U8 | U16 | U32 | U64 | U128 | ULong | USize) then
-      // Unsigned integer types (U8..U64, ULong, USize, U128): convert via U128.
-      _rep = MPFRep.from_mpint(MPInt.from[U128](n.u128()), p)
+      _rep = MPFRep.from[I128](n.i128(), p)
+    elseif A <: U128 then
+      _rep = MPFRep.from[MPInt](MPInt.from[U128](n.u128()), p)
+    elseif A <: (U8 | U16 | U32 | U64 | ULong | USize) then
+      _rep = MPFRep.from[ULong](n.ulong(), p)
     else
       Debug("[MPFloat.from] Unknown new type. Constructor failed! Adapt MPFloat code.")
       _rep = MPFRep
@@ -476,8 +475,8 @@ class val MPFloat is (Formattable & Stringable)
     let max_mag = if abs_this < abs_that then abs_that else abs_this end
     let p_bits: USize = p * 8
     let ctx_p = MPFContext(p_bits, _ctx.rounding)
-    let rel_part = (_from(MPFRep.from_mpfrep(rel_tol._rep, ctx_p.p_bytes()), ctx_p) * max_mag)
-    let abs_part = _from(MPFRep.from_mpfrep(abs_tol._rep, ctx_p.p_bytes()), ctx_p)
+    let rel_part = (_from(rel_tol._rep._trunc(ctx_p.p_bytes()), ctx_p) * max_mag)
+    let abs_part = _from(abs_tol._rep._trunc(ctx_p.p_bytes()), ctx_p)
     let threshold = if rel_part < abs_part then abs_part else rel_part end
     diff <= threshold
 

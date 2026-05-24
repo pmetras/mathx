@@ -20,9 +20,9 @@ primitive MPFMathLibRep
     """
     let w = ctx.working_bytes("pi")
     let p: USize = w + 4
-    let one: MPFRep val = MPFRep.from_f64(1.0, p)
-    let five: MPFRep val = MPFRep.from_f64(5.0, p)
-    let two39: MPFRep val = MPFRep.from_f64(239.0, p)
+    let one: MPFRep val = MPFRep.from[F64](1.0, p)
+    let five: MPFRep val = MPFRep.from[F64](5.0, p)
+    let two39: MPFRep val = MPFRep.from[F64](239.0, p)
     let x5: MPFRep val = _MPFAlgo._inv(five, p)
     let x239: MPFRep val = _MPFAlgo._inv(two39, p)
 
@@ -40,7 +40,7 @@ primitive MPFMathLibRep
           (let q5: MPFRep val, _) = pow5._short_div(d5.u8())
           q5
         else
-          _MPFAlgo._div(pow5, MPFRep.from_f64(d5.f64(), p), p)
+          _MPFAlgo._div(pow5, MPFRep.from[F64](d5.f64(), p), p)
         end
       let new_a5: MPFRep val = _MPFAlgo._add(atan5, term5, p)
 
@@ -66,7 +66,7 @@ primitive MPFMathLibRep
           (let q239: MPFRep val, _) = pow239._short_div(d239.u8())
           q239
         else
-          _MPFAlgo._div(pow239, MPFRep.from_f64(d239.f64(), p), p)
+          _MPFAlgo._div(pow239, MPFRep.from[F64](d239.f64(), p), p)
         end
       let new_a239: MPFRep val = _MPFAlgo._add(atan239, term239, p)
 
@@ -80,8 +80,8 @@ primitive MPFMathLibRep
     end
 
     // π = 16·arctan(1/5) − 4·arctan(1/239)
-    let sixteen: MPFRep val = MPFRep.from_f64(16.0, p)
-    let four: MPFRep val = MPFRep.from_f64(4.0, p)
+    let sixteen: MPFRep val = MPFRep.from[F64](16.0, p)
+    let four: MPFRep val = MPFRep.from[F64](4.0, p)
     let result = _MPFAlgo._sub(_MPFAlgo._mul(sixteen, atan5, p), _MPFAlgo._mul(four, atan239, p), p)._trunc(w)
     ctx._round_to(result, ctx.p_bytes(), ctx.rounding)
 
@@ -99,19 +99,19 @@ primitive MPFMathLibRep
      """
     let w = ctx.working_bytes("pi")
     let p: USize = w + 4
-    let k_1: MPFRep val = MPFRep.from_f64(1.0, p)
-    let k_2: MPFRep val = MPFRep.from_f64(2.0, p)
-    let k_4: MPFRep val = MPFRep.from_f64(4.0, p)
-    let k_5: MPFRep val = MPFRep.from_f64(5.0, p)
-    let k_6: MPFRep val = MPFRep.from_f64(6.0, p)
-    let k_8: MPFRep val = MPFRep.from_f64(8.0, p)
-    let inv16: MPFRep val = _MPFAlgo._inv(MPFRep.from_f64(16.0, p), p)
+    let k_1: MPFRep val = MPFRep.from[F64](1.0, p)
+    let k_2: MPFRep val = MPFRep.from[F64](2.0, p)
+    let k_4: MPFRep val = MPFRep.from[F64](4.0, p)
+    let k_5: MPFRep val = MPFRep.from[F64](5.0, p)
+    let k_6: MPFRep val = MPFRep.from[F64](6.0, p)
+    let k_8: MPFRep val = MPFRep.from[F64](8.0, p)
+    let inv16: MPFRep val = _MPFAlgo._inv(MPFRep.from[F64](16.0, p), p)
     var k: USize = 0
     var result: MPFRep val = MPFRep._create(false, false, false, 0, Array[U8].init(0, p))
     var prev_res: MPFRep val = result
     var pow16k: MPFRep val = k_1
     repeat
-      let t0: MPFRep val = _MPFAlgo._mul(k_8, MPFRep.from_ulong(k.ulong(), p), p)
+      let t0: MPFRep val = _MPFAlgo._mul(k_8, MPFRep.from[ULong](k.ulong(), p), p)
       let t1: MPFRep val = _MPFAlgo._div(k_4, _MPFAlgo._add(t0, k_1, p), p)
       let t2: MPFRep val = _MPFAlgo._div(k_2, _MPFAlgo._add(t0, k_4, p), p)
       let t3: MPFRep val = _MPFAlgo._div(k_1, _MPFAlgo._add(t0, k_5, p), p)
