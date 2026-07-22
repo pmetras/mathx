@@ -10,6 +10,9 @@ use "debug"
 
 use "../../assertx"
 use "../../formatx"
+use bignum = "../"
+use "../../mathx"
+use "../../pony_testx"
 
 use "lib:gmp"
 use "lib:mpfr"
@@ -39,7 +42,7 @@ use @pony_ctx[Pointer[None]]()
 use @pony_alloc[Pointer[U8]](ctx: Pointer[None], size: USize)
 
 
-class val MPFloat
+class val MPFloat is (bignum.BigReal[MPFloat] & Approximated[MPFloat, F64])
   """
   The implementation of `MPFloat` (Unlimited precision floating point numbers)
   using the [GNU Multiple Precision Arithmetic Library (GMP)](https://gmplib.org/)
@@ -93,7 +96,7 @@ class val MPFloat
   //- Constructors ------------------------------------------------------------
 
   new val from_string(s: String = "",
-                      prec: ULong = 112,
+                      prec: USize = 112,
                       base: U32 = 10,
                       rnd: RoundingMode = RoundingNearest) ? =>
     """
@@ -166,7 +169,7 @@ class val MPFloat
 
 
   new val from[N: (Number & Real[N])](n: N,
-                                      prec: ULong = 112,
+                                      prec: USize = 112,
                                       rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` with value `n` and precision `prec` (default 112),
@@ -194,7 +197,7 @@ class val MPFloat
 
 
   new val from_f64(d: F64 = 0.0,
-                   prec: ULong = 112,
+                   prec: USize = 112,
                    rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `d` value (default 0.0) with precision
@@ -230,7 +233,7 @@ class val MPFloat
 
 
   new val from_f32(f: F32 = 0.0,
-                   prec: ULong = 112,
+                   prec: USize = 112,
                    rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `f` value (default 0.0) with precision
@@ -265,7 +268,7 @@ class val MPFloat
 
 
   new val from_ulong(u: ULong = 0,
-                     prec: ULong = 112,
+                     prec: USize = 112,
                      rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `u` value (default 0) with precision
@@ -283,7 +286,7 @@ class val MPFloat
 
 
   new val from_usize(u: USize = 0,
-                     prec: ULong = 112,
+                     prec: USize = 112,
                      rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `u` value (default 0) with precision
@@ -301,7 +304,7 @@ class val MPFloat
 
 
   new val from_ilong(i: ILong = 0,
-                     prec: ULong = 112,
+                     prec: USize = 112,
                      rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `i` value (default 0) with precision
@@ -319,7 +322,7 @@ class val MPFloat
 
 
   new val from_isize(i: ISize = 0,
-                     prec: ULong = 112,
+                     prec: USize = 112,
                      rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` initialized to `i` value (default 0) with precision
@@ -337,7 +340,7 @@ class val MPFloat
 
 
   new val from_mpfloat(f: MPFloat,
-                       prec: ULong = 112,
+                       prec: USize = 112,
                        rnd: RoundingMode = RoundingNearest) =>
     """
     Create a new `MPFloat` whose value is equal to `f` but with precision `prec`
@@ -351,10 +354,31 @@ class val MPFloat
     MPF.set(_mpfr, f._mpfr, _rnd)
 
 
+  new val nan_val(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+    """
+    Create a `MPFloat` representing `NaN` (Not a Number).
+    """
+    _mpfr = SMPFr
+    _rnd = rnd
+    MPF.init2(_mpfr, prec.ilong())
+    MPF.set_nan(_mpfr)
+
+
+  new val inf_val(positive: Bool, prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
+    """
+    Create a `MPFloat` representing `+inf` (when `positive` is `true`) or
+    `-inf` (when `positive` is `false`).
+    """
+    _mpfr = SMPFr
+    _rnd = rnd
+    MPF.init2(_mpfr, prec.ilong())
+    MPF.set_inf(_mpfr, if positive then 1 else -1 end)
+
+
   //- Finalizer ---------------------------------------------------------------
   // We need to use a finalizer as the memory in `_mpfr` is managed by the MPFR
   // library.
-  
+
   fun _final() =>
     """
     Free the memory allocated by MPFR.
@@ -364,71 +388,71 @@ class val MPFloat
 
   //- Conversions -------------------------------------------------------------
 
-  fun f64(rnd: RoundingMode = RoundingNearest): F64 =>
+  fun f64(): F64 =>
     """
-    Convert the `MPFloat` to a `F64` using rounding mode `rnd` (default nearest).
+    Convert the `MPFloat` to a `F64` using the stored rounding mode.
     If overflow occurs during the conversion, the result is a special value like
     `-inf`, `+inf`, `-0.0`, `+0.0` or `nan`.
     """
-    MPF.get_d(_mpfr, rnd)
+    MPF.get_d(_mpfr, _rnd)
 
 
-  fun f32(rnd: RoundingMode = RoundingNearest): F32 =>
+  fun f32(): F32 =>
     """
-    Convert the `MPFloat` to a `F32` using rounding mode `rnd` (default nearest).
+    Convert the `MPFloat` to a `F32` using the stored rounding mode.
     If overflow occurs during the conversion, the result is a special value like
     `-inf`, `+inf`, `-0.0`, `+0.0` or `nan`.
     """
-    MPF.get_flt(_mpfr, rnd)
+    MPF.get_flt(_mpfr, _rnd)
 
 
-  fun isize(rnd: RoundingMode = RoundingNearest): ISize ? =>
+  fun isize(): ISize ? =>
     """
-    Convert the `MPFloat` to a `ISize` using rounding mode `rnd` (default
-    nearest). If the conversion can't occur because the float does not fit into
+    Convert the `MPFloat` to a `ISize` using the stored rounding mode.
+    If the conversion can't occur because the float does not fit into
     a `ISize`, then an error is raised.
     """
-    if MPF.fits_intmax_p(_mpfr, rnd) then
-      MPF.get_sj(_mpfr, rnd)
+    if MPF.fits_intmax_p(_mpfr, _rnd) then
+      MPF.get_sj(_mpfr, _rnd)
     else
       error
     end
 
 
-  fun usize(rnd: RoundingMode = RoundingNearest): USize ? =>
+  fun usize(): USize ? =>
     """
-    Convert the `MPFloat` to a `USize` using rounding mode `rnd` (default
-    nearest). If the conversion can't occur because the float does not fit into
+    Convert the `MPFloat` to a `USize` using the stored rounding mode.
+    If the conversion can't occur because the float does not fit into
     a `USize`, then an error is raised.
     """
-    if MPF.fits_uintmax_p(_mpfr, rnd) then
-      MPF.get_uj(_mpfr, rnd)
+    if MPF.fits_uintmax_p(_mpfr, _rnd) then
+      MPF.get_uj(_mpfr, _rnd)
     else
       error
     end
 
 
-  fun ilong(rnd: RoundingMode = RoundingNearest): ILong ? =>
+  fun ilong(): ILong ? =>
     """
-    Convert the `MPFloat` to a `ILong` using rounding mode `rnd` (default
-    nearest). If the conversion can't occur because the float does not fit into
+    Convert the `MPFloat` to a `ILong` using the stored rounding mode.
+    If the conversion can't occur because the float does not fit into
     a `ILong`, then an error is raised.
     """
-    if MPF.fits_slong_p(_mpfr, rnd) then
-      MPF.get_si(_mpfr, rnd)
+    if MPF.fits_slong_p(_mpfr, _rnd) then
+      MPF.get_si(_mpfr, _rnd)
     else
       error
     end
 
 
-  fun ulong(rnd: RoundingMode = RoundingNearest): ULong ? =>
+  fun ulong(): ULong ? =>
     """
-    Convert the `MPFloat` to a `U64` using rounding mode `rnd` (default
-    nearest). If the conversion can't occur because the float does not fit into
-    a `U64`, then an error is raised.
+    Convert the `MPFloat` to a `ULong` using the stored rounding mode.
+    If the conversion can't occur because the float does not fit into
+    a `ULong`, then an error is raised.
     """
-    if MPF.fits_ulong_p(_mpfr, rnd) then
-      MPF.get_ui(_mpfr, rnd)
+    if MPF.fits_ulong_p(_mpfr, _rnd) then
+      MPF.get_ui(_mpfr, _rnd)
     else
       error
     end
@@ -459,7 +483,7 @@ class val MPFloat
     consume result
 
 
-  fun exact_string(base: U32 = 10, rnd: RoundingMode = RoundingNearest)
+  fun exact_string(base: U8 = 10, rnd: RoundingMode = RoundingNearest)
                   : (String iso^, I64, Bool) =>
     """
     Convert the `MPFloat` to a `String` using base `base` (default 10) and
@@ -490,11 +514,11 @@ class val MPFloat
 
     let inexact = MPF.inexflag_p()
     (consume mantissa, exponent, inexact)
-    
+
 
   //- Constants ---------------------------------------------------------------
 
-  new val pi(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val pi(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
     """
     Calculate Pi ($$\pi = 3.14159...$$) with the requested precision `prec`
     (default 112) and rounding mode `rnd` (default to nearest).
@@ -507,7 +531,7 @@ class val MPFloat
     MPF.const_pi(_mpfr, rnd)
 
 
-  new val e(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val e(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
     """
     Calculate the base of Neperian logarithm e ($$\e = 2.718...$$) with the
     requested precision `prec` (default 112) and rounding mode `rnd` (default
@@ -520,7 +544,7 @@ class val MPFloat
     MPF.exp(_mpfr, one._mpfr, rnd)
 
 
-  new val const_log2(prec: ULong = 112, rnd: RoundingMode = RoundingNearest) =>
+  new val const_log2(prec: USize = 112, rnd: RoundingMode = RoundingNearest) =>
     """
     Calculate the value of the logarithm of 2 (`log(2)`) with the requested
     precision `prec` (default 112) and rounding mode `rnd` (default nearest).
@@ -549,12 +573,11 @@ class val MPFloat
     MPF.get_patches()
 
 
-  fun get_precision(): ULong =>
+  fun get_precision(): USize =>
     """
     Get the precision of the `MPFloat` mantissa (significand) in bits.
     """
-    let prec = MPF.get_prec(_mpfr)
-    prec.ulong()
+    MPF.get_prec(_mpfr).usize()
 
 
   fun get_rounding_mode(): RoundingMode =>
@@ -579,7 +602,7 @@ class val MPFloat
     end
 
 
-  fun get_base(): ULong =>
+  fun get_base(): USize =>
     """
     Get the value of the base used internally for encoding the `MPFloat`. In the
     case of MPFR, the floats are encoded in base 2.
@@ -605,7 +628,7 @@ class val MPFloat
     Get an approximation of the value of the exponent of the current `MPFloat`
     in base 10. This is defined only if `this` is a number. An error is raised
     if that's not the case.
-    
+
     This is an approximation calculated from `get_exponent` and `get_base` for
     a quick result with evaluating the mantissa. You must use `exact_string`
     in case you need the exact result.
@@ -642,7 +665,7 @@ class val MPFloat
 
   fun next_below(): MPFloat =>
     """
-    Return the mext floating point number with the same precision as `this`
+    Return the next floating point number with the same precision as `this`
     inferior to `this`.
     """
     let result = clone()
@@ -660,27 +683,27 @@ class val MPFloat
     result
 
 
-  fun min(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun min(that: MPFloat): MPFloat =>
     """
     Return the minimal value between `this` and `that`. If both floats are
     `NaN`, then the result is `NaN`. If one of the floats is `NaN`, then
     return the numeric value. If `this` and `that` are zeros of different
     signs, then the result is `-0`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.min(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.min(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun max(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun max(that: MPFloat): MPFloat =>
     """
     Return the maximal value between `this` and `that`. If both floats are
     `NaN`, then the result is `NaN`. If one of the floats is `NaN`, then
     return the numeric value. If `this` and `that` are zeros of different
     signs, then the result is `+0`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.max(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.max(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
@@ -732,7 +755,7 @@ class val MPFloat
       end
     end
     MPF.less_p(_mpfr, that._mpfr)
-    
+
 
   fun le(that: MPFloat): Bool =>
     """
@@ -811,7 +834,7 @@ class val MPFloat
     * `+inf - +inf` or `+inf + -inf`
     * `0 / 0` or `inf / inf`
     * `log(x)` with `x < 0`
-    
+
     See [Wikipedia page](https://en.wikipedia.org/wiki/NaN) for more information.
     """
     MPF.nan_p(_mpfr)
@@ -824,12 +847,68 @@ class val MPFloat
     MPF.zero_p(_mpfr)
 
 
+  fun is_nan(): Bool =>
+    """Canonical alias for `nan()`."""
+    MPF.nan_p(_mpfr)
+
+  fun is_infinite(): Bool =>
+    """Canonical alias for `infinite()`."""
+    MPF.inf_p(_mpfr)
+
+  fun is_finite(): Bool =>
+    """Canonical alias for `finite()`."""
+    MPF.number_p(_mpfr)
+
+  fun is_zero(): Bool =>
+    """Canonical alias for `zero()`."""
+    MPF.zero_p(_mpfr)
+
+  fun is_negative(): Bool =>
+    """Is `this < 0`? Returns false for NaN and zero."""
+    MPF.sgn(_mpfr) < 0
+
+  fun is_integer(): Bool =>
+    """Is `this` a finite integer value?"""
+    if not is_finite() then return false end
+    MPF.integer_p(_mpfr)
+
+  fun compare(that: MPFloat): Compare =>
+    """
+    Three-way comparison. Returns `Less`, `Equal`, or `Greater`.
+    Consistent with `eq` and `lt`: NaN comparisons follow the same rules.
+    """
+    if eq(that) then Equal
+    elseif lt(that) then Less
+    else Greater
+    end
+
+  fun almost_eq(that: box->MPFloat,
+                rel_tol: F64 = F64.epsilon().sqrt(),
+                abs_tol: F64 = F64.epsilon().sqrt()): Bool =>
+    """
+    Returns true if `|this - that| <= max(rel_tol * max(|this|, |that|), abs_tol)`.
+    NaN arguments always return false. Inf returns true only when both are the
+    same infinity.
+    """
+    if is_nan() or that.is_nan() then return false end
+    if is_infinite() or that.is_infinite() then
+      return is_infinite() and that.is_infinite() and (f64() == that.f64())
+    end
+    let diff = sub(that).abs().f64()
+    let m = (abs().f64().max(that.abs().f64())) * rel_tol
+    diff <= m.max(abs_tol)
+
+  fun ln(): MPFloat =>
+    """Alias for `log()` — natural logarithm."""
+    log()
+
+
   //- Arithmetic --------------------------------------------------------------
 
-  fun add(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun add(that: MPFloat): MPFloat =>
     """
-    Addition `this + that` using rounding mode `rnd` (default nearest).
-    The result is a new `MPFloat` with a precision equals to the precision of
+    Addition `this + that` using the stored rounding mode.
+    The result is a new `MPFloat` with a precision equal to the precision of
     `this`.
 
     If `this` or `that` is infinity, the result is infinity. If `this` or `that`
@@ -847,15 +926,15 @@ class val MPFloat
               "). The result with precision " + this_prec.string() + " is inexact")
       end
     end
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.add(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.add(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun sub(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun sub(that: MPFloat): MPFloat =>
     """
-    Substraction `this - that` using rounding mode `rnd` (default nearest).
-    The result is a new `MPFloat` with a precision equals to the precision of
+    Subtraction `this - that` using the stored rounding mode.
+    The result is a new `MPFloat` with a precision equal to the precision of
     `this`.
 
     If `this` or `that` is infinity, the result is infinity. If `this` or `that`
@@ -868,20 +947,20 @@ class val MPFloat
     ifdef debug then
       let that_prec = that.get_precision()
       if that_prec < this_prec then
-        Debug("[MPFloat.sub] Trying to substract two floats with different precisions (" +
+        Debug("[MPFloat.sub] Trying to subtract two floats with different precisions (" +
               this_prec.string() + " != " + that_prec.string() +
               "). The result with precision " + this_prec.string() + " is inexact")
       end
     end
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.sub(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.sub(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun mul(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun mul(that: MPFloat): MPFloat =>
     """
-    Multiplication `this * that` using rounding mode `rnd` (default nearest).
-    The result is a new `MPFloat` with a precision equals to the precision of
+    Multiplication `this * that` using the stored rounding mode.
+    The result is a new `MPFloat` with a precision equal to the precision of
     `this`.
 
     If `this` or `that` is infinity, the result is infinity. If `this` or `that`
@@ -899,15 +978,15 @@ class val MPFloat
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
     end
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.mul(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.mul(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun div(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun div(that: MPFloat): MPFloat =>
     """
-    Division `this / that` using rounding mode `rnd` (default nearest).
-    The result is a new `MPFloat` with a precision equals to the precision of
+    Division `this / that` using the stored rounding mode.
+    The result is a new `MPFloat` with a precision equal to the precision of
     `this`.
 
     If `this` and `that` are infinity, the result is `NaN`. If `this` or `that`
@@ -917,7 +996,7 @@ class val MPFloat
     If the precision of `that` is less than the one of `this`, a warning
     is printed when compiled in `debug` mode.
 
-    Note: This differ from Pony float `div` that is rounded toward zero
+    Note: This differs from Pony float `div` that is rounded toward zero
     (`RoundingZero`).
     """
     let this_prec = get_precision()
@@ -929,38 +1008,38 @@ class val MPFloat
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
     end
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.div(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.div(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun sqrt(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun sqrt(): MPFloat =>
     """
-    Square root of `this` using rounding mode `rnd` (default nearest).
+    Square root of `this` using the stored rounding mode.
     The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.sqrt(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.sqrt(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun cbrt(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun cbrt(): MPFloat =>
     """
-    Cubic root of `this` using rounding mode `rnd` (default nearest).
+    Cubic root of `this` using the stored rounding mode.
     The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.cbrt(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.cbrt(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun rootn(n: ULong, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun rootn(n: USize): MPFloat =>
     """
-    Calculate the n-root of `this` using rounding mode `rnd` (default nearest).
+    Calculate the n-th root of `this` using the stored rounding mode.
     The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.rootn_ui(result._mpfr, _mpfr, n, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.rootn_ui(result._mpfr, _mpfr, n.ulong(), _rnd)
     result
 
 
@@ -984,6 +1063,16 @@ class val MPFloat
     result
 
 
+  fun inv(): MPFloat =>
+    """
+    Return the multiplicative inverse `1/this`. The result has the same
+    precision.
+    """
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.ui_div(result._mpfr, 1, _mpfr, _rnd)
+    result
+
+
   fun copysign(sgn: MPFloat): MPFloat =>
     """
     Return a `MPFloat` with the value of `this` but with the sign of `sgn`.
@@ -997,61 +1086,61 @@ class val MPFloat
 
   //- Transcendental functions ------------------------------------------------
 
-  fun log(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun log(): MPFloat =>
     """
-    Return natural logarithm of `this` ($$\log(this)$$) using `rnd` rounding
-    mode (default nearest). The result has the same precision.
+    Return natural logarithm of `this` using the stored rounding mode.
+    The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.log(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.log(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun log2(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun log2(): MPFloat =>
     """
-    Return base-2 logarithm of `this` ($$\log2(this)$$) using `rnd` rounding
-    mode (default nearest). The result has the same precision.
+    Return base-2 logarithm of `this` using the stored rounding mode.
+    The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.log2(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.log2(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun log10(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun log10(): MPFloat =>
     """
-    Return decimal logarithm of `this` ($$\log10(this)$$) using `rnd` rounding
-    mode (default nearest). The result has the same precision.
+    Return decimal logarithm of `this` using the stored rounding mode.
+    The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.log10(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.log10(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun exp(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun exp(): MPFloat =>
     """
-    Return the exponential of `this` ($$\e^this$$) using `rnd` rounding mode
-    (default nearest). The result has the same precision.
+    Return the exponential of `this` using the stored rounding mode.
+    The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.exp(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.exp(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun exp2(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun exp2(): MPFloat =>
     """
-    Return 2 to the power of `this` ($$\2^this$$) using `rnd` rounding mode
-    (default nearest). The result has the same precision.
+    Return 2 to the power of `this` using the stored rounding mode.
+    The result has the same precision.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.exp2(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.exp2(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun pow(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun pow(that: MPFloat): MPFloat =>
     """
-    Return `this` raised to the power of `that` ($$this^that$$) using `rnd`
-    rounding mode (default nearest). The result is a new `MPFloat` with a
-    precision equals to the precision of `this`.
+    Return `this` raised to the power of `that` using the stored rounding mode.
+    The result is a new `MPFloat` with a precision equal to the precision of
+    `this`.
 
     If the precision of `that` is less than the one of `this`, a warning
     is printed when compiled in `debug` mode.
@@ -1065,151 +1154,138 @@ class val MPFloat
               "). The result with precision " + this_prec.string() + " can be less precise")
       end
     end
-
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.pow(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.pow(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun powi(n: ILong, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun powi(n: ILong): MPFloat =>
     """
-    Return `this`raised to the power of `n` ($$this^n$$) using `rnd` rounding
-    mode (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return `this` raised to the integer power `n` using the stored rounding
+    mode. The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.pow_si(result._mpfr, _mpfr, n, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.pow_si(result._mpfr, _mpfr, n, _rnd)
     result
 
 
-  fun cos(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun cos(): MPFloat =>
     """
-    Return the cosine of `this`($$\cos(this)$$) using rounding mode `rnd`
-    (default nearest). The result is a new `MPFloat` with the same precision
-    as `this`.
+    Return the cosine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.cos(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.cos(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun sin(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun sin(): MPFloat =>
     """
-    Return the sine of `this`($$\sin(this)$$) using rounding mode `rnd` (default
-    nearest). The result is a new `MPFloat` with the same precision as `this`.
+    Return the sine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.sin(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.sin(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun tan(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun tan(): MPFloat =>
     """
-    Return the tangent of `this`($$\tan(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the tangent of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.tan(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.tan(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun acos(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun acos(): MPFloat =>
     """
-    Return the arc-cosine of `this`($$\arccos(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the arc-cosine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.acos(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.acos(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun asin(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun asin(): MPFloat =>
     """
-    Return the arc-sine of `this`($$\arcsin(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the arc-sine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.asin(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.asin(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun atan(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun atan(): MPFloat =>
     """
-    Return the arc-tangent of `this`($$\arctan(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the arc-tangent of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.atan(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.atan(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun cosh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun cosh(): MPFloat =>
     """
-    Return the hyperbolic cosine of `this`($$\cosh(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the hyperbolic cosine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.cosh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.cosh(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun sinh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun sinh(): MPFloat =>
     """
-    Return the hyperbolic sine of `this`($$\sinh(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the hyperbolic sine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.sinh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.sinh(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun tanh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun tanh(): MPFloat =>
     """
-    Return the hyperbolic tangent of `this`($$\tanh(this)$$) using rounding mode
-    `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the hyperbolic tangent of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.tanh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.tanh(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun acosh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun acosh(): MPFloat =>
     """
-    Return the hyperbolic arc-cosine of `this`($$\arccosh(this)$$) using rounding
-    mode `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the hyperbolic arc-cosine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.acosh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.acosh(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun asinh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun asinh(): MPFloat =>
     """
-    Return the hyperbolic arc-sine of `this`($$\arcsinh(this)$$) using rounding
-    mode `rnd` (default nearest). The result is a new `MPFloat` with the same
-    precision as `this`.
+    Return the hyperbolic arc-sine of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.asinh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.asinh(result._mpfr, _mpfr, _rnd)
     result
 
 
-  fun atanh(rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun atanh(): MPFloat =>
     """
-    Return the hyperbolic arc-tangent of `this`($$\arctanh(this)$$) using
-    rounding mode `rnd` (default nearest). The result is a new `MPFloat` with
-    the same precision as `this`.
+    Return the hyperbolic arc-tangent of `this` using the stored rounding mode.
+    The result is a new `MPFloat` with the same precision as `this`.
     """
-    let result = MPFloat.from_f64(0.0, get_precision(), rnd)
-    MPF.atanh(result._mpfr, _mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
+    MPF.atanh(result._mpfr, _mpfr, _rnd)
     result
 
 
@@ -1227,7 +1303,7 @@ class val MPFloat
 
   fun ceil(): MPFloat =>
     """
-    Return a new `MPFloat` equals to `this` rounded to the next higher or equal
+    Return a new `MPFloat` equal to `this` rounded to the next higher or equal
     representable integer, with the same precision.
     """
     let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
@@ -1237,7 +1313,7 @@ class val MPFloat
 
   fun floor(): MPFloat =>
     """
-    Return a new `MPFloat` equals to `this` rounded to the next lower or equal
+    Return a new `MPFloat` equal to `this` rounded to the next lower or equal
     representable integer, with the same precision.
     """
     let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
@@ -1247,7 +1323,7 @@ class val MPFloat
 
   fun round(): MPFloat =>
     """
-    Return a new `MPFloat` equals to `this` rounded to the nearest representable
+    Return a new `MPFloat` equal to `this` rounded to the nearest representable
     integer, rounding halfway cases away from zero, with the same precision.
     """
     let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
@@ -1257,7 +1333,7 @@ class val MPFloat
 
   fun trunc(): MPFloat =>
     """
-    Return a new `MPFloat` equals to `this` rounded to the next representable
+    Return a new `MPFloat` equal to `this` rounded to the next representable
     integer toward zero, with the same precision.
     """
     let result = MPFloat.from_f64(0.0, get_precision(), _rnd)
@@ -1265,10 +1341,10 @@ class val MPFloat
     result
 
 
-  fun mod(that: MPFloat, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun mod(that: MPFloat): MPFloat =>
     """
     Return the remainder of the integral division of `this` by `that`, with the
-    same precision, and using `rnd` rounding mode (default nearest).
+    same precision, using the stored rounding mode.
 
     If the precision of `that` is less than the one of `this`, a warning
     is printed when compiled in `debug` mode.
@@ -1282,18 +1358,16 @@ class val MPFloat
               "). The results with precision " + this_prec.string() + " can be less precise")
       end
     end
-
-    let result = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.fmod(result._mpfr, _mpfr, that._mpfr, rnd)
+    let result = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.fmod(result._mpfr, _mpfr, that._mpfr, _rnd)
     result
 
 
-  fun divrem(that: MPFloat, rnd: RoundingMode = RoundingNearest)
-            : (MPFloat, MPFloat) =>
+  fun divrem(that: MPFloat): (MPFloat, MPFloat) =>
     """
     Return the quotient and the remainder of the integral division of `this`
-    by `that` in a tuple, with the same precision, using rounding mode `rnd`
-    (default nearest).
+    by `that` in a tuple, with the same precision, using the stored rounding
+    mode.
 
     If the precision of `that` is less than the one of `this`, a warning
     is printed when compiled in `debug` mode.
@@ -1307,17 +1381,16 @@ class val MPFloat
               "). The results with precision " + this_prec.string() + " can be less precise")
       end
     end
-
-    let remainder = this.mod(that, rnd)
-    let quotient = MPFloat.from_f64(0.0, this_prec, rnd)
-    let frac = MPFloat.from_f64(0.0, this_prec, rnd)
-    MPF.modf(quotient._mpfr, frac._mpfr, (this / that)._mpfr, rnd)
+    let remainder = mod(that)
+    let quotient = MPFloat.from_f64(0.0, this_prec, _rnd)
+    let frac = MPFloat.from_f64(0.0, this_prec, _rnd)
+    MPF.modf(quotient._mpfr, frac._mpfr, div(that)._mpfr, _rnd)
     (quotient, remainder)
 
 
   //- Precision change --------------------------------------------------------
 
-  fun val change_precision(prec: ULong, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun val change_precision(prec: USize, rnd: RoundingMode = RoundingNearest): MPFloat =>
     """
     Change the precision of the current `MPFloat` to `prec` and round it using
     the `rnd` rounding mode (default is nearest). If `prec` is greater than or
@@ -1335,5 +1408,3 @@ class val MPFloat
     and `0` for special values including `0`.
     """
     MPF.min_prec(_mpfr).ulong()
-
-

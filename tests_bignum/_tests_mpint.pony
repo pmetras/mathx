@@ -6,7 +6,7 @@
 // clause.
 
 // When using GMP/MPFR implementation, change use
-use "../mathx"
+use "../bignum"
 //use "../mathx/gmp"
 
 use "../pony_testx"

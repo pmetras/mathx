@@ -1,5 +1,7 @@
 // A library of mathematical functions usable by MPFloat
 
+use "../mathx"
+
 primitive MPFMathLib
     """
     A library of mathematical functions dealing with `MPFloat` objects.

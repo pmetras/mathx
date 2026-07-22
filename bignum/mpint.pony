@@ -6,6 +6,7 @@ use "collections"
 use "../assertx"
 use "../bitsx"
 use "../formatx"
+use "../mathx"
 
 
 class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Comparable[MPInt] & Stringable & Formattable)
@@ -959,7 +960,7 @@ class val MPInt is (SignedInteger[MPInt, MPInt] & UnsignedInteger[MPInt] & Compa
       let res = Array[U32].init(0, _digits.size() + that._digits.size())
       try
         let ntt = NTT[U64]
-        let p = ntt._p()
+        let p = ntt.prime()
 
         // Load this operand as U16 half-words into a_ntt.
         var a_ntt = Array[U64].init(0, pow2)

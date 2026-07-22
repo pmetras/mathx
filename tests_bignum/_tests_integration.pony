@@ -1,6 +1,6 @@
 use "time"
 
-use "../mathx"
+use "../bignum"
 use "../pony_testx"
 
 

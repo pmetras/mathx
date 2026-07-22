@@ -14,9 +14,9 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
   See https://en.wikipedia.org/wiki/Discrete_Fourier_transform_over_a_ring#Number-theoretic_transform
   """
 
-  fun _p(): A =>
+  fun prime(): A =>
     """
-    Modulo: NTT-friendly prime number of the form $k * 2^{n} + 1$.
+    NTT-friendly prime modulus of the form $k ⋅ 2^{n} + 1$.
     To be able to use an array of size $N$, we must have $2^n ≥ N$.
 
     998244353 - 1 = 119 ⋅ 2^{23} (32-bit prime, used for U32 / USize on ilp32)
@@ -81,7 +81,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
 
   fun _mul_mod_p(a: A, b: A): A =>
     """
-    Multiply `a * b mod _p()` using fast prime-specific reduction.
+    Multiply `a * b mod prime()` using fast prime-specific reduction.
 
     For 32-bit types (U32 or USize on ilp32), the prime is p = 998244353 < 2^30.
     Both operands fit in 30 bits, so the U64 product fits in 60 bits and
@@ -99,18 +99,18 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     match a_any
     | let _: U32 =>
       // p < 2^30; a*b < 2^60 fits in U64.
-      A.from[U64]((a.u64() * b.u64()) % _p().u64())
+      A.from[U64]((a.u64() * b.u64()) % prime().u64())
     | let _: U64 =>
       _mul_mod_p_u64(a.u64(), b.u64())
     | let _: USize =>
       ifdef ilp32 then
         // p < 2^30; a*b < 2^60 fits in U64.
-        A.from[U64]((a.u64() * b.u64()) % _p().u64())
+        A.from[U64]((a.u64() * b.u64()) % prime().u64())
       else
         _mul_mod_p_u64(a.u64(), b.u64())
       end
     else
-      Modular[A].mul_mod(a, b, _p())
+      Modular[A].mul_mod(a, b, prime())
     end
 
 
@@ -140,7 +140,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     //   If z overflowed U64 (carry=1): z = 2^64 + z_sum ≥ 2^64 > p.
     //     result = z − p = z_sum + (2^64 − p) = z_sum + (2^32 − 1).
     //   Otherwise: result = z_sum − p  if z_sum ≥ p, else z_sum.
-    let p: U64 = _p().u64()
+    let p: U64 = prime().u64()
     let result: U64 =
       if z_carry then
         z_sum + U32.max_value().u64()  // + (2^32 − 1) = 2^64 − p
@@ -154,7 +154,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
 
   fun _add_mod_p(a: A, b: A): A =>
     """
-    Compute `(a + b) mod _p()` for `a, b` already in `[0, p)`.
+    Compute `(a + b) mod prime()` for `a, b` already in `[0, p)`.
 
     For 32-bit types (U32 or USize on ilp32), widens to U64 to avoid overflow.
     For 64-bit types (U64 or USize on lp64/llp64), handles U64 carry with a
@@ -166,7 +166,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     | let _: U32 =>
       // p < 2^30; a + b < 2p < 2^31 — no overflow in U64.
       let sum: U64 = a.u64() + b.u64()
-      let p: U64 = _p().u64()
+      let p: U64 = prime().u64()
       A.from[U64](if sum >= p then sum - p else sum end)
     | let _: U64 =>
       _add_mod_p_u64(a.u64(), b.u64())
@@ -174,13 +174,13 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
       ifdef ilp32 then
         // p < 2^30; a + b < 2p < 2^31 — no overflow in U64.
         let sum: U64 = a.u64() + b.u64()
-        let p: U64 = _p().u64()
+        let p: U64 = prime().u64()
         A.from[U64](if sum >= p then sum - p else sum end)
       else
         _add_mod_p_u64(a.u64(), b.u64())
       end
     else
-      Modular[A].add_mod(a, b, _p())
+      Modular[A].add_mod(a, b, prime())
     end
 
 
@@ -190,7 +190,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     carry=1 → 2^64 + sum ≥ 2^64 > p; result = sum + (2^64 − p) = sum + (2^32 − 1).
     """
     (let sum, let carry) = a.addc(b)
-    let p: U64 = _p().u64()
+    let p: U64 = prime().u64()
     let result: U64 =
       if carry then
         sum + U32.max_value().u64()
@@ -204,7 +204,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
 
   fun _sub_mod_p(a: A, b: A): A =>
     """
-    Compute `(a - b) mod _p()` for `a, b` already in `[0, p)`.
+    Compute `(a - b) mod prime()` for `a, b` already in `[0, p)`.
 
     For 32-bit types (U32 or USize on ilp32), uses a simple comparison.
     For 64-bit types (U64 or USize on lp64/llp64), uses U64 `subc` with
@@ -215,20 +215,20 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     match a_any
     | let _: U32 =>
       let au: U64 = a.u64(); let bu: U64 = b.u64()
-      let p: U64 = _p().u64()
+      let p: U64 = prime().u64()
       A.from[U64](if au >= bu then au - bu else (au + p) - bu end)
     | let _: U64 =>
       _sub_mod_p_u64(a.u64(), b.u64())
     | let _: USize =>
       ifdef ilp32 then
         let au: U64 = a.u64(); let bu: U64 = b.u64()
-        let p: U64 = _p().u64()
+        let p: U64 = prime().u64()
         A.from[U64](if au >= bu then au - bu else (au + p) - bu end)
       else
         _sub_mod_p_u64(a.u64(), b.u64())
       end
     else
-      Modular[A].sub_mod(a, b, _p())
+      Modular[A].sub_mod(a, b, prime())
     end
 
 
@@ -249,7 +249,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
 
   fun _pow_mod_p(base: A, exp: A): A =>
     """
-    Compute `base ^ exp mod _p()` using binary exponentiation with `_mul_mod_p`,
+    Compute `base ^ exp mod prime()` using binary exponentiation with `_mul_mod_p`,
     avoiding the generic `Modular[A].mul_mod` slow path.
     """
     let zero = A.from[USize](0)
@@ -259,7 +259,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
       return one
     end
 
-    var b = base % _p()
+    var b = base % prime()
     var res = one
     var e = exp
     while e > zero do
@@ -278,8 +278,8 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
     """
     let one = A.from[USize](1)
     let roots = Array[A](n / 2)
-    let g_root = if inverse then Modular[A].inv_mod(_g(), _p()) else _g() end
-    let w_n = _pow_mod_p(g_root, (_p() - one) / A.from[USize](n))
+    let g_root = if inverse then Modular[A].inv_mod(_g(), prime()) else _g() end
+    let w_n = _pow_mod_p(g_root, (prime() - one) / A.from[USize](n))
 
     var current_w = one
     for i in Range(0, n / 2) do
@@ -374,7 +374,7 @@ primitive NTT[A: (UnsignedInteger[A] & Any val) = USize]
 
     // 3. Inverse: divide all elements by n (mod p).
     if inverse then
-      let n_inv = Modular[A].inv_mod(A.from[USize](n), _p())
+      let n_inv = Modular[A].inv_mod(A.from[USize](n), prime())
       for k in Range(0, n) do
         try a(k)? = _mul_mod_p(a(k)?, n_inv) end
       end

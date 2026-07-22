@@ -12,12 +12,13 @@
 
 use "../assertx"
 use "../formatx"
+use "../mathx"
 
 use "collections"
 use "debug"
 
 
-class val MPFloat is (Formattable & Stringable)
+class val MPFloat is (BigReal[MPFloat] & Formattable & Stringable)
   """
   MPFloat represents real numbers with arbitrary precision.
 
@@ -710,7 +711,7 @@ class val MPFloat is (Formattable & Stringable)
     (~15 significant digits). In this case `inexact = true` and values outside
     the F64 range return sentinel tuples: `("1", 1000, true)` for overflow and
     `("0", -1000, true)` for underflow. The proportional gate keeps the output
-    string bounded to at most `(2×_size() + 150) × 2.41` decimal characters.
+    string bounded to at most `(2×_size() + 150) × log₁₀(256)` decimal characters.
     For the default 14-byte precision, `gate = 164` and the exact path covers
     values roughly in `(10^{−395}, 10^{+395})`.
     """
@@ -1336,7 +1337,7 @@ class val MPFloat is (Formattable & Stringable)
     _from(_MPFAlgo.exp2(_ctx, _rep), _ctx)
 
 
-  fun powi(n: ILong, rnd: RoundingMode = RoundingNearest): MPFloat =>
+  fun powi(n: ILong): MPFloat =>
     """
     Compute `this^n` for integer exponent `n`.
 
@@ -1487,12 +1488,240 @@ class val MPFloat is (Formattable & Stringable)
     _from(_MPFAlgo.coth(_ctx, _rep), _ctx)
 
 
+  fun atan(): MPFloat =>
+    """
+    Compute `atan(this)` (inverse tangent, result in radians).
+
+    NaN → NaN. +∞ → +π/2. −∞ → −π/2. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.atan(_ctx, _rep), _ctx)
+
+
+  fun asin(): MPFloat =>
+    """
+    Compute `asin(this)` (inverse sine, result in radians).
+
+    NaN → NaN. |this| > 1 → NaN. +∞ or −∞ → NaN. 0 → 0. ±1 → ±π/2.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.asin(_ctx, _rep), _ctx)
+
+
+  fun acos(): MPFloat =>
+    """
+    Compute `acos(this)` (inverse cosine, result in radians).
+
+    NaN → NaN. |this| > 1 → NaN. +∞ or −∞ → NaN. 0 → π/2. 1 → 0. −1 → π.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.acos(_ctx, _rep), _ctx)
+
+
+  fun atanh(): MPFloat =>
+    """
+    Compute `atanh(this)` (inverse hyperbolic tangent).
+
+    NaN → NaN. ±∞ → NaN. |this| ≥ 1 → NaN. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.atanh(_ctx, _rep), _ctx)
+
+
+  fun asinh(): MPFloat =>
+    """
+    Compute `asinh(this)` (inverse hyperbolic sine).
+
+    NaN → NaN. +∞ → +∞. −∞ → −∞. 0 → 0.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.asinh(_ctx, _rep), _ctx)
+
+
+  fun acosh(): MPFloat =>
+    """
+    Compute `acosh(this)` (inverse hyperbolic cosine).
+
+    NaN → NaN. this < 1 → NaN. 1 → 0. +∞ → +∞.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.acosh(_ctx, _rep), _ctx)
+
+
+  fun cbrt(): MPFloat =>
+    """
+    Compute the cube root `this^{1/3}`.
+
+    NaN → NaN. +∞ → +∞. −∞ → −∞. 0 → 0.
+    Defined for negative values (cbrt is an odd function).
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.cbrt(_ctx, _rep), _ctx)
+
+
+  fun rootn(n: USize): MPFloat =>
+    """
+    Compute the `n`-th root `this^{1/n}`.
+
+    NaN → NaN. n = 0 → NaN. 0 → 0.
+    Negative `this` with even `n` → NaN. Negative `this` with odd `n` → negative result.
+
+    **Rounding**: faithfully rounded (≤ 1 ULP error) under `rounding_mode()`.
+    """
+    _from(_MPFAlgo.rootn(_ctx, _rep, n), _ctx)
+
+
   fun abs(): MPFloat =>
     """
     Absolute value of `this`, when it makes sense. Result is undefined for NaN.
     """
     _from(MPFRep._create(false, _rep.is_nan(), _rep.is_infinite(),
       _rep.exponent(), _rep.raw_digits()), _ctx)
+
+
+  fun min(that: MPFloat): MPFloat =>
+    """
+    Return the smaller of `this` and `that`.
+
+    NaN in either operand propagates: if either is NaN, returns NaN.
+    """
+    if _rep.is_nan() or that._rep.is_nan() then
+      return _from(MPFRep.nan_val(), _ctx)
+    end
+    if lt(that) then _from(_rep, _ctx) else that end
+
+
+  fun max(that: MPFloat): MPFloat =>
+    """
+    Return the larger of `this` and `that`.
+
+    NaN in either operand propagates: if either is NaN, returns NaN.
+    """
+    if _rep.is_nan() or that._rep.is_nan() then
+      return _from(MPFRep.nan_val(), _ctx)
+    end
+    if gt(that) then _from(_rep, _ctx) else that end
+
+
+  fun next_above(): MPFloat =>
+    """
+    Return the next representable value above `this` (increment the last
+    base-256 digit by 1, carrying as needed).
+
+    NaN → NaN. +∞ → +∞. −∞ → most-negative finite value (not yet implemented,
+    returns −∞). ±0 → smallest positive subnormal (1 × 256^{1−p}).
+    """
+    if _rep.is_nan() or (_rep.is_infinite() and not _rep.sign_bit()) then
+      return _from(_rep, _ctx)
+    end
+    let np = _rep._size()
+    if np == 0 then
+      let d: Array[U8] val = recover
+        let a = Array[U8].init(0, _ctx.p_bytes())
+        try a.update(a.size() - 1, 1)? end
+        a
+      end
+      return _from(MPFRep._create(false, false, false, 1 - _ctx.p_bytes().i64(), d), _ctx)
+    end
+    // Increment last digit with carry; track overflow with a flag
+    let src: Array[U8] val = _rep.raw_digits()
+    var overflow: Bool = false
+    let digits: Array[U8] val = recover
+      let d = src.clone()
+      var carry: U16 = 1
+      var i: ISize = (d.size() - 1).isize()
+      while (i >= 0) and (carry > 0) do
+        let idx = i.usize()
+        try
+          let v: U16 = d(idx)?.u16() + carry
+          d.update(idx, v.u8())?
+          carry = v >> 8
+        end
+        i = i - 1
+      end
+      if carry > 0 then
+        overflow = true
+      end
+      d
+    end
+    if overflow then
+      let d2: Array[U8] val = recover
+        let a = Array[U8].init(0, np)
+        try a.update(0, 1)? end
+        a
+      end
+      return _from(MPFRep._create(_rep.sign_bit(), false, false,
+        _rep.exponent() + 1, d2), _ctx)
+    end
+    _from(MPFRep._create(_rep.sign_bit(), false, false, _rep.exponent(), digits), _ctx)
+
+
+  fun next_below(): MPFloat =>
+    """
+    Return the next representable value below `this` (decrement the last
+    base-256 digit by 1, borrowing as needed).
+
+    NaN → NaN. −∞ → −∞. +∞ → most-positive finite value (not yet implemented,
+    returns +∞). ±0 → smallest negative subnormal (−1 × 256^{1−p}).
+    """
+    if _rep.is_nan() or (_rep.is_infinite() and _rep.sign_bit()) then
+      return _from(_rep, _ctx)
+    end
+    let np = _rep._size()
+    if np == 0 then
+      let d: Array[U8] val = recover
+        let a = Array[U8].init(0, _ctx.p_bytes())
+        try a.update(a.size() - 1, 1)? end
+        a
+      end
+      return _from(MPFRep._create(true, false, false, 1 - _ctx.p_bytes().i64(), d), _ctx)
+    end
+    // Decrement last digit with borrow; track underflow with a flag
+    let src: Array[U8] val = _rep.raw_digits()
+    var underflow: Bool = false
+    let digits: Array[U8] val = recover
+      let d = src.clone()
+      var borrow: I16 = 1
+      var i: ISize = (d.size() - 1).isize()
+      while (i >= 0) and (borrow > 0) do
+        let idx = i.usize()
+        try
+          let v: I16 = d(idx)?.i16() - borrow
+          if v < 0 then
+            d.update(idx, (v + 256).u8())?
+            borrow = 1
+          else
+            d.update(idx, v.u8())?
+            borrow = 0
+          end
+        end
+        i = i - 1
+      end
+      if borrow > 0 then
+        underflow = true
+      end
+      d
+    end
+    if underflow then
+      let d2: Array[U8] val = recover Array[U8].init(0xFF, np) end
+      return _from(MPFRep._create(_rep.sign_bit(), false, false,
+        _rep.exponent() - 1, d2), _ctx)
+    end
+    _from(MPFRep._create(_rep.sign_bit(), false, false, _rep.exponent(), digits), _ctx)
+
+
+  fun get_base(): USize =>
+    """
+    Return the internal base of the floating-point representation (always 256).
+    """
+    256
 
 
   fun trunc(): MPFloat =>

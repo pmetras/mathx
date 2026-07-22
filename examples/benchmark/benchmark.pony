@@ -1,6 +1,6 @@
 // MPInt benchmark suite
 
-use "../../mathx"
+use "../../bignum"
 use "random"
 use "time"
 

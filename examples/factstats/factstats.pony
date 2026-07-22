@@ -1,6 +1,6 @@
 // Digits repartition of factorials up to 1000
 
-use "../../mathx"
+use "../../bignum"
 use "collections"
 use "format"
 

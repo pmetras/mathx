@@ -25,8 +25,19 @@ EXAMPLES_DIR := examples
 TESTS_DIR := tests
 TESTS_EXE := tests
 
+# Bignum tests are in the tests_bignum directory
+TESTS_BIGNUM_DIR := tests_bignum
+TESTS_BIGNUM_EXE := tests_bignum
+BIGNUM_DIR := bignum
+
+# Bignum/GMP tests require libgmp and libmpfr (compiled separately to avoid name clashes)
+TESTS_BIGNUM_GMP_DIR := tests_bignum_gmp
+TESTS_BIGNUM_GMP_EXE := tests_bignum_gmp
+
 # The name of the tests binary: build/debug/limits or build/release/limits
 tests_binary := $(BUILD_DIR)/$(PACKAGE)
+tests_bignum_binary := $(BUILD_DIR)/$(TESTS_BIGNUM_EXE)
+tests_bignum_gmp_binary := $(BUILD_DIR)/$(TESTS_BIGNUM_GMP_EXE)
 
 # API doc is generated into build/limits-docs
 DOCS_DIR := build/$(PACKAGE)-docs
@@ -54,18 +65,41 @@ EXAMPLE_SOURCE_FILES := $(shell find $(EXAMPLES_DIR) -name '*.pony')
 # Collect all test files from tests directory
 TEST_FILES := $(shell find $(TESTS_DIR) -name '*.pony')
 
+# Collect all test files from tests_bignum directory
+TEST_BIGNUM_FILES := $(shell find $(TESTS_BIGNUM_DIR) -name '*.pony')
+
+# Collect all test files from tests_bignum_gmp directory (exclude symlinks; tracked via explicit dep below)
+TEST_BIGNUM_GMP_FILES := $(shell find $(TESTS_BIGNUM_GMP_DIR) -name '*.pony' -not -type l)
+
+# Collect all bignum source files
+BIGNUM_SOURCE_FILES := $(shell find $(BIGNUM_DIR) -name '*.pony')
+
 
 # Full tests is unit tests + examples
-test: unit-tests build-examples ## Run unit tests and examples
+test: unit-tests bignum-tests build-examples ## Run unit tests, bignum tests, and examples
 
 # To run the unit tests, run the tests binary with arguments --exclude=integration --sequential
-unit-tests: $(tests_binary) ## Run unit tests
+unit-tests: $(tests_binary) ## Run mathx unit tests
 	$(BUILD_DIR)/$(TESTS_EXE) --exclude=integration --sequential
+
+# Run bignum unit tests
+bignum-tests: $(tests_bignum_binary) ## Run bignum unit tests
+	$(BUILD_DIR)/$(TESTS_BIGNUM_EXE) --exclude=integration --sequential
+
+# Run bignum/gmp unit tests (requires libgmp and libmpfr)
+bignum-gmp-tests: $(tests_bignum_gmp_binary) ## Run bignum/gmp unit tests (requires libgmp/libmpfr)
+	$(BUILD_DIR)/$(TESTS_BIGNUM_GMP_EXE) --sequential
 
 # How to create binary for tests: compile content of SRC_DIR into BUILD_DIR.
 # I add a dependency on source files in case pre-processing is required
 $(tests_binary): $(TEST_FILES) $(SOURCE_FILES) | $(BUILD_DIR)
 	$(PONYC) -o ${BUILD_DIR} $(TESTS_DIR)
+
+$(tests_bignum_binary): $(TEST_BIGNUM_FILES) $(BIGNUM_SOURCE_FILES) $(SOURCE_FILES) | $(BUILD_DIR)
+	$(PONYC) -o ${BUILD_DIR} $(TESTS_BIGNUM_DIR)
+
+$(tests_bignum_gmp_binary): $(TEST_BIGNUM_GMP_FILES) $(TESTS_BIGNUM_DIR)/_tests_bigreal_suites.pony $(BIGNUM_SOURCE_FILES) $(SOURCE_FILES) | $(BUILD_DIR)
+	$(PONYC) -o ${BUILD_DIR} $(TESTS_BIGNUM_GMP_DIR)
 
 # Build all examples: on all sub-directories in the example directory that contain Pony code,
 # filtering on sub-directories that contains only FFI.
@@ -99,7 +133,7 @@ all: test ## Build all: source + tests + examples
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all clean realclean TAGS test help
+.PHONY: all clean realclean TAGS test unit-tests bignum-tests bignum-gmp-tests help
 
 help: ## Print help on Make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

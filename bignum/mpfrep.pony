@@ -1890,7 +1890,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     - A `Debug` line is emitted on every fallback invocation.
 
     The proportional gate keeps the exact-path output bounded to at most
-    `(2×_size() + 150) × 2.41` decimal digits — feasible for any sane precision.
+    `(2×_size() + 150) × log₁₀(256)≈2.408` decimal digits — feasible for any sane precision.
     A flat gate of 150 was too tight for high-precision values (e.g. π stored at
     437 bytes has `k = −436` but only produces a ~3500-digit string, well within
     the capabilities of `MPInt`).
@@ -1913,7 +1913,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     end
 
     let prec: USize = _size()
-    let n_dec: USize = ((prec.f64() * 2.41).usize() + 2).max(1)
+    let n_dec: USize = ((prec.f64() * F64(256.0).log10()).ceil().usize() + 2).max(1)
     let sign_prefix: String = if _sign then "-" else "" end
 
     let n_int: MPInt = _digits_as_mpint()
@@ -1922,7 +1922,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     // Gate: allow exact MPInt path when |k_bytes| < prec + 150.
     // Flat 150 was too tight for high-precision values (e.g. π at 437 bytes has
     // k_bytes = −436).  The proportional gate keeps the output string bounded to
-    // at most ~(2×prec + 150) × 2.41 decimal digits — feasible for any sane prec.
+    // at most ~(2×prec + 150) × log₁₀(256)≈2.408 decimal digits — feasible for any sane prec.
     let gate: I64 = prec.i64() + 150
 
     if (k_bytes >= 0) and (k_bytes < gate) then
@@ -1969,7 +1969,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
       // Extreme values: use approximate path via F64 to avoid OOM in MPInt/String.
       // This is a DoS counter-measure.
         Debug("[MPFRep.exact_string] Extreme value (k_bytes=" + k_bytes.string() +
-              "). Using approximate F64 path.")
+              "). Using approximate F64 path to prevent Out of Memory DoS.")
 
       let f = f64()
       if f.nan() then
@@ -2064,7 +2064,13 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
       end
 
     let all_digits: String = raw.trim(dig_start)
-    var sig_end: USize = all_digits.size()
+    // Limit to n_dec significant digits (≈ stored precision in decimal).
+    // exact_string may return more digits than are meaningful (e.g. the exact
+    // decimal expansion of √2 has ~9993 digits for a 1250-byte rep, but only
+    // ~3013 are significant). Without this cap, string() prints thousands of
+    // spurious digits for irrational numbers.
+    let n_dec: USize = ((_size().f64() * F64(256.0).log10()).ceil().usize() + 2).max(1)
+    var sig_end: USize = all_digits.size().min(n_dec)
     while (sig_end > 1) and
           (try all_digits(sig_end - 1)? == '0' else false end)
     do
@@ -2074,7 +2080,7 @@ class ref MPFRep is (Equatable[MPFRep] & Formattable & Stringable)
     let nd: USize = digits.size()
 
     let use_sci: Bool =
-      (dec_exp < -4) or (dec_exp >= all_digits.size().i64())
+      (dec_exp < -4) or (dec_exp >= n_dec.i64())
 
     recover
       let s = String.create(sgn.size() + nd + 8)

@@ -38,7 +38,7 @@
 //  • Fix `string()` to extract all available decimal digits and drop '_'
 //  • Use `_exponent` correctly for numbers outside [0, 256)
 
-use "../mathx"
+use "../bignum"
 use "../pony_testx"
 use "../formatx"
 
@@ -395,15 +395,16 @@ class iso _TestMPFloatFromF32 is UnitTest
         h.assert_eq[F32](f, rt_f, "Random floats [" + i.string() + "] round-trip failed for " + f.string() + " got " + rt_f.string())
       end
       
-      // 2. Semantic string representation check (only for finite parseable numbers)
-      if f.finite() then
+      // 2. Semantic string representation check (only for finite normalized numbers;
+      //    Pony's f32() parser does not handle subnormals)
+      if f.finite() and (f.abs() >= F32.min_normalised()) then
         try
           let s: String val = mpf.string()
           let f_parsed = s.f32()?
           let diff = (f - f_parsed).abs()
           let max_abs = f.abs().max(f_parsed.abs()).max(1.0)
           // Tighter tolerance: 2 ULPs for string parsing jitter
-          h.assert_true(diff <= (max_abs * f.epsilon() * 2), 
+          h.assert_true(diff <= (max_abs * f.epsilon() * 2),
             "Random floats [" + i.string() + "] string representation semantic mismatch: " + f.string() + " became " + s)
         else
           h.fail("Random floats [" + i.string() + "] MPFloat produced unparseable string")
@@ -483,15 +484,16 @@ class iso _TestMPFloatFromF64 is UnitTest
         h.assert_eq[F64](f, rt_f, "Random floats [" + i.string() + "] round-trip failed for " + f.string() + " got " + rt_f.string())
       end
       
-      // 2. Semantic string representation check (only for finite parseable numbers)
-      if f.finite() then
+      // 2. Semantic string representation check (only for finite normalized numbers;
+      //    Pony's f64() parser does not handle subnormals)
+      if f.finite() and (f.abs() >= F64.min_normalised()) then
         try
           let s: String val = mpf.string()
           let f_parsed = s.f64()?
           let diff = (f - f_parsed).abs()
           let max_abs = f.abs().max(f_parsed.abs()).max(1.0)
           // Tighter tolerance: 2 ULPs for string parsing jitter
-          h.assert_true(diff <= (max_abs * f.epsilon() * 2), 
+          h.assert_true(diff <= (max_abs * f.epsilon() * 2),
             "Random floats [" + i.string() + "] string representation semantic mismatch: " + f.string() + " became " + s)
         else
           h.fail("Random floats [" + i.string() + "] MPFloat produced unparseable string")
@@ -3132,6 +3134,254 @@ class iso _TestMPFloatFormatSpecial is UnitTest
 
     // Width on special values.
     h.assert_eq[String](MPFloat.nan_val().format("10"), "       nan")
+
+
+class iso _TestMPFloatInverseTrig is UnitTest
+  """
+  Tests for `asin`, `acos`, `atan` (inverse trigonometric).
+  """
+  fun name(): String => "MPFloat/inverse_trig"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 192
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+    let ae_f64 = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, f64_tol, f64_tol), msg)
+    }
+
+    let zero    = MPFloat.create(p)
+    let one     = MPFloat.from[F64](1.0, p)
+    let neg_one = MPFloat.from[F64](-1.0, p)
+    let pi      = MPFloat.pi(p)
+    let pi2     = pi.div(MPFloat.from[F64](2.0, p))
+
+    // ── asin(0) = 0, asin(1) = π/2, asin(-1) = -π/2 ─────────────────────────
+    ae(zero.asin(), zero, "asin(0) = 0")
+    ae(one.asin(),  pi2,  "asin(1) = π/2")
+    ae(neg_one.asin(), pi2.neg(), "asin(-1) = -π/2")
+
+    // ── acos(1) = 0, acos(-1) = π, acos(0) = π/2 ────────────────────────────
+    ae(one.acos(),     zero, "acos(1) = 0")
+    ae(neg_one.acos(), pi,   "acos(-1) = π")
+    ae(zero.acos(),    pi2,  "acos(0) = π/2")
+
+    // ── atan(0) = 0, atan(1) = π/4, atan(-1) = -π/4 ────────────────────────
+    let pi4 = pi.div(MPFloat.from[F64](4.0, p))
+    ae(zero.atan(), zero,     "atan(0) = 0")
+    ae(one.atan(),  pi4,      "atan(1) = π/4")
+    ae(neg_one.atan(), pi4.neg(), "atan(-1) = -π/4")
+
+    // ── atan(±∞) = ±π/2 ──────────────────────────────────────────────────────
+    ae(MPFloat.inf_val(true).atan(),  pi2,       "atan(+∞) = +π/2")
+    ae(MPFloat.inf_val(false).atan(), pi2.neg(), "atan(-∞) = -π/2")
+
+    // ── Domain errors ─────────────────────────────────────────────────────────
+    h.assert_true(MPFloat.from[F64](1.5, p).asin().is_nan(), "asin(1.5) is NaN")
+    h.assert_true(MPFloat.from[F64](-2.0, p).asin().is_nan(), "asin(-2) is NaN")
+    h.assert_true(MPFloat.from[F64](1.5, p).acos().is_nan(), "acos(1.5) is NaN")
+    h.assert_true(MPFloat.nan_val().atan().is_nan(),  "atan(NaN) is NaN")
+
+    // ── Compare against F64 reference ────────────────────────────────────────
+    let v: F64 = 0.6
+    let x = MPFloat.from[F64](v, p)
+    ae_f64(x.asin(), MPFloat.from[F64](v.asin(), p), "asin(0.6) matches F64")
+    ae_f64(x.acos(), MPFloat.from[F64](v.acos(), p), "acos(0.6) matches F64")
+    ae_f64(x.atan(), MPFloat.from[F64](v.atan(), p), "atan(0.6) matches F64")
+
+    // ── asin(sin(x)) = x for x ∈ (-π/2, π/2) ────────────────────────────────
+    let x05 = MPFloat.from[F64](0.5, p)
+    ae(x05.sin().asin(), x05, "asin(sin(0.5)) = 0.5")
+
+    // ── acos(cos(x)) = x for x ∈ [0, π] ─────────────────────────────────────
+    let x08 = MPFloat.from[F64](0.8, p)
+    ae(x08.cos().acos(), x08, "acos(cos(0.8)) = 0.8")
+
+    // ── atan(tan(x)) = x for x ∈ (-π/2, π/2) ────────────────────────────────
+    ae(x05.tan().atan(), x05, "atan(tan(0.5)) = 0.5")
+
+
+class iso _TestMPFloatInverseHyp is UnitTest
+  """
+  Tests for `atanh`, `asinh`, `acosh` (inverse hyperbolic).
+  """
+  fun name(): String => "MPFloat/inverse_hyp"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 192
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+    let ae_f64 = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, f64_tol, f64_tol), msg)
+    }
+
+    let zero    = MPFloat.create(p)
+    let one     = MPFloat.from[F64](1.0, p)
+
+    // ── atanh(0) = 0 ─────────────────────────────────────────────────────────
+    ae(zero.atanh(), zero, "atanh(0) = 0")
+    // atanh is odd: atanh(-x) = -atanh(x)
+    let x03 = MPFloat.from[F64](0.3, p)
+    ae(x03.neg().atanh(), x03.atanh().neg(), "atanh(-0.3) = -atanh(0.3)")
+    // atanh(|x| >= 1): NaN
+    h.assert_true(one.atanh().is_nan(),           "atanh(1) is NaN")
+    h.assert_true(MPFloat.from[F64](1.5, p).atanh().is_nan(), "atanh(1.5) is NaN")
+    h.assert_true(MPFloat.inf_val().atanh().is_nan(), "atanh(+∞) is NaN")
+
+    // ── asinh(0) = 0, asinh(-x) = -asinh(x) ─────────────────────────────────
+    ae(zero.asinh(), zero, "asinh(0) = 0")
+    ae(one.neg().asinh(), one.asinh().neg(), "asinh(-1) = -asinh(1)")
+    h.assert_true(MPFloat.inf_val(true).asinh().is_infinite(),  "asinh(+∞) = +∞")
+    h.assert_false(MPFloat.inf_val(true).asinh().is_negative(), "asinh(+∞) positive")
+    h.assert_true(MPFloat.inf_val(false).asinh().is_negative(), "asinh(-∞) negative")
+
+    // ── acosh(1) = 0 ─────────────────────────────────────────────────────────
+    ae(one.acosh(), zero, "acosh(1) = 0")
+    // acosh(x < 1) is NaN
+    h.assert_true(zero.acosh().is_nan(),         "acosh(0) is NaN")
+    h.assert_true(MPFloat.from[F64](0.5, p).acosh().is_nan(), "acosh(0.5) is NaN")
+    h.assert_true(MPFloat.inf_val(false).acosh().is_nan(), "acosh(-∞) is NaN")
+    h.assert_true(MPFloat.inf_val(true).acosh().is_infinite(), "acosh(+∞) = +∞")
+
+    // ── Compare against F64 reference ────────────────────────────────────────
+    let v: F64 = 0.5
+    let va: F64 = 1.5
+    ae_f64(MPFloat.from[F64](v,  p).atanh(), MPFloat.from[F64](v.atanh(),  p), "atanh(0.5) matches F64")
+    ae_f64(MPFloat.from[F64](v,  p).asinh(), MPFloat.from[F64](v.asinh(),  p), "asinh(0.5) matches F64")
+    ae_f64(MPFloat.from[F64](va, p).acosh(), MPFloat.from[F64](va.acosh(), p), "acosh(1.5) matches F64")
+
+    // ── Inverse identity: asinh(sinh(x)) = x ─────────────────────────────────
+    let x07 = MPFloat.from[F64](0.7, p)
+    ae(x07.sinh().asinh(), x07, "asinh(sinh(0.7)) = 0.7")
+
+    // ── Inverse identity: acosh(cosh(x)) = x for x > 0 ──────────────────────
+    ae(x07.cosh().acosh(), x07, "acosh(cosh(0.7)) = 0.7")
+
+    // ── Inverse identity: atanh(tanh(x)) = x ─────────────────────────────────
+    ae(x03.tanh().atanh(), x03, "atanh(tanh(0.3)) = 0.3")
+
+
+class iso _TestMPFloatCbrtRootn is UnitTest
+  """
+  Tests for `cbrt` (cube root) and `rootn` (n-th root).
+  """
+  fun name(): String => "MPFloat/cbrt_rootn"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 192
+    let tol: MPFloat = MPFloat.epsilon(p).sqrt()
+    let f64_tol: MPFloat = MPFloat.epsilon(112).sqrt()
+    let ae = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, tol, tol), msg)
+    }
+    let ae_f64 = {(got: MPFloat, expected: MPFloat, msg: String) =>
+      h.assert_true(got.almost_eq(expected, f64_tol, f64_tol), msg)
+    }
+
+    let zero    = MPFloat.create(p)
+    let one     = MPFloat.from[F64](1.0, p)
+    let neg_one = MPFloat.from[F64](-1.0, p)
+    let eight   = MPFloat.from[F64](8.0, p)
+    let two     = MPFloat.from[F64](2.0, p)
+
+    // ── cbrt(8) = 2, cbrt(-8) = -2, cbrt(0) = 0, cbrt(1) = 1 ───────────────
+    ae(zero.cbrt(),      zero,    "cbrt(0) = 0")
+    ae(one.cbrt(),       one,     "cbrt(1) = 1")
+    ae(neg_one.cbrt(),   neg_one, "cbrt(-1) = -1")
+    ae(eight.cbrt(),     two,     "cbrt(8) = 2")
+    ae(eight.neg().cbrt(), two.neg(), "cbrt(-8) = -2")
+
+    // ── cbrt(±∞) = ±∞ ────────────────────────────────────────────────────────
+    h.assert_true(MPFloat.inf_val(true).cbrt().is_infinite(),  "cbrt(+∞) is +∞")
+    h.assert_false(MPFloat.inf_val(true).cbrt().is_negative(), "cbrt(+∞) is positive")
+    h.assert_true(MPFloat.inf_val(false).cbrt().is_infinite(), "cbrt(-∞) is -∞")
+    h.assert_true(MPFloat.inf_val(false).cbrt().is_negative(), "cbrt(-∞) is negative")
+    h.assert_true(MPFloat.nan_val().cbrt().is_nan(),           "cbrt(NaN) is NaN")
+
+    // ── Compare cbrt against F64 reference ────────────────────────────────────
+    let v: F64 = 2.5
+    ae_f64(MPFloat.from[F64](v, p).cbrt(), MPFloat.from[F64](v.cbrt(), p), "cbrt(2.5) matches F64")
+    let vneg: F64 = -27.0
+    ae_f64(MPFloat.from[F64](vneg, p).cbrt(), MPFloat.from[F64](vneg.cbrt(), p), "cbrt(-27) matches F64")
+
+    // ── rootn: n=2 (square root), n=3 (cube root) ────────────────────────────
+    let four = MPFloat.from[F64](4.0, p)
+    ae(four.rootn(2), two, "rootn(4, 2) = 2")
+    ae(eight.rootn(3), two, "rootn(8, 3) = 2")
+    ae(one.rootn(5),   one, "rootn(1, 5) = 1")
+
+    // ── rootn domain: negative with even n → NaN ─────────────────────────────
+    h.assert_true(neg_one.rootn(2).is_nan(), "rootn(-1, 2) is NaN")
+    // negative with odd n → negative result
+    ae(eight.neg().rootn(3), two.neg(), "rootn(-8, 3) = -2")
+
+    // ── rootn(0) = NaN ────────────────────────────────────────────────────────
+    h.assert_true(one.rootn(0).is_nan(), "rootn(1, 0) is NaN")
+
+    // ── Compare rootn against F64 reference ───────────────────────────────────
+    let v2: F64 = 2.0
+    ae_f64(MPFloat.from[F64](v2, p).rootn(5), MPFloat.from[F64](v2.pow(0.2), p), "rootn(2, 5) matches F64")
+
+
+class iso _TestMPFloatMinMaxNext is UnitTest
+  """
+  Tests for `min`, `max`, `next_above`, `next_below`, `get_base`.
+  """
+  fun name(): String => "MPFloat/min_max_next"
+
+  fun apply(h: TestHelper) =>
+    let p: USize = 128
+    let zero = MPFloat.create(p)
+    let one  = MPFloat.from[F64](1.0, p)
+    let two  = MPFloat.from[F64](2.0, p)
+    let neg  = MPFloat.from[F64](-1.0, p)
+
+    // ── get_base ──────────────────────────────────────────────────────────────
+    h.assert_eq[USize](256, one.get_base(), "get_base() = 256")
+
+    // ── min / max ─────────────────────────────────────────────────────────────
+    h.assert_true(one.min(two) == one, "min(1, 2) = 1")
+    h.assert_true(one.max(two) == two, "max(1, 2) = 2")
+    h.assert_true(neg.min(zero) == neg, "min(-1, 0) = -1")
+    h.assert_true(neg.max(zero) == zero, "max(-1, 0) = 0")
+
+    // NaN propagates
+    let nan = MPFloat.nan_val()
+    h.assert_true(nan.min(one).is_nan(), "min(NaN, 1) is NaN")
+    h.assert_true(one.max(nan).is_nan(), "max(1, NaN) is NaN")
+
+    // ── next_above / next_below ───────────────────────────────────────────────
+    // next_above(x) > x (when x is finite and not +∞)
+    let na = one.next_above()
+    h.assert_true(na.gt(one), "next_above(1) > 1")
+
+    // next_below(x) < x (when x is finite and not -∞)
+    let nb = one.next_below()
+    h.assert_true(nb.lt(one), "next_below(1) < 1")
+
+    // next_above then next_below round-trips
+    h.assert_true(na.next_below() == one, "next_above(1).next_below() = 1")
+
+    // next_below then next_above round-trips
+    h.assert_true(nb.next_above() == one, "next_below(1).next_above() = 1")
+
+    // NaN → NaN
+    h.assert_true(nan.next_above().is_nan(), "next_above(NaN) is NaN")
+    h.assert_true(nan.next_below().is_nan(), "next_below(NaN) is NaN")
+
+    // +∞ unchanged by next_above
+    h.assert_true(MPFloat.inf_val(true).next_above().is_infinite(), "next_above(+∞) = +∞")
+    h.assert_false(MPFloat.inf_val(true).next_above().is_negative(), "next_above(+∞) is positive")
+
+    // -∞ unchanged by next_below
+    h.assert_true(MPFloat.inf_val(false).next_below().is_infinite(), "next_below(-∞) = -∞")
+    h.assert_true(MPFloat.inf_val(false).next_below().is_negative(), "next_below(-∞) is negative")
 
 
 class iso _TestMPFloatFormatInFormat is UnitTest

@@ -3,7 +3,7 @@
   Checks the frequency of leading digits in various mathematical sequences.
 */
 
-use "../../mathx"
+use "../../bignum"
 use "collections"
 use "format"
 use "random"

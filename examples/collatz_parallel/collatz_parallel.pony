@@ -1,6 +1,6 @@
 // Parallel Collatz conjecture investigation with MPInt
 
-use "../../mathx"
+use "../../bignum"
 use "collections"
 
 

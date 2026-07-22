@@ -1,5 +1,5 @@
 
-use "../mathx"
+use "../bignum"
 use "../pony_testx"
 use "collections"
 use "random"

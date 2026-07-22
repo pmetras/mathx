@@ -17,6 +17,7 @@
     9. Overflow and underflow           (silent ±∞ and ±0 corruption)
 */
 
+use "../../bignum"
 use "../../mathx"
 use "../../formatx"
 use "collections"

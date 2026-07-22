@@ -1,6 +1,6 @@
 // Collatz conjecture investigation with MPInt
 
-use "../../mathx"
+use "../../bignum"
 
 
 actor Main

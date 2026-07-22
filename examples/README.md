@@ -93,7 +93,7 @@ actor model for CPU-bound concurrent workloads.
 Calculates π via Borwein's quadratic algorithm and Euler's number e via its
 Taylor series using `MPFloat`. Also demonstrates the low-level `MPF` bindings
 to the MPFR library for maximum performance. Requires `libgmp-dev` and
-`libmpfr-dev`.
+`libmpfr-dev` libraries installed on the computer.
 
 **Classes:** `MPFloat`, `MPF` (GMP/MPFR FFI)
 
