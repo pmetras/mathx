@@ -9,6 +9,9 @@ PACKAGE := mathx
 #COMPILE_WITH := ponyc --verbose=4
 COMPILE_WITH := ponyc
 
+# Documentation
+PONYDOC := pony-doc
+
 # Where the executable are placed: build/debug or build/release
 BUILD_DIR ?= build/$(config)
 
@@ -45,7 +48,7 @@ DOCS_DIR := build/$(PACKAGE)-docs
 # Check that config is one of debug or release
 ifdef config
 	ifeq (,$(filter $(config),debug release))
-		$(error Unknown configuration "$(config)")
+		$(error Unknown configuration "$(config)". You must use 'debug' or 'release')
 	endif
 endif
 
@@ -73,7 +76,6 @@ TEST_BIGNUM_GMP_FILES := $(shell find $(TESTS_BIGNUM_GMP_DIR) -name '*.pony' -no
 
 # Collect all bignum source files
 BIGNUM_SOURCE_FILES := $(shell find $(BIGNUM_DIR) -name '*.pony')
-
 
 # Full tests is unit tests + examples
 test: unit-tests bignum-tests build-examples ## Run unit tests, bignum tests, and examples
@@ -103,7 +105,7 @@ $(tests_bignum_gmp_binary): $(TEST_BIGNUM_GMP_FILES) $(TESTS_BIGNUM_DIR)/_tests_
 
 # Build all examples: on all sub-directories in the example directory that contain Pony code,
 # filtering on sub-directories that contains only FFI.
-build-examples: $(SOURCE_FILES) $(EXAMPLES_SOURCE_FILES) | $(BUILD_DIR) ## Build all examples
+examples: $(SOURCE_FILES) $(EXAMPLES_SOURCE_FILES) | $(BUILD_DIR) ## Build all examples
 	find $(EXAMPLES_DIR)/*/* -name '*.pony' -print | \
 		xargs -n 1 dirname | \
 		sort -u | \
@@ -119,7 +121,7 @@ realclean: ## Clean all build executables and documentation
 # Build the documentation
 $(DOCS_DIR): $(SOURCE_FILES)
 	rm -rf $(DOCS_DIR)
-	$(PONYC) --docs-public --pass=docs --output build $(SRC_DIR)
+	$(PONYDOC) --include-private=true --output=build $(SRC_DIR)
 
 docs: $(DOCS_DIR) ## Build documentation
 
@@ -133,7 +135,7 @@ all: test ## Build all: source + tests + examples
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all clean realclean TAGS test unit-tests bignum-tests bignum-gmp-tests help
+.PHONY: all clean realclean TAGS examples test unit-tests bignum-tests bignum-gmp-tests help
 
 help: ## Print help on Make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

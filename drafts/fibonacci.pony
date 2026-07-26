@@ -50,7 +50,7 @@ actor Fibonacci
     """
     Called by an actor who as completed its part of the calculation. We add the
     `n` value to the result and we check if we have gathered all sub-calculations.
-    If that the case, we can report the result to the inial caller.
+    If that the case, we can report the result to the initial caller.
     """
     _result = _result + n
     _nb_add = _nb_add + 1
