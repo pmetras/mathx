@@ -12,6 +12,14 @@ The library includes various mathematical algorithms.
 
 You need to install `libgmp-dev` and `libmpfr-dev` packages if you want to use GMP and MPFR
 
+## References
+
+The `docs/` directory contains copies of the research papers behind this implementation:
+
+- [What Every Computer Scientist Should Know About Floating-Point Arithmetic](https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html) (Goldberg)
+- [MPFR: A Multiple-Precision Binary Floating-Point Library With Correct Rounding](https://www.mpfr.org/algorithms.pdf) (Fousse, Hanrot, Lefèvre, Pélissier, Zimmermann — INRIA RR-5753)
+- [Multidigit Multiplication for Mathematicians](https://cr.yp.to/papers/m3-20010811-retypeset-20220327.pdf) (Bernstein)
+
 ## TODO
 
 ### `MPInt`
